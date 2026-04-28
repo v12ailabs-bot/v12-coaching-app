@@ -120,24 +120,34 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState("dashboard");
 
-  const fetchProfile = async (uid) => {
+ const fetchProfile = async (uid) => {
     const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
-    setProfile(data);
+    if (data) {
+      setProfile(data);
+    }
     setLoading(false);
   };
 
   useEffect(() => {
+    let mounted = true;
     supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!mounted) return;
       setSession(session);
       if (session) fetchProfile(session.user.id);
       else setLoading(false);
     });
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setSession(session);
-      if (session) fetchProfile(session.user.id);
-      else { setProfile(null); setLoading(false); }
+      if (!mounted) return;
+      if (session) {
+        setSession(session);
+        fetchProfile(session.user.id);
+      } else {
+        setSession(null);
+        setProfile(null);
+        setLoading(false);
+      }
     });
-    return () => subscription.unsubscribe();
+    return () => { mounted = false; subscription.unsubscribe(); };
   }, []);
 
   const handleLogout = async () => { await supabase.auth.signOut(); setPage("dashboard"); };
