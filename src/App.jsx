@@ -59,7 +59,7 @@ setPage(“dashboard”);
 };
 
 // Still loading session
-if (session === undefined) {
+if (session === undefined || (session && !profile)) {
 return <div className="app"><style>{STYLES}</style><div className="spinner" /></div>;
 }
 
