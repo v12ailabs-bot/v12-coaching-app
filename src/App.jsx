@@ -64,6 +64,64 @@ return <div className="app"><style>{STYLES}</style><div className="spinner" /></
 }
 
 // Not logged in
+if (!session || !profile) {
+return <LoginScreen />;
+}
+
+const isCoach = profile.role === “coach” || profile.email === COACH_EMAIL;
+
+return (
+<div className="app">
+<style>{STYLES}</style>
+<TopBar profile={profile} isCoach={isCoach} onLogout={handleLogout} />
+<div className="layout">
+<Sidebar isCoach={isCoach} page={page} setPage={setPage} />
+<main className="main">
+{isCoach ? (
+<>
+{page === “dashboard” && <CoachDashboard setPage={setPage} />}
+{page === “clients” && <ClientsPanel />}
+{page === “progress” && <CoachProgressView />}
+</>
+) : (
+<>
+{page === “dashboard” && <ClientDashboard profile={profile} setPage={setPage} />}
+{page === “daily” && <DailyCheckin profile={profile} onDone={() => setPage(“dashboard”)} />}
+{page === “weekly” && <WeeklyCheckin profile={profile} onDone={() => setPage(“dashboard”)} />}
+{page === “progress” && <ProgressCharts profile={profile} />}
+{page === “workouts” && <WorkoutLog profile={profile} />}
+</>
+)}
+</main>
+</div>
+</div>
+);
+}
+
+function LoginScreen() {
+const [tab, setTab] = useState(“signin”);
+const [email, setEmail] = useState(””);
+const [password, setPassword] = useState(””);
+const [name, setName] = useState(””);
+const [loading, setLoading] = useState(false);
+const [error, setError] = useState(””);
+const [success, setSuccess] = useState(””);
+
+const handleSignIn = async () => {
+setError(””); setLoading(true);
+const { error } = await supabase.auth.signInWithPassword({ email, password });
+if (error) setError(error.message);
+setLoading(false);
+};
+
+const handleSignUp = async () => {
+setError(””); setLoading(true);
+const isCoach = email === COACH_EMAIL;
+const { error } = await supabase.auth.signUp({
+email, password,
+options: { data: { name, role: isCoach ? “coach” : “client” } }
+});
+if (error) setError(error.message);
 else { setSuccess(“Account created! Please sign in.”); setTab(“signin”); }
 setLoading(false);
 };
@@ -90,6 +148,63 @@ return (
 {loading ? “Please wait…” : tab === “signin” ? “Sign In” : “Create Account”}
 </button>
 <p style={{ marginTop: 16, fontSize: 11, color: “var(–muted)”, textAlign: “center”, lineHeight: 1.7 }}>
+Works with any email — Gmail, Yahoo, Hotmail, etc.<br />
+Coach login: coach@v12system.com
+</p>
+</div>
+</div>
+);
+}
+
+function TopBar({ profile, isCoach, onLogout }) {
+return (
+<div className="topbar">
+<div className="topbar-logo">V12</div>
+<div className="topbar-right">
+<span className="user-name">{profile.name || profile.email}</span>
+<div className=“avatar” style={{ background: isCoach ? “#FF4D00” : “#00C9A7”, color: “white” }}>
+{avatarFrom(profile.name || profile.email)}
+</div>
+<button className="btn btn-ghost btn-sm" onClick={onLogout}>Sign out</button>
+</div>
+</div>
+);
+}
+
+function Sidebar({ isCoach, page, setPage }) {
+const nav = isCoach
+? [{ id: “dashboard”, icon: “⚡”, label: “Overview” }, { id: “clients”, icon: “👥”, label: “Clients” }, { id: “progress”, icon: “📈”, label: “Progress” }]
+: [{ id: “dashboard”, icon: “⚡”, label: “Dashboard” }, { id: “daily”, icon: “✅”, label: “Daily Check-In” }, { id: “weekly”, icon: “🔥”, label: “Weekly Check-In” }, { id: “progress”, icon: “📈”, label: “Progress” }, { id: “workouts”, icon: “🏋”, label: “Workout Log” }];
+return (
+<nav className="sidebar">
+<div className="nav-section">
+<div className="nav-label">{isCoach ? “Coach” : “Training”}</div>
+{nav.map(item => (
+<div key={item.id} className={`nav-item ${page === item.id ? "active" : ""}`} onClick={() => setPage(item.id)}>
+<span className="nav-icon">{item.icon}</span><span>{item.label}</span>
+</div>
+))}
+</div>
+</nav>
+);
+}
+
+function ClientDashboard({ profile, setPage }) {
+const [checkins, setCheckins] = useState([]);
+const [loading, setLoading] = useState(true);
+
+useEffect(() => {
+supabase.from(“daily_checkins”).select(”*”).eq(“client_id”, profile.id).order(“date”)
+.then(({ data }) => { setCheckins(data || []); setLoading(false); });
+}, [profile.id]);
+
+if (loading) return <div className="spinner" />;
+
+const doneToday = checkins.some(c => c.date === todayStr());
+const recent7 = checkins.slice(-7);
+const avgEnergy = recent7.length ? (recent7.reduce((s, c) => s + c.energy, 0) / recent7.length).toFixed(1) : “—”;
+const avgSleep = recent7.length ? (recent7.reduce((s, c) => s + c.sleep, 0) / recent7.length).toFixed(1) : “—”;
+const lastWeight = checkins.length ? checkins[checkins.length - 1].weight : “—”;
 const streak = (() => { let s = 0; for (let i = checkins.length - 1; i >= 0; i–) { if (checkins[i].workout === “completed”) s++; else break; } return s; })();
 
 return (
@@ -169,6 +284,49 @@ supabase.from(“daily_checkins”).select(”*”).eq(“client_id”, profile.
 const handleSubmit = async () => {
 setLoading(true);
 const entry = { client_id: profile.id, date: todayStr(), …form, weight: parseFloat(form.weight) || null };
+if (existing) await supabase.from(“daily_checkins”).update(entry).eq(“id”, existing.id);
+else await supabase.from(“daily_checkins”).insert(entry);
+setSaved(true); setLoading(false);
+setTimeout(onDone, 1400);
+};
+
+if (saved) return <div style={{ textAlign: “center”, paddingTop: 80 }}><div className=“success-msg” style={{ fontSize: 16, padding: “16px 32px” }}>✅ Check-in logged!</div></div>;
+
+return (
+<div>
+<div className="page-title">Daily Check-In</div>
+<div className="page-sub">{todayStr()}{existing ? “ · Updating today” : “”}</div>
+<div className="card">
+<div className="checkin-grid">
+<div className="field">
+<label>⚖ Weight (lbs)</label>
+<input type=“number” step=“0.1” value={form.weight} onChange={e => set(“weight”, e.target.value)} placeholder=“185.0” />
+</div>
+<div />
+{[[“sleep”, “😴 Sleep Quality”, 1, 10, “/10”], [“energy”, “⚡ Energy Level”, 1, 10, “/10”], [“mood”, “🧠 Mood”, 1, 10, “/10”], [“water”, “💧 Water (glasses)”, 0, 16, “ glasses”]].map(([k, label, min, max, sfx]) => (
+<div key={k}>
+<div className="slider-label"><span>{label}</span><span className="slider-val">{form[k]}{sfx}</span></div>
+<input type=“range” min={min} max={max} value={form[k]} onChange={e => set(k, +e.target.value)} />
+</div>
+))}
+<div className="field">
+<label>🥗 Nutrition Today</label>
+<div className="radio-group">
+{[“On track”, “Mostly clean”, “Struggled”, “Off plan”].map(opt => (
+<button key={opt} className={`radio-btn ${form.diet === opt ? "active" : ""}`} onClick={() => set(“diet”, opt)}>{opt}</button>
+))}
+</div>
+</div>
+<div className="field">
+<label>💪 Training Today</label>
+<div className="radio-group">
+{[“completed”, “rest”, “missed”].map(opt => (
+<button key={opt} className={`radio-btn ${form.workout === opt ? "active" : ""}`} onClick={() => set(“workout”, opt)} style={{ textTransform: “capitalize” }}>{opt}</button>
+))}
+</div>
+</div>
+</div>
+<button className=“btn btn-primary” style={{ maxWidth: 240, marginTop: 20 }} onClick={handleSubmit} disabled={loading}>
 {loading ? “Saving…” : “Log Check-In”}
 </button>
 </div>
@@ -192,6 +350,43 @@ supabase.from(“weekly_checkins”).select(”*”).eq(“client_id”, profile
 const handleSubmit = async () => {
 setLoading(true);
 const entry = { client_id: profile.id, date: weekStart, …form, chest: parseFloat(form.chest) || null, waist: parseFloat(form.waist) || null, hips: parseFloat(form.hips) || null, arms: parseFloat(form.arms) || null };
+if (existing) await supabase.from(“weekly_checkins”).update(entry).eq(“id”, existing.id);
+else await supabase.from(“weekly_checkins”).insert(entry);
+setSaved(true); setLoading(false);
+setTimeout(onDone, 1400);
+};
+
+if (saved) return <div style={{ textAlign: “center”, paddingTop: 80 }}><div className=“success-msg” style={{ fontSize: 16, padding: “16px 32px” }}>✅ Weekly check-in logged!</div></div>;
+
+return (
+<div>
+<div className="page-title">Weekly Check-In</div>
+<div className="page-sub">Week of {weekStart}</div>
+<div className="card">
+<div className="card-title">📏 Measurements (inches)</div>
+<div className=“grid-4” style={{ marginBottom: 24 }}>
+{[“chest”, “waist”, “hips”, “arms”].map(m => (
+<div className="field" key={m}>
+<label>{m.charAt(0).toUpperCase() + m.slice(1)}</label>
+<input type=“number” step=“0.1” value={form[m]} onChange={e => set(m, e.target.value)} placeholder=“0.0” />
+</div>
+))}
+</div>
+<div className=“grid-2” style={{ marginBottom: 20 }}>
+<div>
+<div className="slider-label"><span>Overall Feeling</span><span className="slider-val">{form.feeling}/10</span></div>
+<input type=“range” min=“1” max=“10” value={form.feeling} onChange={e => set(“feeling”, +e.target.value)} />
+</div>
+<div>
+<div className="slider-label"><span>Goal Progress</span><span className="slider-val">{form.goal_progress}%</span></div>
+<input type=“range” min=“0” max=“100” value={form.goal_progress} onChange={e => set(“goal_progress”, +e.target.value)} />
+</div>
+</div>
+<div className="field">
+<label>Notes / Goal Review</label>
+<textarea rows={3} value={form.notes} onChange={e => set(“notes”, e.target.value)} placeholder=“What went well? What needs work?” />
+</div>
+<button className=“btn btn-primary” style={{ maxWidth: 260, marginTop: 8 }} onClick={handleSubmit} disabled={loading}>
 {loading ? “Saving…” : “Submit Weekly Check-In”}
 </button>
 </div>
@@ -324,6 +519,44 @@ const [saved, setSaved] = useState(false);
 
 const loadEx = useCallback(async () => {
 const { data } = await supabase.from(“exercises”).select(”*”).eq(“client_id”, profile.id).order(“created_at”);
+setExercises(data || []);
+if (data && data.length > 0 && !selected) setSelected(data[0].id);
+}, [profile.id]);
+
+useEffect(() => { loadEx(); }, [loadEx]);
+
+useEffect(() => {
+if (!selected) return;
+supabase.from(“workout_logs”).select(”*”).eq(“client_id”, profile.id).eq(“exercise_id”, selected).order(“date”)
+.then(({ data }) => setLogs(data || []));
+}, [selected, profile.id, saved]);
+
+const handleLog = async () => {
+setSaving(true);
+const ex = exercises.find(e => e.id === selected);
+const entries = sets.filter(s => s.reps || s.weight).map((s, i) => ({
+client_id: profile.id, exercise_id: selected, date: todayStr(),
+sets: i + 1, reps: parseInt(s.reps) || null,
+weight: ex?.is_bodyweight ? null : parseFloat(s.weight) || null,
+time: s.time || null,
+}));
+if (entries.length > 0) await supabase.from(“workout_logs”).insert(entries);
+setSaving(false); setSaved(true); setLogMode(false);
+setSets([{ weight: “”, reps: “”, time: “” }, { weight: “”, reps: “”, time: “” }, { weight: “”, reps: “”, time: “” }, { weight: “”, reps: “”, time: “” }]);
+setTimeout(() => setSaved(false), 2000);
+};
+
+const selectedEx = exercises.find(e => e.id === selected);
+const chartData = logs.reduce((acc, log) => { const ex = acc.find(a => a.date === log.date); if (!ex) acc.push({ date: log.date, weight: log.weight, reps: log.reps }); return acc; }, []);
+
+return (
+<div>
+<div className="page-title">Workout Log</div>
+<div className="page-sub">Track your strength progression</div>
+{saved && <div className=“success-msg” style={{ marginBottom: 16 }}>✅ Session logged!</div>}
+{exercises.length === 0 ? (
+<div className=“card” style={{ textAlign: “center”, padding: 48 }}>
+<div style={{ fontSize: 32, marginBottom: 12 }}>🏋</div>
 <div style={{ fontFamily: “var(–font-display)”, fontSize: 22, marginBottom: 8 }}>No exercises assigned yet</div>
 <div style={{ color: “var(–muted)”, fontSize: 13 }}>Your coach will assign your program. Check back soon.</div>
 </div>
@@ -419,6 +652,35 @@ const [loading, setLoading] = useState(true);
 useEffect(() => {
 const load = async () => {
 const { data } = await supabase.from(“profiles”).select(”*”).neq(“email”, COACH_EMAIL);
+setClients(data || []);
+const c = {};
+for (const p of (data || [])) {
+const { count } = await supabase.from(“daily_checkins”).select(”*”, { count: “exact”, head: true }).eq(“client_id”, p.id);
+c[p.id] = count || 0;
+}
+setCounts(c);
+setLoading(false);
+};
+load();
+}, []);
+
+if (loading) return <div className="spinner" />;
+
+return (
+<div>
+<div className="page-title">Coach Dashboard</div>
+<div className="page-sub">V12 System · All Clients</div>
+<div className=“grid-4” style={{ marginBottom: 24 }}>
+<div className="stat-tile"><div className="stat-label">Total Clients</div><div className="stat-value">{clients.length}</div></div>
+<div className="stat-tile"><div className="stat-label">Total Check-ins</div><div className="stat-value">{Object.values(counts).reduce((a, b) => a + b, 0)}</div></div>
+<div className="stat-tile"><div className="stat-label">Active Programs</div><div className="stat-value">{clients.length}</div></div>
+<div className="stat-tile"><div className="stat-label">System</div><div className=“stat-value” style={{ fontSize: 20 }}>V12</div></div>
+</div>
+<div className="card">
+<div style={{ display: “flex”, justifyContent: “space-between”, alignItems: “center”, marginBottom: 16 }}>
+<div className=“card-title” style={{ margin: 0 }}>Client Roster</div>
+<button className=“btn btn-teal btn-sm” onClick={() => setPage(“clients”)}>Manage Clients</button>
+</div>
 {clients.length === 0 && <div style={{ color: “var(–muted)”, fontSize: 13, padding: “20px 0” }}>No clients yet. Share the app URL with your clients.</div>}
 {clients.map((c, i) => (
 <div className=“client-row” key={c.id} onClick={() => setPage(“clients”)}>
@@ -530,9 +792,42 @@ return (
 <tr key={ex.id}>
 <td style={{ fontWeight: 500 }}>{ex.name}</td>
 <td style={{ color: “var(–muted)” }}>{ex.category || “—”}</td>
-{clients.length === 0 && <div style={{ color: “var(–muted)”, fontSize: 13 }}>No clients yet.</div>}
+<td><span className={`badge ${ex.is_bodyweight ? "badge-grey" : "badge-orange"}`}>{ex.is_bodyweight ? “Bodyweight” : “Weighted”}</span></td>
+<td><button className=“btn btn-danger btn-sm” onClick={() => deleteExercise(ex.id)}>Remove</button></td>
+</tr>
+))}
+</tbody>
+</table>
+</div>
+</>
+)}
 </div>
 );
 }
 
+function CoachProgressView() {
+const [clients, setClients] = useState([]);
+const [selected, setSelected] = useState(null);
+const [loading, setLoading] = useState(true);
 
+useEffect(() => {
+supabase.from(“profiles”).select(”*”).neq(“email”, COACH_EMAIL)
+.then(({ data }) => { setClients(data || []); if (data && data.length > 0) setSelected(data[0]); setLoading(false); });
+}, []);
+
+if (loading) return <div className="spinner" />;
+
+return (
+<div>
+<div className="page-title">All Progress</div>
+<div className="page-sub">View any client’s full progress data</div>
+<div style={{ display: “flex”, gap: 8, flexWrap: “wrap”, marginBottom: 24 }}>
+{clients.map(c => (
+<button key={c.id} className={`radio-btn ${selected?.id === c.id ? "active" : ""}`} onClick={() => setSelected(c)}>{c.name || c.email}</button>
+))}
+</div>
+{selected && <ProgressCharts profile={selected} />}
+{clients.length === 0 && <div style={{ color: “var(–muted)”, fontSize: 13 }}>No clients yet.</div>}
+</div>
+);
+}
