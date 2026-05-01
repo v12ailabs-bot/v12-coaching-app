@@ -64,7 +64,8 @@ export default function App() {
   const logout = async () => { await supabase.auth.signOut(); setProfile(null); setPage("dashboard"); };
 
   if (user === undefined) return <><style>{css}</style><div className="spinner"/></>;
-  if (!user || !profile) return <><style>{css}</style><Login/></>;
+  if (!user) return <><style>{css}</style><Login/></>;
+  if (user && !profile) return <><style>{css}</style><div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><div className="spinner"/></div></>;
 
   const isCoach = profile.role === "coach" || profile.email === COACH_EMAIL;
 
@@ -286,7 +287,7 @@ function ClientHome({ profile, setPage }) {
               </LineChart>
             </ResponsiveContainer>
           </ChartCard>
-          <ChartCard title="Energy & Sleep — 14 Days" sub="Trend">
+          <ChartCard title="Energy and Sleep — 14 Days" sub="Trend">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={checkins.slice(-14)}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -339,14 +340,14 @@ function DailyCheckin({ profile, onDone }) {
       <PageTitle title="Daily Check-In" sub={`${todayStr()}${existing?" · Updating today":""}`}/>
       <Card>
         <div className="cg" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <Field label="⚖ Weight (lbs)"><Input type="number" step="0.1" value={form.weight} onChange={e=>set("weight",e.target.value)} placeholder="185.0"/></Field>
+          <Field label="Weight (lbs)"><Input type="number" step="0.1" value={form.weight} onChange={e=>set("weight",e.target.value)} placeholder="185.0"/></Field>
           <div/>
-          <SliderRow label="😴 Sleep Quality" val={form.sleep} min={1} max={10} sfx="/10" onChange={v=>set("sleep",v)}/>
-          <SliderRow label="⚡ Energy Level" val={form.energy} min={1} max={10} sfx="/10" onChange={v=>set("energy",v)}/>
-          <SliderRow label="🧠 Mood" val={form.mood} min={1} max={10} sfx="/10" onChange={v=>set("mood",v)}/>
-          <SliderRow label="💧 Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
-          <Field label="🥗 Nutrition Today"><RadioGroup options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Field>
-          <Field label="💪 Training Today"><RadioGroup options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} capitalize/></Field>
+          <SliderRow label="Sleep Quality" val={form.sleep} min={1} max={10} sfx="/10" onChange={v=>set("sleep",v)}/>
+          <SliderRow label="Energy Level" val={form.energy} min={1} max={10} sfx="/10" onChange={v=>set("energy",v)}/>
+          <SliderRow label="Mood" val={form.mood} min={1} max={10} sfx="/10" onChange={v=>set("mood",v)}/>
+          <SliderRow label="Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
+          <Field label="Nutrition Today"><RadioGroup options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Field>
+          <Field label="Training Today"><RadioGroup options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} capitalize/></Field>
         </div>
         <div style={{marginTop:20}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Log Check-In"}</Btn></div>
       </Card>
@@ -381,7 +382,7 @@ function WeeklyCheckin({ profile, onDone }) {
     <div>
       <PageTitle title="Weekly Check-In" sub={`Week of ${weekStart}`}/>
       <Card>
-        <CardTitle>📏 Measurements (inches)</CardTitle>
+        <CardTitle>Measurements (inches)</CardTitle>
         <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
           {["chest","waist","hips","arms"].map(m=>(
             <Field key={m} label={m.charAt(0).toUpperCase()+m.slice(1)}><Input type="number" step="0.1" value={form[m]} onChange={e=>set(m,e.target.value)} placeholder="0.0"/></Field>
@@ -412,16 +413,14 @@ function Progress({ profile }) {
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
+  const tabStyle = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent",background:"none",border:"none",borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent"});
 
   return (
     <div>
       <PageTitle title="Progress" sub="Your data over time"/>
       <div style={{display:"flex",borderBottom:`1px solid ${S.border}`,marginBottom:24}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["goals","Goals"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setTab(id)}
-            style={{padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent",background:"none",border:"none",borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent"}}>
-            {label}
-          </button>
+          <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
         ))}
       </div>
 
@@ -444,7 +443,7 @@ function Progress({ profile }) {
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                 <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={6}/>
                 <YAxis tick={false}/>
-                <Tooltip {...TT} formatter={v=>[v?"✅ Done":"Rest/Missed",""]}/>
+                <Tooltip {...TT} formatter={v=>[v?"Done":"Rest/Missed",""]}/>
                 <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
@@ -490,7 +489,7 @@ function Progress({ profile }) {
 
       {tab==="goals" && (weekly.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <ChartCard title="Goal Progress" sub="Weekly %">
+          <ChartCard title="Goal Progress" sub="Weekly percent">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weekly}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -561,7 +560,7 @@ function Workouts({ profile }) {
   return (
     <div>
       <PageTitle title="Workout Log" sub="Track your strength progression"/>
-      {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>✅ Session logged!</div>}
+      {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>Session logged!</div>}
       {exercises.length===0?(
         <Card style={{textAlign:"center",padding:48}}>
           <div style={{fontSize:32,marginBottom:12}}>🏋</div>
@@ -581,7 +580,7 @@ function Workouts({ profile }) {
           {selectedEx&&(
             <>
               <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-                <ChartCard title={`${selectedEx.name} — ${selectedEx.is_bodyweight?"Reps":"Weight (lbs)"}`} sub="Progress over time">
+                <ChartCard title={`${selectedEx.name} Progress`} sub={selectedEx.is_bodyweight?"Reps over time":"Weight (lbs) over time"}>
                   {chartData.length===0
                     ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:S.muted,fontSize:13}}>Log sessions to see chart</div>
                     :<ResponsiveContainer width="100%" height="100%">
@@ -630,15 +629,15 @@ function Workouts({ profile }) {
                   </div>
                 )}
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead><tr>{["Date","Weight","Reps","Set #","Time"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:`1px solid ${S.border}`}}>{h}</th>)}</tr></thead>
+                  <thead><tr>{["Date","Weight","Reps","Set","Time"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:`1px solid ${S.border}`}}>{h}</th>)}</tr></thead>
                   <tbody>
                     {[...logs].reverse().map((row,i)=>(
-                      <tr key={i} style={{borderBottom:`1px solid ${S.border}`}}>
-                        <td style={{padding:"11px 14px",fontSize:13}}>{row.date}</td>
-                        <td style={{padding:"11px 14px",fontSize:13}}>{row.weight?`${row.weight} lbs`:"BW"}</td>
-                        <td style={{padding:"11px 14px",fontSize:13}}>{row.reps||"—"}</td>
-                        <td style={{padding:"11px 14px",fontSize:13}}>{row.sets}</td>
-                        <td style={{padding:"11px 14px",fontSize:13}}>{row.time||"—"}</td>
+                      <tr key={i}>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>{row.date}</td>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>{row.weight?`${row.weight} lbs`:"BW"}</td>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>{row.reps||"—"}</td>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>{row.sets}</td>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>{row.time||"—"}</td>
                       </tr>
                     ))}
                     {logs.length===0&&<tr><td colSpan={5} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
@@ -788,7 +787,7 @@ function ClientsPanel() {
                 </div>
                 <div style={{display:"flex",gap:10,marginTop:8}}>
                   <Btn sm onClick={addEx} disabled={saving}>{saving?"Saving...":"Add Exercise"}</Btn>
-                  <button onClick={()=>setShowAdd(false)} style={{...btn({padding:"7px 14px",fontSize:10}),background:"transparent",color:S.text,border:`1px solid ${S.border}`}}>Cancel</button>
+                  <button onClick={()=>setShowAdd(false)} style={{padding:"7px 14px",fontSize:10,background:"transparent",color:S.text,border:`1px solid ${S.border}`,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
                 </div>
               </div>
             )}
@@ -797,15 +796,15 @@ function ClientsPanel() {
               <thead><tr>{["Exercise","Category","Type",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:`1px solid ${S.border}`}}>{h}</th>)}</tr></thead>
               <tbody>
                 {exercises.map(ex=>(
-                  <tr key={ex.id} style={{borderBottom:`1px solid ${S.border}`}}>
-                    <td style={{padding:"11px 14px",fontSize:13,fontWeight:500}}>{ex.name}</td>
-                    <td style={{padding:"11px 14px",fontSize:13,color:S.muted}}>{ex.category||"—"}</td>
-                    <td style={{padding:"11px 14px",fontSize:13}}>
+                  <tr key={ex.id}>
+                    <td style={{padding:"11px 14px",fontSize:13,fontWeight:500,borderBottom:`1px solid ${S.border}`}}>{ex.name}</td>
+                    <td style={{padding:"11px 14px",fontSize:13,color:S.muted,borderBottom:`1px solid ${S.border}`}}>{ex.category||"—"}</td>
+                    <td style={{padding:"11px 14px",fontSize:13,borderBottom:`1px solid ${S.border}`}}>
                       <span style={{padding:"3px 10px",fontSize:10,fontWeight:600,background:ex.is_bodyweight?"rgba(102,102,112,.2)":"rgba(255,77,0,.15)",color:ex.is_bodyweight?S.muted:S.accent}}>
                         {ex.is_bodyweight?"Bodyweight":"Weighted"}
                       </span>
                     </td>
-                    <td style={{padding:"11px 14px"}}><Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn></td>
+                    <td style={{padding:"11px 14px",borderBottom:`1px solid ${S.border}`}}><Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn></td>
                   </tr>
                 ))}
               </tbody>
