@@ -32,40 +32,82 @@ const css = `
   @media(max-width:768px){.sidebar{display:none!important}.g2,.g3,.g4,.cg{grid-template-columns:1fr!important}.main{padding:16px!important}}
 `;
 
-const btn = (extra) => ({
+const btnStyle = (extra) => ({
   display:"inline-flex",alignItems:"center",justifyContent:"center",
   padding:"12px 24px",fontSize:12,fontWeight:600,letterSpacing:"1.5px",
   textTransform:"uppercase",cursor:"pointer",border:"none",transition:"all .2s",...extra
 });
 
+const Spinner = () => (
+  <div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
+    <div className="spinner"/>
+  </div>
+);
+
 export default function App() {
-  const [user, setUser] = useState(undefined);
+  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [profileLoading, setProfileLoading] = useState(false);
   const [page, setPage] = useState("dashboard");
 
-  const loadProfile = useCallback(async (uid) => {
-    const { data } = await supabase.from("profiles").select("*").eq("id", uid).single();
-    if (data) setProfile(data);
+  const loadProfile = useCallback(async (id) => {
+    try {
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", id).maybeSingle();
+      if (error) { console.error(error); return null; }
+      setProfile(data);
+      return data;
+    } catch (err) {
+      console.error(err);
+      return null;
+    }
   }, []);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session ? session.user : null);
-      if (session) loadProfile(session.user.id);
-    });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_e, session) => {
-      setUser(session ? session.user : null);
-      if (session) loadProfile(session.user.id);
-      else setProfile(null);
-    });
-    return () => subscription.unsubscribe();
-  }, [loadProfile]);
+    let mounted = true;
 
-  const logout = async () => { await supabase.auth.signOut(); setProfile(null); setPage("dashboard"); };
+    const initializeAuth = async () => {
+      setAuthLoading(true);
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!mounted) return;
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        setProfileLoading(true);
+        await loadProfile(currentUser.id);
+        if (mounted) setProfileLoading(false);
+      }
+      setAuthLoading(false);
+    };
 
-  if (user === undefined) return <><style>{css}</style><div className="spinner"/></>;
+    initializeAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      const currentUser = session?.user ?? null;
+      setUser(currentUser);
+      if (currentUser) {
+        setProfileLoading(true);
+        await loadProfile(currentUser.id);
+        setProfileLoading(false);
+      } else {
+        setProfile(null);
+      }
+    });
+
+    return () => { mounted = false; subscription.unsubscribe(); };
+  }, []);
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
+    setPage("dashboard");
+  };
+
+  if (authLoading) return <><style>{css}</style><Spinner/></>;
   if (!user) return <><style>{css}</style><Login/></>;
-  if (user && !profile) return <><style>{css}</style><div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}><div className="spinner"/></div></>;
+  if (profileLoading) return <><style>{css}</style><Spinner/></>;
+  if (!profile) return <><style>{css}</style><Spinner/></>;
 
   const isCoach = profile.role === "coach" || profile.email === COACH_EMAIL;
 
@@ -127,10 +169,10 @@ function Login() {
     setLoading(false);
   };
 
-  const field = (label, type, val, onChange, placeholder) => (
+  const inp = (label, type, val, onChange, ph) => (
     <div style={{marginBottom:16}}>
       <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>{label}</div>
-      <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      <input type={type} value={val} onChange={e=>onChange(e.target.value)} placeholder={ph}
         onKeyDown={e=>e.key==="Enter"&&(tab==="signin"?signIn():signUp())}
         style={{width:"100%",background:S.surface2,border:`1px solid ${S.border}`,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}/>
     </div>
@@ -150,13 +192,13 @@ function Login() {
             </button>
           ))}
         </div>
-        {tab==="signup" && field("Full Name","text",name,setName,"Your full name")}
-        {field("Email","email",email,setEmail,"you@gmail.com")}
-        {field("Password","password",password,setPassword,"••••••••")}
+        {tab==="signup" && inp("Full Name","text",name,setName,"Your full name")}
+        {inp("Email","email",email,setEmail,"you@gmail.com")}
+        {inp("Password","password",password,setPassword,"••••••••")}
         {error && <div style={{color:S.accent,fontSize:12,marginBottom:12}}>{error}</div>}
         {success && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 16px",fontSize:12,fontWeight:600,marginBottom:12}}>✅ {success}</div>}
         <button onClick={tab==="signin"?signIn:signUp} disabled={loading}
-          style={{...btn({width:"100%",padding:14}),background:S.accent,color:"white",opacity:loading?.5:1}}>
+          style={{...btnStyle({width:"100%",padding:14}),background:S.accent,color:"white",opacity:loading?0.5:1}}>
           {loading?"Please wait...":tab==="signin"?"Sign In":"Create Account"}
         </button>
         <p style={{marginTop:16,fontSize:11,color:S.muted,textAlign:"center",lineHeight:1.7}}>
@@ -176,7 +218,7 @@ function TopBar({ profile, isCoach, onLogout }) {
         <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>
           {avatarFrom(profile.name||profile.email)}
         </div>
-        <button onClick={onLogout} style={{...btn({}),background:"transparent",color:S.text,border:`1px solid ${S.border}`,padding:"7px 14px",fontSize:10}}>Sign out</button>
+        <button onClick={onLogout} style={{...btnStyle({}),background:"transparent",color:S.text,border:`1px solid ${S.border}`,padding:"7px 14px",fontSize:10}}>Sign out</button>
       </div>
     </div>
   );
@@ -212,8 +254,8 @@ const Stat = ({label,value,unit}) => (
   </div>
 );
 const Field = ({label,children}) => <div style={{marginBottom:16}}><label style={{display:"block",fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>{label}</label>{children}</div>;
-const Input = (props) => <input {...props} style={{width:"100%",background:S.surface2,border:`1px solid ${S.border}`,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",...props.style}}/>;
-const SliderRow = ({label,val,min,max,sfx,onChange}) => (
+const Inp = (props) => <input {...props} style={{width:"100%",background:S.surface2,border:`1px solid ${S.border}`,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",...props.style}}/>;
+const Slider = ({label,val,min,max,sfx,onChange}) => (
   <div>
     <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:S.muted,marginBottom:6}}>
       <span>{label}</span><span style={{color:S.accent,fontWeight:600}}>{val}{sfx}</span>
@@ -221,22 +263,22 @@ const SliderRow = ({label,val,min,max,sfx,onChange}) => (
     <input type="range" min={min} max={max} value={val} onChange={e=>onChange(+e.target.value)}/>
   </div>
 );
-const RadioGroup = ({options,value,onChange,capitalize}) => (
+const RadioG = ({options,value,onChange,cap}) => (
   <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
     {options.map(opt=>(
       <button key={opt} onClick={()=>onChange(opt)}
-        style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:`1px solid ${value===opt?S.accent:S.border}`,background:value===opt?"rgba(255,77,0,.08)":"transparent",color:value===opt?S.accent:S.muted,textTransform:capitalize?"capitalize":"none"}}>
+        style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:`1px solid ${value===opt?S.accent:S.border}`,background:value===opt?"rgba(255,77,0,.08)":"transparent",color:value===opt?S.accent:S.muted,textTransform:cap?"capitalize":"none"}}>
         {opt}
       </button>
     ))}
   </div>
 );
-const ChartCard = ({title,sub,children}) => (
+const CC = ({title,sub,children}) => (
   <Card><div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,marginBottom:2}}>{title}</div><div style={{fontSize:11,color:S.muted,marginBottom:14}}>{sub}</div><div style={{height:230}}>{children}</div></Card>
 );
 const Btn = ({children,onClick,disabled,teal,sm,danger}) => (
   <button onClick={onClick} disabled={disabled}
-    style={{...btn(sm?{padding:"7px 14px",fontSize:10}:{}),background:danger?"#c0392b":teal?S.accent2:S.accent,color:teal?"#0A0A0B":"white",opacity:disabled?.5:1}}>
+    style={{...btnStyle(sm?{padding:"7px 14px",fontSize:10}:{}),background:danger?"#c0392b":teal?S.accent2:S.accent,color:teal?"#0A0A0B":"white",opacity:disabled?0.5:1}}>
     {children}
   </button>
 );
@@ -276,7 +318,7 @@ function ClientHome({ profile, setPage }) {
       </div>
       {checkins.length>1?(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <ChartCard title="Bodyweight Trend" sub="Last 30 days">
+          <CC title="Bodyweight Trend" sub="Last 30 days">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={checkins.slice(-30)}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -286,8 +328,8 @@ function ClientHome({ profile, setPage }) {
                 <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={false}/>
               </LineChart>
             </ResponsiveContainer>
-          </ChartCard>
-          <ChartCard title="Energy and Sleep — 14 Days" sub="Trend">
+          </CC>
+          <CC title="Energy and Sleep — 14 Days" sub="Trend">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={checkins.slice(-14)}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -298,7 +340,7 @@ function ClientHome({ profile, setPage }) {
                 <Line type="monotone" dataKey="sleep" stroke={S.accent2} strokeWidth={2} dot={false} name="Sleep"/>
               </LineChart>
             </ResponsiveContainer>
-          </ChartCard>
+          </CC>
         </div>
       ):(
         <Card style={{textAlign:"center",padding:48}}>
@@ -329,25 +371,24 @@ function DailyCheckin({ profile, onDone }) {
     const entry = {client_id:profile.id,date:todayStr(),...form,weight:parseFloat(form.weight)||null};
     if(existing) await supabase.from("daily_checkins").update(entry).eq("id",existing.id);
     else await supabase.from("daily_checkins").insert(entry);
-    setSaved(true);setLoading(false);
-    setTimeout(onDone,1400);
+    setSaved(true);setLoading(false);setTimeout(onDone,1400);
   };
 
-  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>✅ Check-in logged!</div></div>;
+  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>Check-in logged!</div></div>;
 
   return (
     <div>
       <PageTitle title="Daily Check-In" sub={`${todayStr()}${existing?" · Updating today":""}`}/>
       <Card>
         <div className="cg" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <Field label="Weight (lbs)"><Input type="number" step="0.1" value={form.weight} onChange={e=>set("weight",e.target.value)} placeholder="185.0"/></Field>
+          <Field label="Weight (lbs)"><Inp type="number" step="0.1" value={form.weight} onChange={e=>set("weight",e.target.value)} placeholder="185.0"/></Field>
           <div/>
-          <SliderRow label="Sleep Quality" val={form.sleep} min={1} max={10} sfx="/10" onChange={v=>set("sleep",v)}/>
-          <SliderRow label="Energy Level" val={form.energy} min={1} max={10} sfx="/10" onChange={v=>set("energy",v)}/>
-          <SliderRow label="Mood" val={form.mood} min={1} max={10} sfx="/10" onChange={v=>set("mood",v)}/>
-          <SliderRow label="Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
-          <Field label="Nutrition Today"><RadioGroup options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Field>
-          <Field label="Training Today"><RadioGroup options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} capitalize/></Field>
+          <Slider label="Sleep Quality" val={form.sleep} min={1} max={10} sfx="/10" onChange={v=>set("sleep",v)}/>
+          <Slider label="Energy Level" val={form.energy} min={1} max={10} sfx="/10" onChange={v=>set("energy",v)}/>
+          <Slider label="Mood" val={form.mood} min={1} max={10} sfx="/10" onChange={v=>set("mood",v)}/>
+          <Slider label="Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
+          <Field label="Nutrition Today"><RadioG options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Field>
+          <Field label="Training Today"><RadioG options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} cap/></Field>
         </div>
         <div style={{marginTop:20}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Log Check-In"}</Btn></div>
       </Card>
@@ -376,7 +417,7 @@ function WeeklyCheckin({ profile, onDone }) {
     setSaved(true);setLoading(false);setTimeout(onDone,1400);
   };
 
-  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>✅ Weekly check-in logged!</div></div>;
+  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>Weekly check-in logged!</div></div>;
 
   return (
     <div>
@@ -385,12 +426,12 @@ function WeeklyCheckin({ profile, onDone }) {
         <CardTitle>Measurements (inches)</CardTitle>
         <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
           {["chest","waist","hips","arms"].map(m=>(
-            <Field key={m} label={m.charAt(0).toUpperCase()+m.slice(1)}><Input type="number" step="0.1" value={form[m]} onChange={e=>set(m,e.target.value)} placeholder="0.0"/></Field>
+            <Field key={m} label={m.charAt(0).toUpperCase()+m.slice(1)}><Inp type="number" step="0.1" value={form[m]} onChange={e=>set(m,e.target.value)} placeholder="0.0"/></Field>
           ))}
         </div>
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-          <SliderRow label="Overall Feeling" val={form.feeling} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
-          <SliderRow label="Goal Progress" val={form.goal_progress} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
+          <Slider label="Overall Feeling" val={form.feeling} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
+          <Slider label="Goal Progress" val={form.goal_progress} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
         </div>
         <Field label="Notes / Goal Review">
           <textarea rows={3} value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="What went well? What needs work?"
@@ -413,20 +454,20 @@ function Progress({ profile }) {
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
-  const tabStyle = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent",background:"none",border:"none",borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent"});
+  const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?`2px solid ${S.accent}`:"2px solid transparent"});
 
   return (
     <div>
       <PageTitle title="Progress" sub="Your data over time"/>
       <div style={{display:"flex",borderBottom:`1px solid ${S.border}`,marginBottom:24}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["goals","Goals"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setTab(id)} style={tabStyle(id)}>{label}</button>
+          <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
         ))}
       </div>
 
       {tab==="weight" && (daily.length<2?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <ChartCard title="Bodyweight Trend" sub="Last 30 days">
+          <CC title="Bodyweight Trend" sub="Last 30 days">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={daily.slice(-30)}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -436,8 +477,8 @@ function Progress({ profile }) {
                 <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{r:2}}/>
               </LineChart>
             </ResponsiveContainer>
-          </ChartCard>
-          <ChartCard title="Workout Completion" sub="Last 30 days">
+          </CC>
+          <CC title="Workout Completion" sub="Last 30 days">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={daily.slice(-30).map(d=>({...d,done:d.workout==="completed"?1:0}))}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -447,14 +488,14 @@ function Progress({ profile }) {
                 <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
-          </ChartCard>
+          </CC>
         </div>
       ))}
 
       {tab==="wellness" && (daily.length<2?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["energy",S.accent,"Energy"],["sleep",S.accent2,"Sleep Quality"],["mood","#8B5CF6","Mood"],["water","#3B82F6","Water (glasses)"]].map(([key,color,label])=>(
-            <ChartCard key={key} title={label} sub="14-day trend">
+            <CC key={key} title={label} sub="14-day trend">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={daily.slice(-14)}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -464,7 +505,7 @@ function Progress({ profile }) {
                   <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={false}/>
                 </LineChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </CC>
           ))}
         </div>
       ))}
@@ -472,7 +513,7 @@ function Progress({ profile }) {
       {tab==="measurements" && (weekly.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
-            <ChartCard key={key} title={`${label} (inches)`} sub="Weekly tracking">
+            <CC key={key} title={`${label} (inches)`} sub="Weekly tracking">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={weekly}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -482,14 +523,14 @@ function Progress({ profile }) {
                   <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
                 </LineChart>
               </ResponsiveContainer>
-            </ChartCard>
+            </CC>
           ))}
         </div>
       ))}
 
       {tab==="goals" && (weekly.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <ChartCard title="Goal Progress" sub="Weekly percent">
+          <CC title="Goal Progress" sub="Weekly percent">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weekly}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -499,8 +540,8 @@ function Progress({ profile }) {
                 <Bar dataKey="goal_progress" fill={S.accent} radius={[4,4,0,0]}/>
               </BarChart>
             </ResponsiveContainer>
-          </ChartCard>
-          <ChartCard title="Weekly Feeling" sub="Overall rating">
+          </CC>
+          <CC title="Weekly Feeling" sub="Overall rating">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={weekly}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -510,7 +551,7 @@ function Progress({ profile }) {
                 <Line type="monotone" dataKey="feeling" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
               </LineChart>
             </ResponsiveContainer>
-          </ChartCard>
+          </CC>
         </div>
       ))}
     </div>
@@ -580,7 +621,7 @@ function Workouts({ profile }) {
           {selectedEx&&(
             <>
               <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-                <ChartCard title={`${selectedEx.name} Progress`} sub={selectedEx.is_bodyweight?"Reps over time":"Weight (lbs) over time"}>
+                <CC title={`${selectedEx.name} Progress`} sub={selectedEx.is_bodyweight?"Reps over time":"Weight over time"}>
                   {chartData.length===0
                     ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:S.muted,fontSize:13}}>Log sessions to see chart</div>
                     :<ResponsiveContainer width="100%" height="100%">
@@ -593,8 +634,8 @@ function Workouts({ profile }) {
                       </LineChart>
                     </ResponsiveContainer>
                   }
-                </ChartCard>
-                <ChartCard title="Reps per Session" sub="Top set reps over time">
+                </CC>
+                <CC title="Reps per Session" sub="Top set reps over time">
                   {chartData.length===0
                     ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:S.muted,fontSize:13}}>No data yet</div>
                     :<ResponsiveContainer width="100%" height="100%">
@@ -607,7 +648,7 @@ function Workouts({ profile }) {
                       </BarChart>
                     </ResponsiveContainer>
                   }
-                </ChartCard>
+                </CC>
               </div>
               <Card>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -779,10 +820,10 @@ function ClientsPanel() {
             {showAdd&&(
               <div style={{background:S.surface2,border:`1px solid ${S.border}`,padding:20,marginBottom:16}}>
                 <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
-                  <Field label="Exercise Name"><Input type="text" value={newEx.name} onChange={e=>setNewEx(p=>({...p,name:e.target.value}))} placeholder="e.g. Squat"/></Field>
-                  <Field label="Category"><Input type="text" value={newEx.category} onChange={e=>setNewEx(p=>({...p,category:e.target.value}))} placeholder="e.g. Lower Body"/></Field>
+                  <Field label="Exercise Name"><Inp type="text" value={newEx.name} onChange={e=>setNewEx(p=>({...p,name:e.target.value}))} placeholder="e.g. Squat"/></Field>
+                  <Field label="Category"><Inp type="text" value={newEx.category} onChange={e=>setNewEx(p=>({...p,category:e.target.value}))} placeholder="e.g. Lower Body"/></Field>
                   <Field label="Type">
-                    <RadioGroup options={["Weighted","Bodyweight"]} value={newEx.is_bodyweight?"Bodyweight":"Weighted"} onChange={v=>setNewEx(p=>({...p,is_bodyweight:v==="Bodyweight"}))}/>
+                    <RadioG options={["Weighted","Bodyweight"]} value={newEx.is_bodyweight?"Bodyweight":"Weighted"} onChange={v=>setNewEx(p=>({...p,is_bodyweight:v==="Bodyweight"}))}/>
                   </Field>
                 </div>
                 <div style={{display:"flex",gap:10,marginTop:8}}>
