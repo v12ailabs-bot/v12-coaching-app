@@ -2,154 +2,560 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
+import { useState, useEffect, useRef, useCallback } from "react";
+
+import { createClient } from "@supabase/supabase-js";
+
+
+
 const supabase = createClient(
+
   "https://dbmkdrytjeppcbhuzkxh.supabase.co",
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRibWtkcnl0amVwcGNiaHV6a3hoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzcyMzU0ODEsImV4cCI6MjA5MjgxMTQ4MX0.D9UY3I0yEYDw8lpCwRHqwx2wSN39yUKvEM5PsQiQmlM"
+
+  "YOUR_ANON_KEY_HERE",
+
+  {
+
+    auth: {
+
+      persistSession: true,
+
+      autoRefreshToken: true,
+
+      detectSessionInUrl: true,
+
+    },
+
+  }
+
 );
+
+
 
 const COACH_EMAIL = "coach@v12system.com";
-const COLORS = ["#FF4D00","#00C9A7","#8B5CF6","#3B82F6","#F59E0B","#EC4899"];
-const TT = { contentStyle: { background: "#111113", border: "1px solid #222228", fontSize: 12 } };
-const todayStr = () => new Date().toISOString().split("T")[0];
-const avatarFrom = (name) => (name || "").split(" ").map(w => w[0]).join("").slice(0,2).toUpperCase() || "?";
 
-const S = {
-  bg: "#0A0A0B", surface: "#111113", surface2: "#18181C",
-  border: "#222228", accent: "#FF4D00", accent2: "#00C9A7",
-  text: "#F0EEE8", muted: "#666670"
-};
 
-const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap');
-  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-  body{background:${S.bg};color:${S.text};font-family:'DM Sans',sans-serif}
-  input,textarea,button,select{font-family:'DM Sans',sans-serif}
-  .spinner{width:36px;height:36px;border:3px solid ${S.border};border-top-color:${S.accent};border-radius:50%;animation:spin .7s linear infinite}
-  @keyframes spin{to{transform:rotate(360deg)}}
-  ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:${S.bg}}::-webkit-scrollbar-thumb{background:${S.border}}
-  input[type=range]{width:100%;-webkit-appearance:none;height:3px;background:${S.border};outline:none}
-  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:${S.accent};cursor:pointer}
-  @media(max-width:768px){.sidebar{display:none!important}.g2,.g3,.g4,.cg{grid-template-columns:1fr!important}.main{padding:16px!important}}
-`;
-
-const SpinScreen = () => (
-  <div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
-    <div className="spinner"/>
-  </div>
-);
-
-const bS = (extra) => ({
-  display:"inline-flex",alignItems:"center",justifyContent:"center",
-  padding:"12px 24px",fontSize:12,fontWeight:600,letterSpacing:"1.5px",
-  textTransform:"uppercase",cursor:"pointer",border:"none",transition:"all .2s",...extra
-});
 
 export default function App() {
-  const [user, setUser] = useState(undefined);
-  const [profile, setProfile] = useState(undefined);
-  const [isReady, setIsReady] = useState(false);
-  const [page, setPage] = useState("dashboard");
-  const isInitializing = useRef(true);
-  const authSubscription = useRef(null);
 
-  const loadProfile = async (userId) => {
-    if (!userId) { setProfile(null); return null; }
-    try {
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
-      if (error) { console.error("Profile error:", error); setProfile(null); return null; }
-      setProfile(data);
-      return data;
-    } catch (err) {
-      console.error("Profile exception:", err);
+  const [user, setUser] = useState(null);
+
+  const [profile, setProfile] = useState(null);
+
+  const [loading, setLoading] = useState(true);
+
+  const authListenerRef = useRef(null);
+
+
+
+  // LOAD PROFILE
+
+  const loadProfile = useCallback(async (userData) => {
+
+    if (!userData) {
+
       setProfile(null);
+
       return null;
+
     }
-  };
 
-  useEffect(() => {
-    let mounted = true;
 
-    const init = async () => {
-      isInitializing.current = true;
-      const { data: { session } } = await supabase.auth.getSession();
-      const initialUser = session?.user ?? null;
-      if (!mounted) return;
-      setUser(initialUser);
-      if (initialUser) {
-        await loadProfile(initialUser.id);
-      } else {
-        setProfile(null);
+
+    try {
+
+      console.log("Loading profile for:", userData.id);
+
+
+
+      const { data, error } = await supabase
+
+        .from("profiles")
+
+        .select("*")
+
+        .eq("id", userData.id)
+
+        .maybeSingle();
+
+
+
+      if (error) {
+
+        console.error("PROFILE FETCH ERROR:", error);
+
+
+
+        // fallback profile so app doesn't break
+
+        const fallbackProfile = {
+
+          id: userData.id,
+
+          email: userData.email,
+
+          role:
+
+            userData.email === COACH_EMAIL
+
+              ? "coach"
+
+              : "client",
+
+          name:
+
+            userData.user_metadata?.name ||
+
+            userData.email,
+
+        };
+
+
+
+        setProfile(fallbackProfile);
+
+        return fallbackProfile;
+
       }
-      if (!mounted) return;
-      isInitializing.current = false;
-      setIsReady(true);
 
-      const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-        if (isInitializing.current) return;
-        const newUser = session?.user ?? null;
-        setUser(prev => {
-          if (prev?.id === newUser?.id) return prev;
-          return newUser;
-        });
-        if (newUser) {
-          await loadProfile(newUser.id);
-        } else {
-          setProfile(null);
+
+
+      // If profile row doesn't exist
+
+      if (!data) {
+
+        console.log("No profile found. Creating profile...");
+
+
+
+        const newProfile = {
+
+          id: userData.id,
+
+          email: userData.email,
+
+          role:
+
+            userData.email === COACH_EMAIL
+
+              ? "coach"
+
+              : "client",
+
+          name:
+
+            userData.user_metadata?.name ||
+
+            userData.email,
+
+        };
+
+
+
+        const { error: insertError } = await supabase
+
+          .from("profiles")
+
+          .insert(newProfile);
+
+
+
+        if (insertError) {
+
+          console.error(
+
+            "PROFILE INSERT ERROR:",
+
+            insertError
+
+          );
+
         }
-      });
 
-      authSubscription.current = subscription;
-    };
 
-    init();
 
-    return () => {
-      mounted = false;
-      if (authSubscription.current) authSubscription.current.unsubscribe();
-    };
+        setProfile(newProfile);
+
+        return newProfile;
+
+      }
+
+
+
+      console.log("PROFILE LOADED:", data);
+
+
+
+      setProfile(data);
+
+      return data;
+
+    } catch (err) {
+
+      console.error("PROFILE EXCEPTION:", err);
+
+
+
+      const fallbackProfile = {
+
+        id: userData.id,
+
+        email: userData.email,
+
+        role:
+
+          userData.email === COACH_EMAIL
+
+            ? "coach"
+
+            : "client",
+
+        name:
+
+          userData.user_metadata?.name ||
+
+          userData.email,
+
+      };
+
+
+
+      setProfile(fallbackProfile);
+
+      return fallbackProfile;
+
+    }
+
   }, []);
 
+
+
+  // INITIALIZE AUTH
+
+  useEffect(() => {
+
+    let mounted = true;
+
+
+
+    const initializeAuth = async () => {
+
+      try {
+
+        console.log("INITIALIZING AUTH");
+
+
+
+        const {
+
+          data: { session },
+
+          error,
+
+        } = await supabase.auth.getSession();
+
+
+
+        if (error) {
+
+          console.error("GET SESSION ERROR:", error);
+
+        }
+
+
+
+        if (!mounted) return;
+
+
+
+        const currentUser = session?.user ?? null;
+
+
+
+        console.log("INITIAL USER:", currentUser);
+
+
+
+        setUser(currentUser);
+
+
+
+        if (currentUser) {
+
+          await loadProfile(currentUser);
+
+        } else {
+
+          setProfile(null);
+
+        }
+
+
+
+        setLoading(false);
+
+
+
+        // AUTH LISTENER
+
+        const {
+
+          data: { subscription },
+
+        } = supabase.auth.onAuthStateChange(
+
+          async (event, session) => {
+
+            console.log("AUTH EVENT:", event);
+
+            console.log("SESSION:", session);
+
+
+
+            if (!mounted) return;
+
+
+
+            const authUser = session?.user ?? null;
+
+
+
+            // SIGNED OUT
+
+            if (!authUser) {
+
+              console.log("USER SIGNED OUT");
+
+
+
+              setUser(null);
+
+              setProfile(null);
+
+              return;
+
+            }
+
+
+
+            // SAME USER
+
+            if (authUser.id === user?.id) {
+
+              console.log("Same user session refreshed");
+
+              return;
+
+            }
+
+
+
+            console.log("SETTING USER:", authUser.id);
+
+
+
+            setUser(authUser);
+
+
+
+            await loadProfile(authUser);
+
+          }
+
+        );
+
+
+
+        authListenerRef.current = subscription;
+
+      } catch (err) {
+
+        console.error("AUTH INIT EXCEPTION:", err);
+
+      } finally {
+
+        if (mounted) {
+
+          setLoading(false);
+
+        }
+
+      }
+
+    };
+
+
+
+    initializeAuth();
+
+
+
+    return () => {
+
+      mounted = false;
+
+
+
+      if (authListenerRef.current) {
+
+        authListenerRef.current.unsubscribe();
+
+      }
+
+    };
+
+  }, [loadProfile]);
+
+
+
+  // LOGOUT
+
   const logout = async () => {
-    await supabase.auth.signOut();
+
+    try {
+
+      await supabase.auth.signOut();
+
+    } catch (err) {
+
+      console.error("LOGOUT ERROR:", err);
+
+    }
+
+
+
     setUser(null);
+
     setProfile(null);
-    setPage("dashboard");
+
   };
 
-  if (!isReady || user === undefined || profile === undefined) return <><style>{css}</style><SpinScreen/></>;
-  if (!user) return <><style>{css}</style><LoginScreen/></>;
 
-  const isCoach = profile?.role === "coach" || profile?.email === COACH_EMAIL;
+
+  // LOADING SCREEN
+
+  if (loading) {
+
+    return (
+
+      <div
+
+        style={{
+
+          minHeight: "100vh",
+
+          display: "flex",
+
+          alignItems: "center",
+
+          justifyContent: "center",
+
+          background: "#0A0A0B",
+
+          color: "white",
+
+        }}
+
+      >
+
+        Loading...
+
+      </div>
+
+    );
+
+  }
+
+
+
+  // NOT LOGGED IN
+
+  if (!user) {
+
+    return <LoginScreen />;
+
+  }
+
+
+
+  // PROFILE FALLBACK
+
+  if (!profile) {
+
+    return (
+
+      <div
+
+        style={{
+
+          minHeight: "100vh",
+
+          display: "flex",
+
+          alignItems: "center",
+
+          justifyContent: "center",
+
+          background: "#0A0A0B",
+
+          color: "white",
+
+        }}
+
+      >
+
+        Loading profile...
+
+      </div>
+
+    );
+
+  }
+
+
+
+  const isCoach =
+
+    profile?.role === "coach" ||
+
+    profile?.email === COACH_EMAIL;
+
+
+
+  // MAIN APP
 
   return (
-    <>
-      <style>{css}</style>
-      <div style={{minHeight:"100vh"}}>
-        <TopBar profile={profile} isCoach={isCoach} onLogout={logout}/>
-        <div style={{display:"flex",minHeight:"calc(100vh - 54px)"}}>
-          <Sidebar isCoach={isCoach} page={page} setPage={setPage}/>
-          <main className="main" style={{flex:1,padding:28,overflowY:"auto"}}>
-            {isCoach ? (
-              <>
-                {page==="dashboard" && <CoachHome setPage={setPage}/>}
-                {page==="clients" && <ClientsPanel/>}
-                {page==="progress" && <CoachProgress/>}
-              </>
-            ) : (
-              <>
-                {page==="dashboard" && <ClientHome profile={profile} setPage={setPage}/>}
-                {page==="daily" && <DailyCheckin profile={profile} onDone={()=>setPage("dashboard")}/>}
-                {page==="weekly" && <WeeklyCheckin profile={profile} onDone={()=>setPage("dashboard")}/>}
-                {page==="progress" && <Progress profile={profile}/>}
-                {page==="workouts" && <Workouts profile={profile}/>}
-              </>
-            )}
-          </main>
-        </div>
-      </div>
-    </>
+
+    <div>
+
+      {isCoach ? (
+
+        <CoachDashboard
+
+          profile={profile}
+
+          logout={logout}
+
+        />
+
+      ) : (
+
+        <ClientDashboard
+
+          profile={profile}
+
+          logout={logout}
+
+        />
+
+      )}
+
+    </div>
+
   );
+
 }
+
 
 function LoginScreen() {
   const [tab, setTab] = useState("signin");
