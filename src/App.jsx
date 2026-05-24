@@ -12,7 +12,7 @@ const supabase = createClient(
 
   "https://dbmkdrytjeppcbhuzkxh.supabase.co",
 
-  "YOUR_ANON_KEY_HERE",
+  "sb_publishable_fUmhHIYTbiIraSM7FA63iQ_yjMh4vNG",
 
   {
 
