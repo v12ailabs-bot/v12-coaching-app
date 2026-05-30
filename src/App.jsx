@@ -338,14 +338,9 @@ export default function App() {
 
 
 
-            // SAME USER
-
+                        // SAME USER - always update user and profile to ensure latest session data is used
             if (authUser.id === user?.id) {
-
-              console.log("Same user session refreshed");
-
-              return;
-
+              console.log("Same user session refreshed, updating user and profile.");
             }
 
 
