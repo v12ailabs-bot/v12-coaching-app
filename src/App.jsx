@@ -1,8 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from "react";
-import { createClient } from "@supabase/supabase-js";
+import { useState, useEffect, useRef, useCallback } from "react"
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+
 
 import { createClient } from "@supabase/supabase-js";
 
@@ -12,8 +11,8 @@ const supabase = createClient(
 
   "https://dbmkdrytjeppcbhuzkxh.supabase.co",
 
-  "sb_publishable_fUmhHIYTbiIraSM7FA63iQ_yjMh4vNG",
 
+  "sb_publishable_fUmhHIYTbiIraSM7FA63iQ_yjMh4vNG",
   {
 
     auth: {
