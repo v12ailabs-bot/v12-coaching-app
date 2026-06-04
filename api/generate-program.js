@@ -1,4 +1,4 @@
-import Anthropic from "@anthropic-ai/sdk";
+iport Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@supabase/supabase-js";
 
 const supabase = createClient(
