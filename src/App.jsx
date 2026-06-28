@@ -7,31 +7,107 @@ import { createClient } from "@supabase/supabase-js";
 
 
 
-const supabase = createClient(
+// Credentials come from Vite env vars; the literals are dev fallbacks so the
+// app keeps working locally without a .env. The anon/publishable key is safe
+// to ship to the browser. Set VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY in prod.
+const SUPABASE_URL =
+  import.meta.env.VITE_SUPABASE_URL || "https://dbmkdrytjeppcbhuzkxh.supabase.co";
+const SUPABASE_ANON_KEY =
+  import.meta.env.VITE_SUPABASE_ANON_KEY || "sb_publishable_fUmhHIYTbiIraSM7FA63iQ_yjMh4vNG";
 
-  "https://dbmkdrytjeppcbhuzkxh.supabase.co",
-
-
-  "sb_publishable_fUmhHIYTbiIraSM7FA63iQ_yjMh4vNG",
-  {
-
-    auth: {
-
-      persistSession: true,
-
-      autoRefreshToken: true,
-
-      detectSessionInUrl: true,
-
-    },
-
-  }
-
-);
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+  },
+});
 
 
 
 const COACH_EMAIL = "coach@v12system.com";
+
+
+
+// ---------------------------------------------------------------------------
+// DESIGN TOKENS + SHARED HELPERS
+// ---------------------------------------------------------------------------
+
+// Color palette used across the whole app.
+const S = {
+  bg: "#0A0A0B",
+  surface: "#141416",
+  surface2: "#1C1C20",
+  border: "#2A2A30",
+  text: "#F5F5F7",
+  muted: "#666670",
+  accent: "#FF4D00",
+  accent2: "#00C9A7",
+};
+
+// Avatar colors, cycled by index.
+const COLORS = ["#FF4D00", "#00C9A7", "#8B5CF6", "#3B82F6", "#F59E0B", "#EF4444"];
+
+// Base button style; pass overrides that are merged on top.
+const bS = (o = {}) => ({
+  border: "none",
+  cursor: "pointer",
+  fontWeight: 600,
+  letterSpacing: "1.5px",
+  textTransform: "uppercase",
+  fontSize: 12,
+  padding: "10px 20px",
+  ...o,
+});
+
+// Shared recharts tooltip styling.
+const TT = {
+  contentStyle: {
+    background: S.surface,
+    border: "1px solid " + S.border,
+    fontSize: 12,
+    color: S.text,
+  },
+  labelStyle: { color: S.muted },
+  itemStyle: { color: S.text },
+};
+
+// Today's date as YYYY-MM-DD.
+const todayStr = () => new Date().toISOString().split("T")[0];
+
+// Initials from a name ("Jane Doe" -> "JD") or email ("you@x.com" -> "Y").
+function avatarFrom(nameOrEmail = "") {
+  const s = String(nameOrEmail).trim();
+  if (!s) return "?";
+  const parts = s.split(/\s+/).filter(Boolean);
+  if (parts.length >= 2) {
+    return (parts[0][0] + parts[1][0]).toUpperCase();
+  }
+  return s[0].toUpperCase();
+}
+
+// Global CSS for things components reference via className (spinner, grids,
+// the display font, and range inputs). Injected once.
+function GlobalStyles() {
+  return (
+    <style>{`
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+      * { box-sizing: border-box; }
+      body { margin: 0; background: ${S.bg}; color: ${S.text};
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      .spinner { width: 32px; height: 32px; border-radius: 50%;
+        border: 3px solid ${S.border}; border-top-color: ${S.accent};
+        animation: spin 0.8s linear infinite; }
+      @keyframes spin { to { transform: rotate(360deg); } }
+      input[type="range"] { width: 100%; accent-color: ${S.accent}; }
+      @media (max-width: 720px) {
+        .sidebar { display: none; }
+        .g4 { grid-template-columns: repeat(2, 1fr) !important; }
+        .g2, .g3, .cg { grid-template-columns: 1fr !important; }
+      }
+    `}</style>
+  );
+}
 
 
 
@@ -431,31 +507,21 @@ export default function App() {
   if (loading) {
 
     return (
-
-      <div
-
-        style={{
-
-          minHeight: "100vh",
-
-          display: "flex",
-
-          alignItems: "center",
-
-          justifyContent: "center",
-
-          background: "#0A0A0B",
-
-          color: "white",
-
-        }}
-
-      >
-
-        Loading...
-
-      </div>
-
+      <>
+        <GlobalStyles />
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: S.bg,
+            color: S.text,
+          }}
+        >
+          <div className="spinner" />
+        </div>
+      </>
     );
 
   }
@@ -466,7 +532,12 @@ export default function App() {
 
   if (!user) {
 
-    return <LoginScreen />;
+    return (
+      <>
+        <GlobalStyles />
+        <LoginScreen />
+      </>
+    );
 
   }
 
@@ -477,31 +548,21 @@ export default function App() {
   if (!profile) {
 
     return (
-
-      <div
-
-        style={{
-
-          minHeight: "100vh",
-
-          display: "flex",
-
-          alignItems: "center",
-
-          justifyContent: "center",
-
-          background: "#0A0A0B",
-
-          color: "white",
-
-        }}
-
-      >
-
-        Loading profile...
-
-      </div>
-
+      <>
+        <GlobalStyles />
+        <div
+          style={{
+            minHeight: "100vh",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: S.bg,
+            color: S.text,
+          }}
+        >
+          Loading profile...
+        </div>
+      </>
     );
 
   }
@@ -520,31 +581,14 @@ export default function App() {
 
   return (
 
-    <div>
-
+    <>
+      <GlobalStyles />
       {isCoach ? (
-
-        <CoachDashboard
-
-          profile={profile}
-
-          logout={logout}
-
-        />
-
+        <CoachDashboard profile={profile} logout={logout} />
       ) : (
-
-        <ClientDashboard
-
-          profile={profile}
-
-          logout={logout}
-
-        />
-
+        <ClientDashboard profile={profile} logout={logout} />
       )}
-
-    </div>
+    </>
 
   );
 
@@ -636,7 +680,7 @@ function TopBar({ profile, isCoach, onLogout }) {
 function Sidebar({ isCoach, page, setPage }) {
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"progress",icon:"📈",label:"Progress"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"progress",icon:"📈",label:"Progress"},{id:"workouts",icon:"🏋",label:"Workout Log"}];
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"progress",icon:"📈",label:"Progress"},{id:"workouts",icon:"🏋",label:"Workout Log"}];
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
       <div style={{padding:"0 14px"}}>
@@ -1164,6 +1208,8 @@ function ClientsPanel() {
   const [newEx, setNewEx] = useState({name:"",category:"",is_bodyweight:false});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [generating, setGenerating] = useState(false);
+  const [genMsg, setGenMsg] = useState(null);
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
@@ -1177,7 +1223,7 @@ function ClientsPanel() {
   };
 
   useEffect(()=>{loadClients();},[]);
-  useEffect(()=>{if(selected)loadEx(selected);},[selected]);
+  useEffect(()=>{if(selected){loadEx(selected);setGenMsg(null);}},[selected]);
 
   const addEx = async()=>{
     if(!newEx.name) return;
@@ -1190,6 +1236,26 @@ function ClientsPanel() {
   const delEx = async(id)=>{
     await supabase.from("exercises").delete().eq("id",id);
     await loadEx(selected);
+  };
+
+  // Runs the full pipeline: Notion -> AI (training + nutrition) -> Supabase.
+  const generateProgram = async(client)=>{
+    setGenerating(true); setGenMsg(null);
+    try{
+      const r = await fetch("/api/generate-program",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({client_email:client.email}),
+      });
+      const data = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
+      setGenMsg({ok:true,text:`Generated "${data.program}" — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}.`});
+      await loadEx(selected);
+    }catch(e){
+      setGenMsg({ok:false,text:e.message});
+    }finally{
+      setGenerating(false);
+    }
   };
 
   const client = clients.find(c=>c.id===selected);
@@ -1214,12 +1280,25 @@ function ClientsPanel() {
               <div style={{width:52,height:52,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,flexShrink:0}}>
                 {avatarFrom(client.name||client.email)}
               </div>
-              <div>
+              <div style={{flex:1}}>
                 <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{client.name||"—"}</div>
                 <div style={{fontSize:12,color:S.muted}}>{client.email} · Joined {client.created_at?.split("T")[0]}</div>
                 <div style={{fontSize:13,marginTop:4}}>{client.goal||"No goal set"}</div>
               </div>
+              <Btn onClick={()=>generateProgram(client)} disabled={generating}>
+                {generating?"Generating...":"⚡ Generate AI Program"}
+              </Btn>
             </div>
+            <div style={{fontSize:11,color:S.muted,marginTop:12}}>
+              Pulls this client's intake from Notion, builds a training + nutrition plan with AI, and publishes it to their portal.
+            </div>
+            {genMsg && (
+              <div style={{marginTop:12,padding:"10px 16px",fontSize:12,fontWeight:600,
+                background:genMsg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",
+                color:genMsg.ok?S.accent2:"#ff6b5b"}}>
+                {genMsg.text}
+              </div>
+            )}
           </Card>
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -1292,5 +1371,212 @@ function CoachProgress() {
       {selected&&<Progress profile={selected}/>}
       {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet.</div>}
     </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT — TRAINING PLAN (read-only weekly split)
+// ---------------------------------------------------------------------------
+
+const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+
+function ClientProgram({ profile }) {
+  const [exercises, setExercises] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from("exercises")
+      .select("*")
+      .eq("client_id", profile.id)
+      .order("order_index")
+      .then(({ data }) => {
+        setExercises(data || []);
+        setLoading(false);
+      });
+  }, [profile.id]);
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  // Group by day; exercises with no day fall under "Unscheduled".
+  const byDay = {};
+  for (const ex of exercises) {
+    const key = ex.day_of_week || "Unscheduled";
+    (byDay[key] = byDay[key] || []).push(ex);
+  }
+  const days = Object.keys(byDay).sort((a, b) => {
+    const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+  });
+
+  return (
+    <div>
+      <PageTitle title="Training Plan" sub="Your current weekly program" />
+      {exercises.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 48 }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🏋</div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No program yet</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>Your coach will generate your program soon.</div>
+        </Card>
+      ) : (
+        days.map((day) => (
+          <Card key={day}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22 }}>{day}</div>
+              <div style={{ fontSize: 11, color: S.muted }}>{byDay[day][0]?.category || ""}</div>
+            </div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Exercise", "Sets", "Reps", "Notes"].map((h) => (
+                    <th key={h} style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "8px 14px", borderBottom: "1px solid " + S.border }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {byDay[day].map((ex) => (
+                  <tr key={ex.id}>
+                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 500, borderBottom: "1px solid " + S.border }}>
+                      {ex.name}
+                      {ex.is_bodyweight && <span style={{ marginLeft: 8, fontSize: 9, color: S.muted }}>BW</span>}
+                    </td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.sets ?? "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.reps ?? "—"}</td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.notes || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        ))
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT — NUTRITION PLAN
+// ---------------------------------------------------------------------------
+
+function Nutrition({ profile }) {
+  const [plan, setPlan] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    supabase
+      .from("nutrition_plans")
+      .select("*")
+      .eq("client_id", profile.id)
+      .eq("active", true)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        setPlan(data);
+        setLoading(false);
+      });
+  }, [profile.id]);
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  if (!plan) {
+    return (
+      <div>
+        <PageTitle title="Nutrition" sub="Your personalized fuel plan" />
+        <Card style={{ textAlign: "center", padding: 48 }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>🥗</div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No nutrition plan yet</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>Your coach will generate your plan soon.</div>
+        </Card>
+      </div>
+    );
+  }
+
+  const meals = Array.isArray(plan.meals) ? plan.meals : [];
+
+  return (
+    <div>
+      <PageTitle title={plan.name || "Nutrition"} sub="Daily targets and sample meals" />
+      <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16, marginBottom: 22 }}>
+        <Stat label="Calories" value={plan.calories ?? "—"} unit=" kcal" />
+        <Stat label="Protein" value={plan.protein_g ?? "—"} unit="g" />
+        <Stat label="Carbs" value={plan.carbs_g ?? "—"} unit="g" />
+        <Stat label="Fats" value={plan.fats_g ?? "—"} unit="g" />
+      </div>
+
+      {(plan.guidelines || plan.hydration) && (
+        <Card>
+          <CardTitle>Guidelines</CardTitle>
+          {plan.guidelines && <div style={{ fontSize: 13, lineHeight: 1.7, marginBottom: plan.hydration ? 12 : 0 }}>{plan.guidelines}</div>}
+          {plan.hydration && <div style={{ fontSize: 13, color: S.accent2 }}>💧 {plan.hydration}</div>}
+        </Card>
+      )}
+
+      {meals.map((m, i) => (
+        <Card key={i}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>{m.meal || "Meal " + (i + 1)}</div>
+            <div style={{ fontSize: 11, color: S.muted }}>{m.time || ""}</div>
+          </div>
+          <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
+            {m.calories != null && <span>{m.calories} kcal</span>}
+            {m.protein_g != null && <span>P {m.protein_g}g</span>}
+            {m.carbs_g != null && <span>C {m.carbs_g}g</span>}
+            {m.fats_g != null && <span>F {m.fats_g}g</span>}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+            {(Array.isArray(m.items) ? m.items : []).map((it, j) => (
+              <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
+            ))}
+          </ul>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// DASHBOARD SHELLS — top bar + sidebar nav + active page
+// ---------------------------------------------------------------------------
+
+function Shell({ profile, isCoach, logout, page, setPage, children }) {
+  return (
+    <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
+      <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
+      <div style={{ display: "flex", alignItems: "flex-start" }}>
+        <Sidebar isCoach={isCoach} page={page} setPage={setPage} />
+        <main style={{ flex: 1, padding: "28px 32px", maxWidth: 1180, width: "100%" }}>
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+function ClientDashboard({ profile, logout }) {
+  const [page, setPage] = useState("dashboard");
+
+  return (
+    <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
+      {page === "dashboard" && <ClientHome profile={profile} setPage={setPage} />}
+      {page === "program" && <ClientProgram profile={profile} />}
+      {page === "daily" && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "weekly" && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "progress" && <Progress profile={profile} />}
+      {page === "workouts" && <Workouts profile={profile} />}
+      {page === "nutrition" && <Nutrition profile={profile} />}
+    </Shell>
+  );
+}
+
+function CoachDashboard({ profile, logout }) {
+  const [page, setPage] = useState("dashboard");
+
+  return (
+    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
+      {page === "dashboard" && <CoachHome setPage={setPage} />}
+      {page === "clients" && <ClientsPanel />}
+      {page === "progress" && <CoachProgress />}
+    </Shell>
   );
 }
