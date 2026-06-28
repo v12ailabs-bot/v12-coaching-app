@@ -42,15 +42,6 @@ create table if not exists exercises (
   created_at timestamptz not null default now()
 );
 
--- Backfill columns if the table predates this schema.
-alter table exercises add column if not exists program_id uuid references programs (id) on delete set null;
-alter table exercises add column if not exists day_of_week text;
-alter table exercises add column if not exists sets int;
-alter table exercises add column if not exists reps text;
-alter table exercises add column if not exists notes text;
-alter table exercises add column if not exists order_index int not null default 0;
-alter table exercises add column if not exists source text not null default 'coach';
-
 -- Nutrition plans: one active plan per client, with macro targets and meals (JSON).
 create table if not exists nutrition_plans (
   id uuid primary key default gen_random_uuid(),
@@ -112,6 +103,89 @@ create table if not exists workout_logs (
   time text,
   created_at timestamptz not null default now()
 );
+
+-- ---------------------------------------------------------------------------
+-- Reconcile columns on PRE-EXISTING tables
+-- ---------------------------------------------------------------------------
+-- `create table if not exists` above is skipped for tables that already exist,
+-- so older tables may be missing columns this app needs (e.g. the original
+-- `programs` table had no client_id). These add-if-missing statements bring any
+-- existing table up to date. Columns are added nullable so they don't fail on
+-- tables that already contain rows.
+
+-- profiles
+alter table profiles add column if not exists name text;
+alter table profiles add column if not exists role text default 'client';
+alter table profiles add column if not exists goal text;
+alter table profiles add column if not exists onboarding_complete boolean default false;
+alter table profiles add column if not exists created_at timestamptz default now();
+
+-- programs
+alter table programs add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table programs add column if not exists name text;
+alter table programs add column if not exists goal text;
+alter table programs add column if not exists experience_level text;
+alter table programs add column if not exists description text;
+alter table programs add column if not exists weeks int default 12;
+alter table programs add column if not exists created_at timestamptz default now();
+
+-- exercises
+alter table exercises add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table exercises add column if not exists program_id uuid references programs (id) on delete set null;
+alter table exercises add column if not exists category text;
+alter table exercises add column if not exists day_of_week text;
+alter table exercises add column if not exists sets int;
+alter table exercises add column if not exists reps text;
+alter table exercises add column if not exists is_bodyweight boolean default false;
+alter table exercises add column if not exists notes text;
+alter table exercises add column if not exists order_index int default 0;
+alter table exercises add column if not exists source text default 'coach';
+alter table exercises add column if not exists created_at timestamptz default now();
+
+-- nutrition_plans
+alter table nutrition_plans add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table nutrition_plans add column if not exists program_id uuid references programs (id) on delete set null;
+alter table nutrition_plans add column if not exists name text;
+alter table nutrition_plans add column if not exists calories int;
+alter table nutrition_plans add column if not exists protein_g int;
+alter table nutrition_plans add column if not exists carbs_g int;
+alter table nutrition_plans add column if not exists fats_g int;
+alter table nutrition_plans add column if not exists hydration text;
+alter table nutrition_plans add column if not exists guidelines text;
+alter table nutrition_plans add column if not exists meals jsonb default '[]'::jsonb;
+alter table nutrition_plans add column if not exists active boolean default true;
+alter table nutrition_plans add column if not exists created_at timestamptz default now();
+
+-- daily_checkins
+alter table daily_checkins add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table daily_checkins add column if not exists date date;
+alter table daily_checkins add column if not exists weight numeric;
+alter table daily_checkins add column if not exists sleep int;
+alter table daily_checkins add column if not exists energy int;
+alter table daily_checkins add column if not exists mood int;
+alter table daily_checkins add column if not exists water int;
+alter table daily_checkins add column if not exists diet text;
+alter table daily_checkins add column if not exists workout text;
+
+-- weekly_checkins
+alter table weekly_checkins add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table weekly_checkins add column if not exists date date;
+alter table weekly_checkins add column if not exists chest numeric;
+alter table weekly_checkins add column if not exists waist numeric;
+alter table weekly_checkins add column if not exists hips numeric;
+alter table weekly_checkins add column if not exists arms numeric;
+alter table weekly_checkins add column if not exists feeling int;
+alter table weekly_checkins add column if not exists goal_progress int;
+alter table weekly_checkins add column if not exists notes text;
+
+-- workout_logs
+alter table workout_logs add column if not exists client_id uuid references profiles (id) on delete cascade;
+alter table workout_logs add column if not exists exercise_id uuid references exercises (id) on delete cascade;
+alter table workout_logs add column if not exists date date;
+alter table workout_logs add column if not exists sets int;
+alter table workout_logs add column if not exists reps int;
+alter table workout_logs add column if not exists weight numeric;
+alter table workout_logs add column if not exists time text;
 
 create index if not exists idx_exercises_client on exercises (client_id);
 create index if not exists idx_nutrition_client_active on nutrition_plans (client_id, active);
