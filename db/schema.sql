@@ -125,15 +125,21 @@ create index if not exists idx_logs_client_ex on workout_logs (client_id, exerci
 -- The server (generate-program) uses the service-role key and bypasses RLS.
 -- These policies govern the browser (anon-key) client used by the portal.
 --
--- A coach is identified by JWT email (matches COACH_EMAIL in src/App.jsx).
--- Checking the JWT instead of the profiles table avoids recursive policies.
--- Update the email here if you change COACH_EMAIL.
+-- A coach is whoever has role='coach' in profiles. SECURITY DEFINER lets this
+-- function read profiles as the table owner, bypassing RLS so the policies that
+-- call it don't recurse. Promote a coach with:  update profiles set role='coach'
+-- where email='...';  (the app also sets role='coach' at signup for COACH_EMAIL).
 create or replace function public.is_coach()
 returns boolean
 language sql
 stable
+security definer
+set search_path = public
 as $$
-  select coalesce(auth.jwt() ->> 'email', '') = 'coach@v12system.com';
+  select exists (
+    select 1 from public.profiles
+    where id = auth.uid() and role = 'coach'
+  );
 $$;
 
 -- profiles: a user sees/edits their own row; the coach sees/edits all.
