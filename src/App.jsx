@@ -1292,7 +1292,9 @@ function Workouts({ profile }) {
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
   const [logMode, setLogMode] = useState(false);
-  const [sets, setSets] = useState([{weight:"",reps:"",time:""},{weight:"",reps:"",time:""},{weight:"",reps:"",time:""},{weight:"",reps:"",time:""}]);
+  const blankRow = () => ({weight:"",reps:"",time:""});
+  const freshSets = (n) => Array.from({length: Math.min(8, Math.max(1, parseInt(n)||4))}, blankRow);
+  const [sets, setSets] = useState(freshSets(4));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -1320,12 +1322,20 @@ function Workouts({ profile }) {
     }));
     if(entries.length>0) await supabase.from("workout_logs").insert(entries);
     setSaving(false);setSaved(true);setLogMode(false);
-    setSets([{weight:"",reps:"",time:""},{weight:"",reps:"",time:""},{weight:"",reps:"",time:""},{weight:"",reps:"",time:""}]);
+    setSets(freshSets(ex?.sets));
     setTimeout(()=>setSaved(false),2000);
   };
 
   const selectedEx = exercises.find(e=>e.id===selected);
   const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
+
+  // Group the program's exercises by training day for the selector.
+  const byDay = {};
+  exercises.forEach(ex=>{ const k = ex.day_of_week || "Other"; (byDay[k]=byDay[k]||[]).push(ex); });
+  const dayKeys = Object.keys(byDay).sort((a,b)=>{
+    const ia=DAY_ORDER.indexOf(a), ib=DAY_ORDER.indexOf(b);
+    return (ia===-1?99:ia)-(ib===-1?99:ib);
+  });
 
   return (
     <div>
@@ -1339,16 +1349,42 @@ function Workouts({ profile }) {
         </Card>
       ):(
         <>
-          <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:22}}>
-            {exercises.map(ex=>(
-              <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
-                style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,77,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
-                {ex.name}
-              </button>
+          <div style={{marginBottom:22}}>
+            {dayKeys.map(day=>(
+              <div key={day} style={{marginBottom:14}}>
+                <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:8}}>{day}</div>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {byDay[day].map(ex=>(
+                    <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
+                      style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,77,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
+                      {ex.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ))}
           </div>
           {selectedEx&&(
             <>
+              <Card style={{marginBottom:20}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:200}}>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{selectedEx.name}</div>
+                    <div style={{fontSize:12,color:S.muted}}>{[selectedEx.day_of_week,selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
+                    {selectedEx.notes&&<div style={{fontSize:12,color:S.muted,marginTop:8,lineHeight:1.6,maxWidth:560}}>{selectedEx.notes}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:24}}>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Sets</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{selectedEx.sets??"—"}</div>
+                    </div>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{selectedEx.reps??"—"}</div>
+                    </div>
+                  </div>
+                </div>
+              </Card>
               <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
                 <CC title={selectedEx.name+" Progress"} sub={selectedEx.is_bodyweight?"Reps over time":"Weight over time"}>
                   {chartData.length===0
@@ -1382,20 +1418,27 @@ function Workouts({ profile }) {
               <Card>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
                   <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted}}>Session History</div>
-                  <Btn sm teal onClick={()=>setLogMode(!logMode)}>{logMode?"Cancel":"+ Log Session"}</Btn>
+                  <Btn sm teal onClick={()=>{const open=!logMode; setLogMode(open); if(open) setSets(freshSets(selectedEx.sets));}}>{logMode?"Cancel":"+ Log Session"}</Btn>
                 </div>
                 {logMode&&(
                   <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,marginBottom:14}}>Log {selectedEx.name}</div>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {selectedEx.name}</div>
+                      <div style={{fontSize:11,color:S.muted}}>Target: {selectedEx.sets??"—"} × {selectedEx.reps??"—"}</div>
+                    </div>
                     {sets.map((s,i)=>(
                       <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
                         <span style={{fontSize:11,color:S.muted,width:42}}>Set {i+1}</span>
                         {!selectedEx.is_bodyweight&&<input type="number" placeholder="lbs" value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>}
-                        <input type="number" placeholder="reps" value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
+                        <input type="number" placeholder={selectedEx.reps?`reps (${selectedEx.reps})`:"reps"} value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:110,outline:"none"}}/>
                         <input type="text" placeholder="time (opt)" value={s.time} onChange={e=>{const n=[...sets];n[i].time=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:100,outline:"none"}}/>
+                        {sets.length>1&&<button onClick={()=>setSets(sets.filter((_,j)=>j!==i))} title="Remove set" style={{background:"none",border:"none",color:S.muted,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>×</button>}
                       </div>
                     ))}
-                    <div style={{marginTop:14}}><Btn onClick={handleLog} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn></div>
+                    <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
+                      <Btn onClick={handleLog} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
+                      <button onClick={()=>setSets([...sets,blankRow()])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Set</button>
+                    </div>
                   </div>
                 )}
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
