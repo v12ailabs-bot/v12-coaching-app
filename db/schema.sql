@@ -370,3 +370,178 @@ drop policy if exists progress_photos_delete on storage.objects;
 create policy progress_photos_delete on storage.objects for delete using (
   bucket_id = 'progress-photos' and (storage.foldername(name))[1] = auth.uid()::text
 );
+
+-- ===========================================================================
+-- V12 expansion: habits, notes, conversations, program phases, resources,
+-- client archive, template categories. Appended block — safe to re-run.
+-- ===========================================================================
+
+-- profiles: archive flag so the coach can retire clients without deleting data.
+alter table profiles add column if not exists archived boolean not null default false;
+
+-- programs: current training phase/block + when it last changed.
+alter table programs add column if not exists phase text;
+alter table programs add column if not exists phase_note text;
+alter table programs add column if not exists phase_updated_at timestamptz;
+
+-- program_templates: a category taxonomy on top of the free-text goal, plus a
+-- flag marking the built-in seeds (so duplicates/customs are distinguishable).
+alter table program_templates add column if not exists category text;
+alter table program_templates add column if not exists is_builtin boolean not null default false;
+
+-- Habits: coach-defined daily habits per client (e.g. "10k steps", "Sleep 8h").
+create table if not exists habits (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  name text not null,
+  active boolean not null default true,
+  order_index int not null default 0,
+  created_at timestamptz not null default now()
+);
+
+-- Habit logs: one row per habit per day the client marks it done.
+create table if not exists habit_logs (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  habit_id uuid not null references habits (id) on delete cascade,
+  date date not null,
+  done boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (habit_id, date)
+);
+
+-- Coach notes: private coach-only notes attached to a client. Never client-visible.
+create table if not exists coach_notes (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  body text not null,
+  pinned boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
+-- Conversations: a log of coach<->client touchpoints (calls, DMs, check-in chats).
+create table if not exists conversations (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  channel text,                                  -- 'call' | 'text' | 'email' | 'in-person' | 'other'
+  summary text not null,
+  occurred_on date not null,
+  follow_up_on date,                             -- optional next-touch reminder
+  created_at timestamptz not null default now()
+);
+
+-- Resources: a shared recipe / article / video library clients can browse.
+create table if not exists resources (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  category text,                                 -- 'Recipe' | 'Article' | 'Video' | 'Guide' | ...
+  kind text not null default 'article',          -- 'recipe' | 'article' | 'video' | 'pdf'
+  url text,
+  body text,                                     -- recipe steps / notes / description
+  calories int,                                  -- recipe macros (optional)
+  protein_g int,
+  carbs_g int,
+  fats_g int,
+  published boolean not null default true,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists idx_habits_client on habits (client_id, active);
+create index if not exists idx_habit_logs_client_date on habit_logs (client_id, date);
+create index if not exists idx_notes_client on coach_notes (client_id, created_at);
+create index if not exists idx_convos_client on conversations (client_id, occurred_on);
+create index if not exists idx_resources_kind on resources (kind, created_at);
+
+-- Mark the seeded templates as built-ins (so the UI can label/duplicate them).
+update program_templates set is_builtin = true
+  where name in (
+    'V12 Hybrid — Strength / Size / Conditioning',
+    'Hypertrophy — Upper/Lower',
+    'Strength — 5x5 Full Body',
+    'Fat Loss — Full Body Circuit',
+    'Athletic Performance — Push/Pull/Legs',
+    'Beginner Foundations — Full Body'
+  ) and is_builtin = false;
+
+-- Backfill template categories from their goal where unset.
+update program_templates set category = case
+    when category is not null then category
+    when goal ilike '%fat%'        then 'Fat Loss'
+    when goal ilike '%hypertrophy%' or goal ilike '%muscle%' then 'Muscle'
+    when goal ilike '%strength%'   then 'Strength'
+    when goal ilike '%athletic%' or goal ilike '%performance%' then 'Athletic'
+    when goal ilike '%hybrid%'     then 'Hybrid'
+    when goal ilike '%general%' or goal ilike '%beginner%' then 'Beginner'
+    else 'General'
+  end
+  where category is null;
+
+-- Seed a few starter library resources (no-op if titles already present).
+insert into resources (title, category, kind, url, body, calories, protein_g, carbs_g, fats_g)
+select * from (values
+  ('High-Protein Overnight Oats', 'Recipe', 'recipe', null,
+   E'Combine 1/2 cup rolled oats, 1 scoop whey, 1 cup almond milk, 1 tbsp chia. Refrigerate overnight. Top with berries.',
+   420, 38, 48, 9),
+  ('Lean Beef & Rice Bowl', 'Recipe', 'recipe', null,
+   E'6oz 90/10 ground beef, 1 cup jasmine rice, mixed peppers, low-sodium soy. Cook beef, combine, season.',
+   560, 42, 62, 14),
+  ('How to Progress Your Lifts', 'Guide', 'article', null,
+   E'Add load when you hit the top of the prescribed rep range on all sets with clean form. Otherwise repeat the weight and add reps. Deload every 6 weeks.',
+   null, null, null, null),
+  ('Dialing In Sleep for Recovery', 'Article', 'article', null,
+   E'Consistent sleep/wake times, dark cool room, no screens 30 min before bed, and caffeine cutoff 8 hours pre-sleep drive better recovery and adherence.',
+   null, null, null, null)
+) as v(title, category, kind, url, body, calories, protein_g, carbs_g, fats_g)
+where not exists (select 1 from resources r where r.title = v.title);
+
+-- RLS for the new tables.
+-- habits: coach defines; client reads their own.
+alter table habits enable row level security;
+drop policy if exists habits_select on habits;
+create policy habits_select on habits for select using (client_id = auth.uid() or public.is_coach());
+drop policy if exists habits_write on habits;
+create policy habits_write on habits for all using (public.is_coach()) with check (public.is_coach());
+
+-- habit_logs: a client toggles their own; the coach reads all.
+alter table habit_logs enable row level security;
+drop policy if exists habit_logs_select on habit_logs;
+create policy habit_logs_select on habit_logs for select using (client_id = auth.uid() or public.is_coach());
+drop policy if exists habit_logs_modify on habit_logs;
+create policy habit_logs_modify on habit_logs for all using (client_id = auth.uid()) with check (client_id = auth.uid());
+
+-- coach_notes: coach-only, never visible to clients.
+alter table coach_notes enable row level security;
+drop policy if exists notes_all on coach_notes;
+create policy notes_all on coach_notes for all using (public.is_coach()) with check (public.is_coach());
+
+-- conversations: coach-only.
+alter table conversations enable row level security;
+drop policy if exists convos_all on conversations;
+create policy convos_all on conversations for all using (public.is_coach()) with check (public.is_coach());
+
+-- resources: any authenticated user reads published ones; coach manages.
+alter table resources enable row level security;
+drop policy if exists resources_select on resources;
+create policy resources_select on resources for select using (published or public.is_coach());
+drop policy if exists resources_write on resources;
+create policy resources_write on resources for all using (public.is_coach()) with check (public.is_coach());
+
+-- Program version history: immutable snapshots of a client's training plan
+-- (program metadata + the full exercise list) captured on generate / snapshot /
+-- restore, so the coach can review and roll back. `version` increments per client.
+create table if not exists program_versions (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  program_id uuid references programs (id) on delete set null,
+  version int not null,
+  label text,
+  snapshot jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now()
+);
+create index if not exists idx_versions_client on program_versions (client_id, version);
+
+alter table program_versions enable row level security;
+drop policy if exists versions_select on program_versions;
+create policy versions_select on program_versions for select using (client_id = auth.uid() or public.is_coach());
+drop policy if exists versions_write on program_versions;
+create policy versions_write on program_versions for all using (public.is_coach()) with check (public.is_coach());

@@ -680,8 +680,8 @@ function TopBar({ profile, isCoach, onLogout }) {
 
 function Sidebar({ isCoach, page, setPage }) {
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"templates",icon:"📋",label:"Templates"},{id:"progress",icon:"📈",label:"Progress"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"progress",icon:"📈",label:"Progress"},{id:"workouts",icon:"🏋",label:"Workout Log"}];
+    ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"templates",icon:"📋",label:"Templates"},{id:"library",icon:"📚",label:"Library"},{id:"progress",icon:"📈",label:"Progress"}]
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"habits",icon:"🎯",label:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"progress",icon:"📈",label:"Progress"},{id:"resources",icon:"📚",label:"Library"}];
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
       <div style={{padding:"0 14px"}}>
@@ -753,6 +753,23 @@ function adherenceFrom(checkins, days = 30) {
     trainingRate: recent.length ? Math.round((completed / recent.length) * 100) : 0,
   };
 }
+
+// Nutrition adherence: average self-reported diet quality across recent
+// check-ins, scored 0-100. Returns null when there's nothing to score.
+const DIET_SCORE = { "On track": 100, "Mostly clean": 75, "Struggled": 40, "Off plan": 10 };
+function nutritionScoreFrom(checkins, days = 30) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cut = cutoff.toISOString().split("T")[0];
+  const recent = (checkins || []).filter((c) => c.date >= cut && c.diet != null);
+  if (!recent.length) return { score: null, n: 0 };
+  const total = recent.reduce((s, c) => s + (DIET_SCORE[c.diet] ?? 50), 0);
+  return { score: Math.round(total / recent.length), n: recent.length };
+}
+
+const CHANNELS = ["call", "text", "email", "in-person", "other"];
+const TEMPLATE_CATEGORIES = ["Hybrid", "Fat Loss", "Muscle", "Strength", "Athletic", "Beginner", "Home", "General"];
+const RESOURCE_KINDS = ["recipe", "article", "video", "pdf"];
 
 // ---------------------------------------------------------------------------
 // CLIENT — WELCOME (shown until the client is onboarded / has a program)
@@ -1048,6 +1065,7 @@ function Progress({ profile }) {
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
   const adh = adherenceFrom(daily,30);
+  const nut = nutritionScoreFrom(daily,30);
   const lastWeight = daily.length?daily[daily.length-1].weight:null;
 
   return (
@@ -1055,7 +1073,7 @@ function Progress({ profile }) {
       <PageTitle title="Progress" sub="Your data over time"/>
       <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Adherence (30d)" value={adh.score} unit="%"/>
-        <Stat label="Check-in Days" value={adh.checkinDays} unit={"/"+adh.days}/>
+        <Stat label="Nutrition (30d)" value={nut.score??"—"} unit={nut.score!=null?"%":""}/>
         <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
@@ -1287,6 +1305,179 @@ function ProgressPhotos({ profile }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// CLIENT — DAILY HABITS (coach defines them; client checks them off daily)
+// ---------------------------------------------------------------------------
+function Habits({ profile }) {
+  const [habits, setHabits] = useState([]);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const today = todayStr();
+
+  const load = useCallback(async () => {
+    const { data: hs } = await supabase.from("habits").select("*").eq("client_id", profile.id).eq("active", true).order("order_index");
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 13);
+    const cut = cutoff.toISOString().split("T")[0];
+    const { data: ls } = await supabase.from("habit_logs").select("*").eq("client_id", profile.id).gte("date", cut);
+    setHabits(hs || []); setLogs(ls || []); setLoading(false);
+  }, [profile.id]);
+  useEffect(() => { load(); }, [load]);
+
+  const doneOn = (habitId, date) => logs.some((l) => l.habit_id === habitId && l.date === date && l.done);
+
+  const toggle = async (habit) => {
+    const existing = logs.find((l) => l.habit_id === habit.id && l.date === today);
+    if (existing) {
+      setLogs((prev) => prev.filter((l) => l.id !== existing.id));
+      await supabase.from("habit_logs").delete().eq("id", existing.id);
+    } else {
+      const row = { client_id: profile.id, habit_id: habit.id, date: today, done: true };
+      const { data } = await supabase.from("habit_logs").insert(row).select().maybeSingle();
+      setLogs((prev) => [...prev, data || { ...row, id: `tmp-${habit.id}` }]);
+    }
+  };
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return d.toISOString().split("T")[0]; });
+  const doneToday = habits.filter((h) => doneOn(h.id, today)).length;
+  const pct = habits.length ? Math.round((doneToday / habits.length) * 100) : 0;
+  // Streak: consecutive days back from today where every habit was completed.
+  const streak = (() => {
+    if (!habits.length) return 0;
+    let s = 0;
+    for (let i = days14.length - 1; i >= 0; i--) {
+      const all = habits.every((h) => doneOn(h.id, days14[i]));
+      if (all) s++; else break;
+    }
+    return s;
+  })();
+
+  return (
+    <div>
+      <PageTitle title="Daily Habits" sub="Small wins, stacked daily" />
+      {habits.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 48 }}>
+          <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No habits assigned yet</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>Your coach will set up daily habits for you. Check back soon.</div>
+        </Card>
+      ) : (
+        <>
+          <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 22 }}>
+            <Stat label="Done Today" value={doneToday} unit={"/" + habits.length} />
+            <Stat label="Today's Completion" value={pct} unit="%" />
+            <Stat label="Perfect-Day Streak" value={streak} unit="days" />
+          </div>
+          <Card>
+            <CardTitle>Today · {today}</CardTitle>
+            {habits.map((h) => {
+              const done = doneOn(h.id, today);
+              return (
+                <div key={h.id} onClick={() => toggle(h)}
+                  style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 4px", borderBottom: "1px solid " + S.border, cursor: "pointer" }}>
+                  <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, background: done ? S.neon : "transparent", color: done ? "#0A0A0B" : S.muted, border: done ? "none" : "1px solid " + S.border }}>
+                    {done ? "✓" : ""}
+                  </div>
+                  <span style={{ fontSize: 14, color: done ? S.text : S.muted, textDecoration: done ? "none" : "none" }}>{h.name}</span>
+                </div>
+              );
+            })}
+          </Card>
+          <Card>
+            <CardTitle>Last 14 days</CardTitle>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ borderCollapse: "collapse", minWidth: 540 }}>
+                <thead>
+                  <tr>
+                    <th style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: S.muted }}></th>
+                    {days14.map((d) => (
+                      <th key={d} style={{ padding: "6px 4px", fontSize: 9, color: S.muted, fontWeight: 600 }}>{d.slice(5)}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {habits.map((h) => (
+                    <tr key={h.id}>
+                      <td style={{ padding: "6px 10px", fontSize: 12, whiteSpace: "nowrap", color: S.text }}>{h.name}</td>
+                      {days14.map((d) => (
+                        <td key={d} style={{ padding: "5px 4px", textAlign: "center" }}>
+                          <div style={{ width: 16, height: 16, borderRadius: 3, margin: "0 auto", background: doneOn(h.id, d) ? S.neon : S.surface2, border: "1px solid " + S.border }} />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT — RESOURCE / RECIPE LIBRARY (read-only browse)
+// ---------------------------------------------------------------------------
+function Resources({ readOnly = true }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [kind, setKind] = useState("all");
+
+  useEffect(() => {
+    supabase.from("resources").select("*").eq("published", true).order("created_at", { ascending: false })
+      .then(({ data }) => { setItems(data || []); setLoading(false); });
+  }, []);
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+  const shown = kind === "all" ? items : items.filter((r) => r.kind === kind);
+  const tabs = ["all", ...RESOURCE_KINDS];
+
+  return (
+    <div>
+      <PageTitle title="Library" sub="Recipes, guides, and resources from your coach" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
+        {tabs.map((k) => (
+          <button key={k} onClick={() => setKind(k)}
+            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "capitalize", border: "1px solid " + (kind === k ? S.accent : S.border), background: kind === k ? "rgba(255,77,0,.08)" : "transparent", color: kind === k ? S.accent : S.muted }}>
+            {k === "all" ? "All" : k}
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 ? (
+        <Card style={{ textAlign: "center", padding: 40, color: S.muted }}>Nothing here yet. Your coach will add resources soon.</Card>
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+          {shown.map((r) => (
+            <Card key={r.id} style={{ marginBottom: 0 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+                <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 19, lineHeight: 1.1 }}>{r.title}</div>
+                <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.neon, flexShrink: 0 }}>{r.category || r.kind}</span>
+              </div>
+              {r.kind === "recipe" && (r.calories != null || r.protein_g != null) && (
+                <div style={{ display: "flex", gap: 12, fontSize: 11, color: S.muted, marginBottom: 8, flexWrap: "wrap" }}>
+                  {r.calories != null && <span>{r.calories} kcal</span>}
+                  {r.protein_g != null && <span>P {r.protein_g}g</span>}
+                  {r.carbs_g != null && <span>C {r.carbs_g}g</span>}
+                  {r.fats_g != null && <span>F {r.fats_g}g</span>}
+                </div>
+              )}
+              {r.body && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.body}</div>}
+              {r.url && (
+                <a href={r.url} target="_blank" rel="noreferrer"
+                  style={{ display: "inline-block", marginTop: 10, fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: S.accent2, textDecoration: "none" }}>
+                  Open {r.kind === "video" ? "video" : "link"} →
+                </a>
+              )}
+            </Card>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Workouts({ profile, readOnly }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -1474,7 +1665,7 @@ function CoachHome({ setPage }) {
 
   useEffect(()=>{
     (async()=>{
-      const {data:cl} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
+      const {data:cl} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL).neq("archived",true);
       const list = cl||[];
       const ids = list.map(c=>c.id);
       const grouped = {};
@@ -1482,7 +1673,7 @@ function CoachHome({ setPage }) {
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
         const cut = cutoff.toISOString().split("T")[0];
         const {data:ch} = await supabase.from("daily_checkins")
-          .select("client_id,date,weight,workout").in("client_id",ids).gte("date",cut).order("date");
+          .select("client_id,date,weight,workout,diet").in("client_id",ids).gte("date",cut).order("date");
         (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
       }
       setClients(list); setByClient(grouped); setLoading(false);
@@ -1504,6 +1695,8 @@ function CoachHome({ setPage }) {
     else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red"});
     else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber"});
     if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber"});
+    const nut = nutritionScoreFrom(ch, 30);
+    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber"});
     const weights = ch.filter(r=>r.weight!=null);
     if(weights.length>=2){
       const delta = weights[weights.length-1].weight - weights[0].weight;
@@ -1583,12 +1776,352 @@ function CoachHome({ setPage }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// COACH — per-client modules embedded in the Clients panel
+// ---------------------------------------------------------------------------
+
+const PHASES = ["Onboarding", "Accumulation", "Intensification", "Peak", "Deload", "Maintenance"];
+
+// Capture the client's current training plan (program metadata + exercises) as a
+// new immutable version. Returns {error, version}.
+async function createProgramVersion(clientId, label) {
+  const { data: program } = await supabase.from("programs").select("*")
+    .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const { data: exs } = await supabase.from("exercises").select("*").eq("client_id", clientId).order("order_index");
+  const { data: last } = await supabase.from("program_versions").select("version")
+    .eq("client_id", clientId).order("version", { ascending: false }).limit(1).maybeSingle();
+  const version = (last?.version || 0) + 1;
+  const snapshot = {
+    program: program ? { name: program.name, goal: program.goal, phase: program.phase, phase_note: program.phase_note } : null,
+    exercises: (exs || []).map((e) => ({
+      name: e.name, category: e.category, day_of_week: e.day_of_week, sets: e.sets,
+      reps: e.reps, is_bodyweight: e.is_bodyweight, notes: e.notes, order_index: e.order_index, source: e.source,
+    })),
+  };
+  const { error } = await supabase.from("program_versions").insert({ client_id: clientId, program_id: program?.id || null, version, label, snapshot });
+  return { error, version };
+}
+
+// Roll the training plan back to a snapshot. Merge by name+day so exercises that
+// survive the rollback keep their id (and their logged history); only exercises
+// dropped from the snapshot are removed. Records the rollback as a new version.
+async function restoreProgramVersion(clientId, v) {
+  const target = v.snapshot?.exercises || [];
+  const { data: current } = await supabase.from("exercises").select("*").eq("client_id", clientId);
+  const key = (e) => `${(e.name || "").trim().toLowerCase()}|${e.day_of_week || ""}`;
+  const curMap = new Map();
+  (current || []).forEach((e) => { if (!curMap.has(key(e))) curMap.set(key(e), e); });
+  const usedIds = new Set();
+  for (const t of target) {
+    const fields = {
+      category: t.category ?? null, day_of_week: t.day_of_week ?? null, sets: t.sets ?? null,
+      reps: t.reps ?? null, is_bodyweight: !!t.is_bodyweight, notes: t.notes ?? null,
+      order_index: t.order_index ?? 0, source: t.source || "coach",
+    };
+    const match = curMap.get(key(t));
+    if (match) { usedIds.add(match.id); await supabase.from("exercises").update(fields).eq("id", match.id); }
+    else { await supabase.from("exercises").insert({ client_id: clientId, name: t.name, ...fields }); }
+  }
+  for (const e of (current || [])) {
+    if (!usedIds.has(e.id)) await supabase.from("exercises").delete().eq("id", e.id);
+  }
+  const prog = v.snapshot?.program;
+  if (prog) {
+    const { data: latest } = await supabase.from("programs").select("id")
+      .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    if (latest) await supabase.from("programs").update({ phase: prog.phase ?? null, phase_note: prog.phase_note ?? null, phase_updated_at: new Date().toISOString() }).eq("id", latest.id);
+  }
+  await createProgramVersion(clientId, `Restored from v${v.version}`);
+}
+
+// Program version history: list, manual snapshot, view, and restore.
+function ProgramVersions({ clientId, refreshKey, onRestored }) {
+  const [versions, setVersions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [openId, setOpenId] = useState(null);
+  const [msg, setMsg] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("program_versions").select("*").eq("client_id", clientId).order("version", { ascending: false });
+    setVersions(data || []); setLoading(false);
+  }, [clientId]);
+  useEffect(() => { setLoading(true); load(); }, [load, refreshKey]);
+
+  const snapshot = async () => {
+    setBusy(true); setMsg(null);
+    const { error, version } = await createProgramVersion(clientId, "Manual snapshot");
+    setBusy(false);
+    setMsg(error ? { ok: false, text: error.message } : { ok: true, text: `Saved as v${version}.` });
+    if (!error) load();
+  };
+  const restore = async (v) => {
+    if (!window.confirm(`Restore v${v.version}? This rewrites the current training plan to match this version. Logged sessions for exercises that aren't in this version will be removed.`)) return;
+    setBusy(true); setMsg(null);
+    try { await restoreProgramVersion(clientId, v); setMsg({ ok: true, text: `Restored v${v.version}.` }); onRestored?.(); load(); }
+    catch (e) { setMsg({ ok: false, text: e.message }); }
+    finally { setBusy(false); }
+  };
+
+  if (loading) return null;
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+        <CardTitle>Program Version History</CardTitle>
+        <Btn sm teal onClick={snapshot} disabled={busy}>{busy ? "..." : "Snapshot current"}</Btn>
+      </div>
+      {msg && <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</div>}
+      {versions.length === 0 && <div style={{ color: S.muted, fontSize: 13 }}>No versions yet. A snapshot is saved automatically when you generate a program — or save one now.</div>}
+      {versions.map((v) => {
+        const exs = v.snapshot?.exercises || [];
+        const open = openId === v.id;
+        return (
+          <div key={v.id} style={{ border: "1px solid " + S.border, background: S.surface2, padding: "12px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+              <div>
+                <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, marginRight: 10 }}>v{v.version}</span>
+                <span style={{ fontSize: 12, color: S.text }}>{v.label || "Snapshot"}</span>
+                <span style={{ fontSize: 11, color: S.muted, marginLeft: 10 }}>{(v.created_at || "").slice(0, 10)} · {exs.length} exercises</span>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button onClick={() => setOpenId(open ? null : v.id)} style={{ padding: "7px 12px", fontSize: 10, background: "transparent", color: S.text, border: "1px solid " + S.border, cursor: "pointer", fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase" }}>{open ? "Hide" : "View"}</button>
+                <Btn sm onClick={() => restore(v)} disabled={busy}>Restore</Btn>
+              </div>
+            </div>
+            {open && (
+              <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 12 }}>
+                <thead><tr>{["Exercise", "Day", "Sets", "Reps", "Notes"].map((h) => <th key={h} style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "6px 10px", borderBottom: "1px solid " + S.border }}>{h}</th>)}</tr></thead>
+                <tbody>
+                  {exs.map((e, i) => (
+                    <tr key={i}>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid " + S.border }}>{e.name}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.day_of_week || "—"}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.sets ?? "—"}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.reps || "—"}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.notes || "—"}</td>
+                    </tr>
+                  ))}
+                  {exs.length === 0 && <tr><td colSpan={5} style={{ padding: "6px 10px", fontSize: 12, color: S.muted }}>No exercises captured.</td></tr>}
+                </tbody>
+              </table>
+            )}
+          </div>
+        );
+      })}
+    </Card>
+  );
+}
+
+// Program phase / block adjustment for the client's most recent program.
+function ProgramPhase({ clientId }) {
+  const [program, setProgram] = useState(null);
+  const [phase, setPhase] = useState("");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("programs").select("*").eq("client_id", clientId)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    setProgram(data || null);
+    setPhase(data?.phase || "");
+    setNote(data?.phase_note || "");
+    setLoading(false);
+  }, [clientId]);
+  useEffect(() => { setLoading(true); load(); }, [load]);
+
+  const save = async () => {
+    if (!program) return;
+    setSaving(true); setMsg(null);
+    const { error } = await supabase.from("programs")
+      .update({ phase: phase || null, phase_note: note.trim() || null, phase_updated_at: new Date().toISOString() })
+      .eq("id", program.id);
+    setSaving(false);
+    setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase updated." });
+    if (!error) load();
+  };
+
+  if (loading) return null;
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <CardTitle>Program Phase</CardTitle>
+      {!program ? (
+        <div style={{ fontSize: 13, color: S.muted }}>No program yet. Generate or assign a program first, then set its phase here.</div>
+      ) : (
+        <>
+          <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>
+            {program.name || "Program"} · {program.phase_updated_at ? `phase set ${program.phase_updated_at.slice(0, 10)}` : "no phase set yet"}
+          </div>
+          <Fld label="Current Phase / Block"><RG options={PHASES} value={phase} onChange={setPhase} /></Fld>
+          <Fld label="Phase Note (what's the focus right now?)">
+            <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Week 3 of accumulation — push volume on the lower body, hold loads on upper."
+              style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical" }} />
+          </Fld>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Phase"}</Btn>
+            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+// Coach defines the client's daily habits; the client checks them off.
+function CoachHabits({ clientId }) {
+  const [habits, setHabits] = useState([]);
+  const [name, setName] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("habits").select("*").eq("client_id", clientId).eq("active", true).order("order_index");
+    setHabits(data || []);
+  }, [clientId]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    await supabase.from("habits").insert({ client_id: clientId, name: name.trim(), order_index: habits.length });
+    setName(""); setSaving(false); load();
+  };
+  const remove = async (h) => {
+    await supabase.from("habits").update({ active: false }).eq("id", h.id);
+    load();
+  };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <CardTitle>Daily Habits</CardTitle>
+      <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>These appear on the client's Habits page to check off each day.</div>
+      {habits.length === 0 && <div style={{ color: S.muted, fontSize: 13, marginBottom: 12 }}>No habits set yet.</div>}
+      {habits.map((h) => (
+        <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + S.border }}>
+          <span style={{ fontSize: 13 }}>{h.name}</span>
+          <button onClick={() => remove(h)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Remove</button>
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <Inp type="text" value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. 10k steps, 1 gallon water, sleep 8h"
+          onKeyDown={(e) => e.key === "Enter" && add()} style={{ flex: 1 }} />
+        <Btn sm onClick={add} disabled={saving}>{saving ? "..." : "+ Add"}</Btn>
+      </div>
+    </Card>
+  );
+}
+
+// Private coach notes on a client.
+function CoachNotes({ clientId }) {
+  const [notes, setNotes] = useState([]);
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("coach_notes").select("*").eq("client_id", clientId)
+      .order("pinned", { ascending: false }).order("created_at", { ascending: false });
+    setNotes(data || []);
+  }, [clientId]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!body.trim()) return;
+    setSaving(true);
+    await supabase.from("coach_notes").insert({ client_id: clientId, body: body.trim() });
+    setBody(""); setSaving(false); load();
+  };
+  const togglePin = async (n) => { await supabase.from("coach_notes").update({ pinned: !n.pinned }).eq("id", n.id); load(); };
+  const remove = async (n) => { await supabase.from("coach_notes").delete().eq("id", n.id); load(); };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <CardTitle>Coach Notes (private)</CardTitle>
+      <textarea rows={2} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Add a private note about this client..."
+        style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical", marginBottom: 10 }} />
+      <Btn sm onClick={add} disabled={saving}>{saving ? "Saving..." : "Add Note"}</Btn>
+      <div style={{ marginTop: 16 }}>
+        {notes.length === 0 && <div style={{ color: S.muted, fontSize: 13 }}>No notes yet.</div>}
+        {notes.map((n) => (
+          <div key={n.id} style={{ background: S.surface2, border: "1px solid " + S.border, borderLeft: n.pinned ? "3px solid " + S.neon : "1px solid " + S.border, padding: "12px 14px", marginBottom: 10 }}>
+            <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap", marginBottom: 8 }}>{n.body}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 10, color: S.muted }}>{(n.created_at || "").slice(0, 10)}</span>
+              <div style={{ display: "flex", gap: 14 }}>
+                <button onClick={() => togglePin(n)} style={{ background: "none", border: "none", color: n.pinned ? S.neon : S.muted, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{n.pinned ? "Unpin" : "Pin"}</button>
+                <button onClick={() => remove(n)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// Conversation / touchpoint log with the client.
+function CoachConversations({ clientId }) {
+  const [items, setItems] = useState([]);
+  const [form, setForm] = useState({ channel: "call", summary: "", occurred_on: todayStr(), follow_up_on: "" });
+  const [saving, setSaving] = useState(false);
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("conversations").select("*").eq("client_id", clientId).order("occurred_on", { ascending: false });
+    setItems(data || []);
+  }, [clientId]);
+  useEffect(() => { load(); }, [load]);
+
+  const add = async () => {
+    if (!form.summary.trim()) return;
+    setSaving(true);
+    await supabase.from("conversations").insert({
+      client_id: clientId, channel: form.channel, summary: form.summary.trim(),
+      occurred_on: form.occurred_on || todayStr(), follow_up_on: form.follow_up_on || null,
+    });
+    setForm({ channel: "call", summary: "", occurred_on: todayStr(), follow_up_on: "" });
+    setSaving(false); load();
+  };
+  const remove = async (c) => { await supabase.from("conversations").delete().eq("id", c.id); load(); };
+
+  return (
+    <Card style={{ marginBottom: 20 }}>
+      <CardTitle>Conversation Log</CardTitle>
+      <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 12 }}>
+        <Fld label="Channel"><RG options={CHANNELS} value={form.channel} onChange={(v) => set("channel", v)} cap /></Fld>
+        <Fld label="Date"><Inp type="date" value={form.occurred_on} onChange={(e) => set("occurred_on", e.target.value)} /></Fld>
+        <Fld label="Follow-up (optional)"><Inp type="date" value={form.follow_up_on} onChange={(e) => set("follow_up_on", e.target.value)} /></Fld>
+      </div>
+      <textarea rows={2} value={form.summary} onChange={(e) => set("summary", e.target.value)} placeholder="What did you discuss? Decisions, adjustments, how they're feeling..."
+        style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical", marginBottom: 10 }} />
+      <Btn sm onClick={add} disabled={saving}>{saving ? "Saving..." : "Log Conversation"}</Btn>
+      <div style={{ marginTop: 16 }}>
+        {items.length === 0 && <div style={{ color: S.muted, fontSize: 13 }}>No conversations logged yet.</div>}
+        {items.map((c) => (
+          <div key={c.id} style={{ background: S.surface2, border: "1px solid " + S.border, padding: "12px 14px", marginBottom: 10 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", color: S.accent }}>{c.channel}</span>
+              <span style={{ fontSize: 11, color: S.muted }}>{c.occurred_on}</span>
+            </div>
+            <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{c.summary}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
+              <span style={{ fontSize: 10, color: c.follow_up_on ? S.accent2 : S.muted }}>{c.follow_up_on ? `↻ Follow up ${c.follow_up_on}` : ""}</span>
+              <button onClick={() => remove(c)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function ClientsPanel() {
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newEx, setNewEx] = useState({name:"",category:"",is_bodyweight:false});
+  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false});
+  const [editEx, setEditEx] = useState(null);   // {id, draft} | null
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
@@ -1599,12 +2132,20 @@ function ClientsPanel() {
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [progTick, setProgTick] = useState(0);
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
     setClients(data||[]);
-    if(data&&data.length>0&&!selected) setSelected(data[0].id);
     setLoading(false);
+  };
+
+  const setArchived = async(client, archived)=>{
+    if(archived && !window.confirm(`Archive ${client.name||client.email}? They'll be hidden from your active list (data is kept).`)) return;
+    await supabase.from("profiles").update({archived}).eq("id",client.id);
+    setSelected(null);
+    await loadClients();
   };
   const loadEx = async(id)=>{
     const {data} = await supabase.from("exercises").select("*").eq("client_id",id).order("created_at");
@@ -1612,6 +2153,12 @@ function ClientsPanel() {
   };
 
   useEffect(()=>{loadClients();},[]);
+  // Keep the selected client valid as the archived filter / client list changes.
+  useEffect(()=>{
+    const vis = (clients||[]).filter(c=>showArchived?c.archived:!c.archived);
+    if(!vis.length){ setSelected(s=>s?null:s); return; }
+    setSelected(s=>(s && vis.some(c=>c.id===s)) ? s : vis[0].id);
+  },[clients, showArchived]);
   useEffect(()=>{
     supabase.from("program_templates").select("*").order("name").then(({data})=>setTemplates(data||[]));
   },[]);
@@ -1663,13 +2210,31 @@ function ClientsPanel() {
   const addEx = async()=>{
     if(!newEx.name) return;
     setSaving(true);
-    await supabase.from("exercises").insert({...newEx,client_id:selected});
+    await supabase.from("exercises").insert({
+      client_id:selected, name:newEx.name.trim(), category:newEx.category.trim()||null,
+      day_of_week:newEx.day_of_week||null, sets:parseInt(newEx.sets)||null,
+      reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
+      is_bodyweight:newEx.is_bodyweight, source:"coach",
+    });
     await loadEx(selected);
-    setNewEx({name:"",category:"",is_bodyweight:false});
+    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false});
     setShowAdd(false);setSaving(false);
   };
   const delEx = async(id)=>{
     await supabase.from("exercises").delete().eq("id",id);
+    await loadEx(selected);
+  };
+  // Edit an assigned exercise in place — the coach's progression / customization knob.
+  const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
+    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"",
+  }});
+  const saveEditEx = async()=>{
+    const d = editEx.draft;
+    await supabase.from("exercises").update({
+      day_of_week:d.day_of_week||null, sets:parseInt(d.sets)||null,
+      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null,
+    }).eq("id",editEx.id);
+    setEditEx(null);
     await loadEx(selected);
   };
 
@@ -1686,6 +2251,8 @@ function ClientsPanel() {
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
       setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}.`});
       await loadEx(selected);
+      await createProgramVersion(client.id, `AI generated${data.template?` · ${data.template}`:""}`);
+      setProgTick(t=>t+1);
     }catch(e){
       setGenMsg({ok:false,text:e.message});
     }finally{
@@ -1694,19 +2261,27 @@ function ClientsPanel() {
   };
 
   const client = clients.find(c=>c.id===selected);
+  const visible = clients.filter(c=>showArchived?c.archived:!c.archived);
+  const archivedCount = clients.filter(c=>c.archived).length;
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
   return (
     <div>
       <PageTitle title="Clients" sub="Manage programs and view client data"/>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:22}}>
-        {clients.map(c=>(
-          <button key={c.id} onClick={()=>setSelected(c.id)}
-            style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===c.id?S.accent:S.border),background:selected===c.id?"rgba(255,77,0,.08)":"transparent",color:selected===c.id?S.accent:S.muted}}>
-            {c.name||c.email}
-          </button>
-        ))}
-        {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet. Share the app URL with your clients.</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,flexWrap:"wrap",marginBottom:14}}>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {visible.map(c=>(
+            <button key={c.id} onClick={()=>setSelected(c.id)}
+              style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===c.id?S.accent:S.border),background:selected===c.id?"rgba(255,77,0,.08)":"transparent",color:selected===c.id?S.accent:S.muted}}>
+              {c.name||c.email}
+            </button>
+          ))}
+          {visible.length===0&&<div style={{color:S.muted,fontSize:13}}>{showArchived?"No archived clients.":"No active clients. Share the app URL with your clients."}</div>}
+        </div>
+        <button onClick={()=>setShowArchived(v=>!v)}
+          style={{padding:"6px 14px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:showArchived?S.accent:S.muted,whiteSpace:"nowrap"}}>
+          {showArchived?"← Active clients":`Archived (${archivedCount})`}
+        </button>
       </div>
       {client&&(
         <>
@@ -1731,6 +2306,10 @@ function ClientsPanel() {
                 <Btn onClick={()=>generateProgram(client)} disabled={generating}>
                   {generating?"Generating...":"⚡ Generate AI Program"}
                 </Btn>
+                <button onClick={()=>setArchived(client, !client.archived)}
+                  style={{padding:"8px 14px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:S.muted}}>
+                  {client.archived?"Unarchive client":"Archive client"}
+                </button>
               </div>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:12}}>
@@ -1766,6 +2345,11 @@ function ClientsPanel() {
               )}
             </div>
           </Card>
+          <ProgramPhase clientId={client.id} />
+          <ProgramVersions clientId={client.id} refreshKey={progTick} onRestored={()=>loadEx(selected)} />
+          <CoachHabits clientId={client.id} />
+          <CoachNotes clientId={client.id} />
+          <CoachConversations clientId={client.id} />
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <CardTitle>Assigned Exercises</CardTitle>
@@ -1776,10 +2360,20 @@ function ClientsPanel() {
                 <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16}}>
                   <Fld label="Exercise Name"><Inp type="text" value={newEx.name} onChange={e=>setNewEx(p=>({...p,name:e.target.value}))} placeholder="e.g. Squat"/></Fld>
                   <Fld label="Category"><Inp type="text" value={newEx.category} onChange={e=>setNewEx(p=>({...p,category:e.target.value}))} placeholder="e.g. Lower Body"/></Fld>
+                  <Fld label="Day">
+                    <select value={newEx.day_of_week} onChange={e=>setNewEx(p=>({...p,day_of_week:e.target.value}))}
+                      style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
+                      <option value="">Unscheduled</option>
+                      {DAY_ORDER.map(d=><option key={d} value={d}>{d}</option>)}
+                    </select>
+                  </Fld>
+                  <Fld label="Sets"><Inp type="number" value={newEx.sets} onChange={e=>setNewEx(p=>({...p,sets:e.target.value}))} placeholder="e.g. 4"/></Fld>
+                  <Fld label="Reps"><Inp type="text" value={newEx.reps} onChange={e=>setNewEx(p=>({...p,reps:e.target.value}))} placeholder="e.g. 8-12"/></Fld>
                   <Fld label="Type">
                     <RG options={["Weighted","Bodyweight"]} value={newEx.is_bodyweight?"Bodyweight":"Weighted"} onChange={v=>setNewEx(p=>({...p,is_bodyweight:v==="Bodyweight"}))}/>
                   </Fld>
                 </div>
+                <Fld label="Notes / loading guidance"><Inp type="text" value={newEx.notes} onChange={e=>setNewEx(p=>({...p,notes:e.target.value}))} placeholder="e.g. @80% 1RM, RPE 8, 3s eccentric"/></Fld>
                 <div style={{display:"flex",gap:10,marginTop:8}}>
                   <Btn sm onClick={addEx} disabled={saving}>{saving?"Saving...":"Add Exercise"}</Btn>
                   <button onClick={()=>setShowAdd(false)} style={{padding:"7px 14px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
@@ -1788,20 +2382,47 @@ function ClientsPanel() {
             )}
             {exercises.length===0&&<div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No exercises assigned yet.</div>}
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Exercise","Category","Type",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Exercise","Day","Sets","Reps","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
               <tbody>
-                {exercises.map(ex=>(
-                  <tr key={ex.id}>
-                    <td style={{padding:"11px 14px",fontSize:13,fontWeight:500,borderBottom:"1px solid "+S.border}}>{ex.name}</td>
-                    <td style={{padding:"11px 14px",fontSize:13,color:S.muted,borderBottom:"1px solid "+S.border}}>{ex.category||"—"}</td>
-                    <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>
-                      <span style={{padding:"3px 10px",fontSize:10,fontWeight:600,background:ex.is_bodyweight?"rgba(102,102,112,.2)":"rgba(255,77,0,.15)",color:ex.is_bodyweight?S.muted:S.accent}}>
-                        {ex.is_bodyweight?"Bodyweight":"Weighted"}
-                      </span>
-                    </td>
-                    <td style={{padding:"11px 14px",borderBottom:"1px solid "+S.border}}><Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn></td>
-                  </tr>
-                ))}
+                {exercises.map(ex=>{
+                  const editing = editEx?.id===ex.id;
+                  const d = editEx?.draft || {};
+                  const setD = (k,v)=>setEditEx(p=>({...p,draft:{...p.draft,[k]:v}}));
+                  const cell = {padding:"9px 14px",fontSize:13,borderBottom:"1px solid "+S.border,verticalAlign:"top"};
+                  const eInp = {background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"6px 8px",fontSize:13,outline:"none",width:"100%"};
+                  return (
+                    <tr key={ex.id}>
+                      <td style={{...cell,fontWeight:500}}>{ex.name}{ex.is_bodyweight&&<span style={{marginLeft:6,fontSize:9,color:S.muted}}>BW</span>}</td>
+                      {editing?(
+                        <>
+                          <td style={cell}><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map(x=><option key={x} value={x}>{x}</option>)}</select></td>
+                          <td style={cell}><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={{...eInp,width:60}}/></td>
+                          <td style={cell}><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={{...eInp,width:80}}/></td>
+                          <td style={cell}><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></td>
+                          <td style={cell}>
+                            <div style={{display:"flex",gap:6}}>
+                              <Btn sm teal onClick={saveEditEx}>Save</Btn>
+                              <button onClick={()=>setEditEx(null)} style={{padding:"7px 10px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600}}>Cancel</button>
+                            </div>
+                          </td>
+                        </>
+                      ):(
+                        <>
+                          <td style={{...cell,color:S.muted}}>{ex.day_of_week||"—"}</td>
+                          <td style={{...cell,color:S.muted}}>{ex.sets??"—"}</td>
+                          <td style={{...cell,color:S.muted}}>{ex.reps||"—"}</td>
+                          <td style={{...cell,color:S.muted,maxWidth:240}}>{ex.notes||"—"}</td>
+                          <td style={cell}>
+                            <div style={{display:"flex",gap:6}}>
+                              <Btn sm teal onClick={()=>startEditEx(ex)}>Edit</Btn>
+                              <Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn>
+                            </div>
+                          </td>
+                        </>
+                      )}
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </Card>
@@ -1817,7 +2438,7 @@ function CoachProgress() {
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
-    supabase.from("profiles").select("*").neq("email",COACH_EMAIL)
+    supabase.from("profiles").select("*").neq("email",COACH_EMAIL).neq("archived",true)
       .then(({data})=>{setClients(data||[]);if(data&&data.length>0)setSelected(data[0]);setLoading(false);});
   },[]);
 
@@ -1845,7 +2466,7 @@ function CoachProgress() {
 // COACH — TEMPLATE MANAGEMENT (create / edit / delete program templates)
 // ---------------------------------------------------------------------------
 
-const BLANK_TEMPLATE = { name:"", goal:"", days_per_week:4, description:"", structure:"" };
+const BLANK_TEMPLATE = { name:"", goal:"", category:"General", days_per_week:4, description:"", structure:"" };
 
 function TemplatesPanel() {
   const [templates, setTemplates] = useState([]);
@@ -1863,10 +2484,12 @@ function TemplatesPanel() {
   };
   useEffect(()=>{load();},[]);
 
+  const [catFilter, setCatFilter] = useState("All");
+
   const startNew = ()=>{ setEditing("new"); setForm(BLANK_TEMPLATE); setMsg(null); };
   const startEdit = (t)=>{
     setEditing(t.id);
-    setForm({name:t.name||"",goal:t.goal||"",days_per_week:t.days_per_week||4,description:t.description||"",structure:t.structure||""});
+    setForm({name:t.name||"",goal:t.goal||"",category:t.category||"General",days_per_week:t.days_per_week||4,description:t.description||"",structure:t.structure||""});
     setMsg(null);
   };
   const cancel = ()=>{ setEditing(null); setForm(BLANK_TEMPLATE); };
@@ -1875,7 +2498,7 @@ function TemplatesPanel() {
     if(!form.name.trim()){ setMsg({ok:false,text:"Name is required."}); return; }
     setSaving(true); setMsg(null);
     const payload = {
-      name:form.name.trim(), goal:form.goal.trim()||null,
+      name:form.name.trim(), goal:form.goal.trim()||null, category:form.category||null,
       days_per_week:parseInt(form.days_per_week)||null,
       description:form.description.trim()||null, structure:form.structure.trim()||null,
     };
@@ -1886,6 +2509,21 @@ function TemplatesPanel() {
     if(error){ setMsg({ok:false,text:error.message}); return; }
     setMsg({ok:true,text:editing==="new"?"Template created.":"Template updated."});
     setEditing(null); setForm(BLANK_TEMPLATE);
+    await load();
+  };
+
+  // Duplicate a template into a new editable copy (built-ins stay untouched).
+  const duplicate = async(t)=>{
+    setMsg(null);
+    const existing = new Set(templates.map(x=>x.name));
+    let name = `${t.name} (copy)`, i = 2;
+    while(existing.has(name)){ name = `${t.name} (copy ${i++})`; }
+    const { error } = await supabase.from("program_templates").insert({
+      name, goal:t.goal, category:t.category, days_per_week:t.days_per_week,
+      description:t.description, structure:t.structure, is_builtin:false,
+    });
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    setMsg({ok:true,text:`Duplicated as "${name}".`});
     await load();
   };
 
@@ -1922,6 +2560,7 @@ function TemplatesPanel() {
             <Fld label="Goal"><Inp type="text" value={form.goal} onChange={e=>set("goal",e.target.value)} placeholder="e.g. Hypertrophy"/></Fld>
             <Fld label="Days / Week"><Inp type="number" min={1} max={7} value={form.days_per_week} onChange={e=>set("days_per_week",e.target.value)}/></Fld>
           </div>
+          <Fld label="Category"><RG options={TEMPLATE_CATEGORIES} value={form.category} onChange={v=>set("category",v)}/></Fld>
           <Fld label="Short Description"><Inp type="text" value={form.description} onChange={e=>set("description",e.target.value)} placeholder="One-line summary shown to coaches"/></Fld>
           <Fld label="Structure (the blueprint the AI follows)">
             <textarea rows={5} value={form.structure} onChange={e=>set("structure",e.target.value)}
@@ -1939,11 +2578,26 @@ function TemplatesPanel() {
         <Card style={{textAlign:"center",padding:40,color:S.muted}}>No templates yet. Create your first one.</Card>
       )}
 
-      {templates.map(t=>(
+      {templates.length>0 && (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+          {["All",...TEMPLATE_CATEGORIES].map(c=>(
+            <button key={c} onClick={()=>setCatFilter(c)}
+              style={{padding:"5px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+(catFilter===c?S.accent:S.border),background:catFilter===c?"rgba(255,77,0,.08)":"transparent",color:catFilter===c?S.accent:S.muted}}>
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
         <Card key={t.id}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
             <div style={{flex:1}}>
-              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{t.name}</div>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{t.name}</div>
+                {t.category && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{t.category}</span>}
+                {t.is_builtin && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted}}>· Built-in</span>}
+              </div>
               <div style={{display:"flex",gap:14,fontSize:11,color:S.muted,margin:"4px 0 10px"}}>
                 {t.goal && <span>{t.goal}</span>}
                 {t.days_per_week && <span>{t.days_per_week} days/week</span>}
@@ -1951,9 +2605,143 @@ function TemplatesPanel() {
               {t.description && <div style={{fontSize:13,marginBottom:8}}>{t.description}</div>}
               {t.structure && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{t.structure}</div>}
             </div>
+            <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
+              <Btn sm teal onClick={()=>duplicate(t)}>Duplicate</Btn>
+              {!t.is_builtin && <Btn sm teal onClick={()=>startEdit(t)}>Edit</Btn>}
+              {!t.is_builtin && <Btn sm danger onClick={()=>remove(t)}>Delete</Btn>}
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// COACH — RESOURCE / RECIPE LIBRARY MANAGEMENT
+// ---------------------------------------------------------------------------
+
+const BLANK_RESOURCE = { title:"", category:"", kind:"article", url:"", body:"", calories:"", protein_g:"", carbs_g:"", fats_g:"", published:true };
+
+function ResourcesPanel() {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);   // null | "new" | id
+  const [form, setForm] = useState(BLANK_RESOURCE);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const load = async()=>{
+    const {data} = await supabase.from("resources").select("*").order("created_at",{ascending:false});
+    setItems(data||[]); setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const startNew = ()=>{ setEditing("new"); setForm(BLANK_RESOURCE); setMsg(null); };
+  const startEdit = (r)=>{
+    setEditing(r.id);
+    setForm({title:r.title||"",category:r.category||"",kind:r.kind||"article",url:r.url||"",body:r.body||"",
+      calories:r.calories??"",protein_g:r.protein_g??"",carbs_g:r.carbs_g??"",fats_g:r.fats_g??"",published:r.published});
+    setMsg(null);
+  };
+  const cancel = ()=>{ setEditing(null); setForm(BLANK_RESOURCE); };
+  const numOrNull = (v)=> v===""||v==null ? null : (parseInt(v)||null);
+
+  const save = async()=>{
+    if(!form.title.trim()){ setMsg({ok:false,text:"Title is required."}); return; }
+    setSaving(true); setMsg(null);
+    const payload = {
+      title:form.title.trim(), category:form.category.trim()||null, kind:form.kind,
+      url:form.url.trim()||null, body:form.body.trim()||null,
+      calories:numOrNull(form.calories), protein_g:numOrNull(form.protein_g),
+      carbs_g:numOrNull(form.carbs_g), fats_g:numOrNull(form.fats_g), published:form.published,
+    };
+    const {error} = editing==="new"
+      ? await supabase.from("resources").insert(payload)
+      : await supabase.from("resources").update(payload).eq("id",editing);
+    setSaving(false);
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    setMsg({ok:true,text:editing==="new"?"Resource created.":"Resource updated."});
+    setEditing(null); setForm(BLANK_RESOURCE); await load();
+  };
+  const remove = async(r)=>{
+    if(!window.confirm(`Delete "${r.title}"?`)) return;
+    const {error} = await supabase.from("resources").delete().eq("id",r.id);
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    if(editing===r.id) cancel();
+    await load();
+  };
+
+  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
+  const isRecipe = form.kind==="recipe";
+
+  return (
+    <div>
+      <PageTitle title="Library" sub="Recipes, guides, and resources clients can browse"/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+        <Btn teal onClick={startNew}>+ New Resource</Btn>
+      </div>
+      {msg && (
+        <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
+          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:"#ff6b5b"}}>{msg.text}</div>
+      )}
+      {editing && (
+        <Card>
+          <CardTitle>{editing==="new"?"New Resource":"Edit Resource"}</CardTitle>
+          <div className="g3" style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
+            <Fld label="Title"><Inp type="text" value={form.title} onChange={e=>set("title",e.target.value)} placeholder="e.g. High-Protein Overnight Oats"/></Fld>
+            <Fld label="Category"><Inp type="text" value={form.category} onChange={e=>set("category",e.target.value)} placeholder="e.g. Recipe, Guide"/></Fld>
+          </div>
+          <Fld label="Type"><RG options={RESOURCE_KINDS} value={form.kind} onChange={v=>set("kind",v)} cap/></Fld>
+          <Fld label="Link / URL (optional)"><Inp type="url" value={form.url} onChange={e=>set("url",e.target.value)} placeholder="https://..."/></Fld>
+          {isRecipe && (
+            <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16}}>
+              {[["calories","Calories"],["protein_g","Protein (g)"],["carbs_g","Carbs (g)"],["fats_g","Fats (g)"]].map(([k,label])=>(
+                <Fld key={k} label={label}><Inp type="number" value={form[k]} onChange={e=>set(k,e.target.value)} placeholder="0"/></Fld>
+              ))}
+            </div>
+          )}
+          <Fld label={isRecipe?"Recipe / Steps":"Body"}>
+            <textarea rows={5} value={form.body} onChange={e=>set("body",e.target.value)} placeholder={isRecipe?"Ingredients and steps...":"Description / content..."}
+              style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
+          </Fld>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+            <input type="checkbox" checked={form.published} onChange={e=>set("published",e.target.checked)} style={{accentColor:S.accent}}/>
+            <span style={{fontSize:12,color:S.muted}}>Published (visible to clients)</span>
+          </div>
+          <div style={{display:"flex",gap:10,marginTop:8}}>
+            <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save Resource"}</Btn>
+            <button onClick={cancel} style={{padding:"10px 20px",fontSize:12,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
+          </div>
+        </Card>
+      )}
+      {items.length===0 && !editing && (
+        <Card style={{textAlign:"center",padding:40,color:S.muted}}>No resources yet. Create your first one.</Card>
+      )}
+      {items.map(r=>(
+        <Card key={r.id}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+            <div style={{flex:1}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{r.title}</div>
+                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{r.category||r.kind}</span>
+                {!r.published && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted}}>· Draft</span>}
+              </div>
+              {r.kind==="recipe" && (r.calories!=null||r.protein_g!=null) && (
+                <div style={{display:"flex",gap:12,fontSize:11,color:S.muted,margin:"6px 0"}}>
+                  {r.calories!=null&&<span>{r.calories} kcal</span>}
+                  {r.protein_g!=null&&<span>P {r.protein_g}g</span>}
+                  {r.carbs_g!=null&&<span>C {r.carbs_g}g</span>}
+                  {r.fats_g!=null&&<span>F {r.fats_g}g</span>}
+                </div>
+              )}
+              {r.body && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap",marginTop:6}}>{r.body}</div>}
+              {r.url && <div style={{fontSize:11,color:S.accent2,marginTop:6}}>{r.url}</div>}
+            </div>
             <div style={{display:"flex",gap:8,flexShrink:0}}>
-              <Btn sm teal onClick={()=>startEdit(t)}>Edit</Btn>
-              <Btn sm danger onClick={()=>remove(t)}>Delete</Btn>
+              <Btn sm teal onClick={()=>startEdit(r)}>Edit</Btn>
+              <Btn sm danger onClick={()=>remove(r)}>Delete</Btn>
             </div>
           </div>
         </Card>
@@ -1999,6 +2787,7 @@ function AssessmentBar({ profile }) {
 
 function ClientProgram({ profile }) {
   const [exercises, setExercises] = useState([]);
+  const [program, setProgram] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2011,6 +2800,14 @@ function ClientProgram({ profile }) {
         setExercises(data || []);
         setLoading(false);
       });
+    supabase
+      .from("programs")
+      .select("name,phase,phase_note")
+      .eq("client_id", profile.id)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => setProgram(data || null));
   }, [profile.id]);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
@@ -2029,6 +2826,15 @@ function ClientProgram({ profile }) {
   return (
     <div>
       <PageTitle title="Training Plan" sub="Your current weekly program" />
+      {program?.phase && (
+        <Card style={{ borderLeft: "3px solid " + S.neon }}>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted }}>Current Phase</span>
+            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase}</span>
+          </div>
+          {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
+        </Card>
+      )}
       <AssessmentBar profile={profile} />
       {exercises.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 48 }}>
@@ -2201,6 +3007,8 @@ function ClientDashboard({ profile, logout }) {
       {page === "progress" && <Progress profile={profile} />}
       {page === "workouts" && <Workouts profile={profile} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
+      {page === "habits" && <Habits profile={profile} />}
+      {page === "resources" && <Resources />}
     </Shell>
   );
 }
@@ -2213,6 +3021,7 @@ function CoachDashboard({ profile, logout }) {
       {page === "dashboard" && <CoachHome setPage={setPage} />}
       {page === "clients" && <ClientsPanel />}
       {page === "templates" && <TemplatesPanel />}
+      {page === "library" && <ResourcesPanel />}
       {page === "progress" && <CoachProgress />}
     </Shell>
   );
