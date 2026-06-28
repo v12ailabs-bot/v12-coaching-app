@@ -208,6 +208,9 @@ alter table program_templates add column if not exists created_at timestamptz de
 
 -- Seed a few default templates (no-op if a template with the same name exists).
 insert into program_templates (name, goal, days_per_week, description, structure) values
+  ('V12 Hybrid — Strength / Size / Conditioning', 'Hybrid Performance', 5,
+   'The flagship V12 week: all three pillars (powerlifting, bodybuilding, conditioning) every week.',
+   'Five days hitting all three V12 pillars weekly. Days 1 & 3 open with a powerlifting main lift (squat/bench/deadlift/press at 1-5 reps, 80-95% 1RM) for nervous-system recruitment and myofibrillar density, then bodybuilding accessories (8-15 reps) for sarcoplasmic fullness. Days 2 & 4 emphasize hypertrophy volume with an explosive-power opener (jumps/throws/Olympic-lift variants). Day 5 is athletic conditioning (intervals/circuits/EMOM) for mitochondrial density and work capacity. Bias volume per the client''s three-system assessment. Deload weeks 6 and 12.'),
   ('Hypertrophy — Upper/Lower', 'Hypertrophy', 4,
    '4-day upper/lower split for muscle growth.',
    'Upper/Lower split run twice over 4 days (Upper, Lower, Upper, Lower). 4-5 exercises per session. Compound lifts first at 3-4 sets x 6-10 reps, accessories at 3 sets x 10-15 reps. Progressive overload weekly; deload weeks 6 and 12.'),

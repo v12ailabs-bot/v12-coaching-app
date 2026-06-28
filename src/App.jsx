@@ -679,7 +679,7 @@ function TopBar({ profile, isCoach, onLogout }) {
 
 function Sidebar({ isCoach, page, setPage }) {
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"progress",icon:"📈",label:"Progress"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"templates",icon:"📋",label:"Templates"},{id:"progress",icon:"📈",label:"Progress"}]
     : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"progress",icon:"📈",label:"Progress"},{id:"workouts",icon:"🏋",label:"Workout Log"}];
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
@@ -1389,6 +1389,127 @@ function CoachProgress() {
 }
 
 // ---------------------------------------------------------------------------
+// COACH — TEMPLATE MANAGEMENT (create / edit / delete program templates)
+// ---------------------------------------------------------------------------
+
+const BLANK_TEMPLATE = { name:"", goal:"", days_per_week:4, description:"", structure:"" };
+
+function TemplatesPanel() {
+  const [templates, setTemplates] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);   // null | "new" | template id
+  const [form, setForm] = useState(BLANK_TEMPLATE);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const load = async()=>{
+    const {data} = await supabase.from("program_templates").select("*").order("name");
+    setTemplates(data||[]);
+    setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const startNew = ()=>{ setEditing("new"); setForm(BLANK_TEMPLATE); setMsg(null); };
+  const startEdit = (t)=>{
+    setEditing(t.id);
+    setForm({name:t.name||"",goal:t.goal||"",days_per_week:t.days_per_week||4,description:t.description||"",structure:t.structure||""});
+    setMsg(null);
+  };
+  const cancel = ()=>{ setEditing(null); setForm(BLANK_TEMPLATE); };
+
+  const save = async()=>{
+    if(!form.name.trim()){ setMsg({ok:false,text:"Name is required."}); return; }
+    setSaving(true); setMsg(null);
+    const payload = {
+      name:form.name.trim(), goal:form.goal.trim()||null,
+      days_per_week:parseInt(form.days_per_week)||null,
+      description:form.description.trim()||null, structure:form.structure.trim()||null,
+    };
+    const { error } = editing==="new"
+      ? await supabase.from("program_templates").insert(payload)
+      : await supabase.from("program_templates").update(payload).eq("id",editing);
+    setSaving(false);
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    setMsg({ok:true,text:editing==="new"?"Template created.":"Template updated."});
+    setEditing(null); setForm(BLANK_TEMPLATE);
+    await load();
+  };
+
+  const remove = async(t)=>{
+    if(!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
+    const { error } = await supabase.from("program_templates").delete().eq("id",t.id);
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    if(editing===t.id) cancel();
+    await load();
+  };
+
+  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
+
+  return (
+    <div>
+      <PageTitle title="Templates" sub="Reusable training blueprints for AI program generation"/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+        <Btn teal onClick={startNew}>+ New Template</Btn>
+      </div>
+
+      {msg && (
+        <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
+          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",
+          color:msg.ok?S.accent2:"#ff6b5b"}}>
+          {msg.text}
+        </div>
+      )}
+
+      {editing && (
+        <Card>
+          <CardTitle>{editing==="new"?"New Template":"Edit Template"}</CardTitle>
+          <div className="g3" style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:16}}>
+            <Fld label="Name"><Inp type="text" value={form.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. Hypertrophy — Upper/Lower"/></Fld>
+            <Fld label="Goal"><Inp type="text" value={form.goal} onChange={e=>set("goal",e.target.value)} placeholder="e.g. Hypertrophy"/></Fld>
+            <Fld label="Days / Week"><Inp type="number" min={1} max={7} value={form.days_per_week} onChange={e=>set("days_per_week",e.target.value)}/></Fld>
+          </div>
+          <Fld label="Short Description"><Inp type="text" value={form.description} onChange={e=>set("description",e.target.value)} placeholder="One-line summary shown to coaches"/></Fld>
+          <Fld label="Structure (the blueprint the AI follows)">
+            <textarea rows={5} value={form.structure} onChange={e=>set("structure",e.target.value)}
+              placeholder="Describe the split, set/rep schemes, progression, and any rules the AI should follow."
+              style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
+          </Fld>
+          <div style={{display:"flex",gap:10,marginTop:8}}>
+            <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save Template"}</Btn>
+            <button onClick={cancel} style={{padding:"10px 20px",fontSize:12,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
+          </div>
+        </Card>
+      )}
+
+      {templates.length===0 && !editing && (
+        <Card style={{textAlign:"center",padding:40,color:S.muted}}>No templates yet. Create your first one.</Card>
+      )}
+
+      {templates.map(t=>(
+        <Card key={t.id}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
+            <div style={{flex:1}}>
+              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{t.name}</div>
+              <div style={{display:"flex",gap:14,fontSize:11,color:S.muted,margin:"4px 0 10px"}}>
+                {t.goal && <span>{t.goal}</span>}
+                {t.days_per_week && <span>{t.days_per_week} days/week</span>}
+              </div>
+              {t.description && <div style={{fontSize:13,marginBottom:8}}>{t.description}</div>}
+              {t.structure && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{t.structure}</div>}
+            </div>
+            <div style={{display:"flex",gap:8,flexShrink:0}}>
+              <Btn sm teal onClick={()=>startEdit(t)}>Edit</Btn>
+              <Btn sm danger onClick={()=>remove(t)}>Delete</Btn>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CLIENT — TRAINING PLAN (read-only weekly split)
 // ---------------------------------------------------------------------------
 
@@ -1590,6 +1711,7 @@ function CoachDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
       {page === "dashboard" && <CoachHome setPage={setPage} />}
       {page === "clients" && <ClientsPanel />}
+      {page === "templates" && <TemplatesPanel />}
       {page === "progress" && <CoachProgress />}
     </Shell>
   );

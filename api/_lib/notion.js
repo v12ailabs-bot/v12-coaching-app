@@ -17,6 +17,10 @@ const PROP = {
   allergies: "Allergies",
   calorieTarget: "Calorie Target",
   programTemplate: "Program Template",
+  // V12 three-system assessment (numbers 1-10, or selects). Optional.
+  nervousSystem: "Nervous System Recruitment",
+  densityToSize: "Muscular Density-to-Size",
+  workCapacity: "Metabolic Work Capacity",
 };
 
 // Reads a single Notion property into a plain JS value, regardless of its type.
@@ -132,5 +136,8 @@ export async function getClientFromNotion(email) {
     allergies: get("allergies"),
     calorie_target: get("calorieTarget"),
     program_template: get("programTemplate"),
+    nervous_system_recruitment: get("nervousSystem"),
+    muscular_density_to_size: get("densityToSize"),
+    metabolic_work_capacity: get("workCapacity"),
   };
 }
