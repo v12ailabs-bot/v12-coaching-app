@@ -104,6 +104,18 @@ create table if not exists workout_logs (
   created_at timestamptz not null default now()
 );
 
+-- Program templates: reusable training blueprints the coach selects from at
+-- generation time. The AI follows the chosen template's structure. Seeded below.
+create table if not exists program_templates (
+  id uuid primary key default gen_random_uuid(),
+  name text unique not null,
+  goal text,
+  days_per_week int,
+  description text,
+  structure text,
+  created_at timestamptz not null default now()
+);
+
 -- ---------------------------------------------------------------------------
 -- Reconcile columns on PRE-EXISTING tables
 -- ---------------------------------------------------------------------------
@@ -187,6 +199,32 @@ alter table workout_logs add column if not exists reps int;
 alter table workout_logs add column if not exists weight numeric;
 alter table workout_logs add column if not exists time text;
 
+-- program_templates
+alter table program_templates add column if not exists goal text;
+alter table program_templates add column if not exists days_per_week int;
+alter table program_templates add column if not exists description text;
+alter table program_templates add column if not exists structure text;
+alter table program_templates add column if not exists created_at timestamptz default now();
+
+-- Seed a few default templates (no-op if a template with the same name exists).
+insert into program_templates (name, goal, days_per_week, description, structure) values
+  ('Hypertrophy — Upper/Lower', 'Hypertrophy', 4,
+   '4-day upper/lower split for muscle growth.',
+   'Upper/Lower split run twice over 4 days (Upper, Lower, Upper, Lower). 4-5 exercises per session. Compound lifts first at 3-4 sets x 6-10 reps, accessories at 3 sets x 10-15 reps. Progressive overload weekly; deload weeks 6 and 12.'),
+  ('Strength — 5x5 Full Body', 'Strength', 3,
+   '3-day full-body strength on a 5x5 scheme.',
+   'Full-body 3 days/week (e.g. Mon/Wed/Fri). Built on squat, bench press, deadlift, overhead press, barbell row. Main lifts 5 sets x 5 reps, add load when all reps are met. 1-2 accessories per session at 3 x 8-12.'),
+  ('Fat Loss — Full Body Circuit', 'Fat Loss', 4,
+   '4-day metabolic circuit training for fat loss.',
+   'Full-body circuits 4 days/week. 5-6 exercises performed as supersets/circuits, 3 rounds, 12-15 reps, short rest (30-45s). Include compound movements and a conditioning finisher. Pair with a calorie deficit.'),
+  ('Athletic Performance — Push/Pull/Legs', 'Athletic Performance', 5,
+   '5-day push/pull/legs for power and conditioning.',
+   'Push/Pull/Legs across 5 days plus an upper or conditioning day. Blend strength (3-5 reps), power (explosive 3-5 reps) and hypertrophy (8-12 reps). Add plyometrics and dedicated core work.'),
+  ('Beginner Foundations — Full Body', 'General Fitness', 3,
+   '3-day beginner full-body program.',
+   'Full-body 3 days/week using machine and bodyweight basics. 6-8 exercises at 2-3 sets x 10-12 reps. Emphasize form and consistency; progress load slowly.')
+on conflict (name) do nothing;
+
 create index if not exists idx_exercises_client on exercises (client_id);
 create index if not exists idx_nutrition_client_active on nutrition_plans (client_id, active);
 create index if not exists idx_daily_client_date on daily_checkins (client_id, date);
@@ -224,6 +262,13 @@ drop policy if exists profiles_insert on profiles;
 create policy profiles_insert on profiles for insert with check (id = auth.uid());
 drop policy if exists profiles_update on profiles;
 create policy profiles_update on profiles for update using (id = auth.uid() or public.is_coach()) with check (id = auth.uid() or public.is_coach());
+
+-- program_templates: coaches read and manage; clients don't need them.
+alter table program_templates enable row level security;
+drop policy if exists templates_select on program_templates;
+create policy templates_select on program_templates for select using (public.is_coach());
+drop policy if exists templates_write on program_templates;
+create policy templates_write on program_templates for all using (public.is_coach()) with check (public.is_coach());
 
 -- programs: clients read their own; only the coach writes.
 alter table programs enable row level security;

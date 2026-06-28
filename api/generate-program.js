@@ -2,14 +2,15 @@ import { getClientFromNotion } from "./_lib/notion.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 
-// POST /api/generate-program  { client_email }
+// POST /api/generate-program  { client_email, template_id? }
 // 1. Reads the client's intake from Notion
-// 2. Generates a training plan + nutrition plan with Claude (in parallel)
-// 3. Saves both to Supabase (the tables the client portal reads)
+// 2. Loads the coach-selected program template (optional)
+// 3. Generates a training plan + nutrition plan with Claude (in parallel)
+// 4. Saves both to Supabase (the tables the client portal reads)
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const { client_email } = req.body || {};
+  const { client_email, template_id } = req.body || {};
   if (!client_email) return res.status(400).json({ error: "client_email is required" });
 
   try {
@@ -30,9 +31,27 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: "Client has not signed up in the app yet" });
     }
 
-    // 3. Generate both plans concurrently.
+    // 3. Load the coach-selected template (falls back to the client's Notion
+    //    template if none was chosen).
+    let template = null;
+    if (template_id) {
+      const { data, error } = await supabaseAdmin
+        .from("program_templates")
+        .select("*")
+        .eq("id", template_id)
+        .maybeSingle();
+      if (error) throw error;
+      template = data;
+    }
+    const templateText = template
+      ? `${template.name}${template.goal ? ` (${template.goal})` : ""}` +
+        `${template.days_per_week ? ` — ${template.days_per_week} days/week` : ""}\n` +
+        `${template.structure || template.description || ""}`
+      : client.program_template;
+
+    // 4. Generate both plans concurrently, feeding the template into training.
     const [training, nutrition] = await Promise.all([
-      generateTrainingPlan(client),
+      generateTrainingPlan({ ...client, program_template: templateText }),
       generateNutritionPlan(client),
     ]);
 
@@ -44,7 +63,9 @@ export default async function handler(req, res) {
         name: training.program_name,
         goal: training.goal || client.goal,
         experience_level: client.experience_level,
-        description: `AI-generated V12 program for ${client.name || client_email}`,
+        description:
+          `AI-generated V12 program for ${client.name || client_email}` +
+          (template ? ` · template: ${template.name}` : ""),
         weeks: training.weeks || 12,
       })
       .select()
@@ -113,6 +134,7 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       program: training.program_name,
+      template: template?.name ?? null,
       exercises_created: exercises.length,
       meals_created: (nutrition.meals || []).length,
       calories: nutrition.daily_calories ?? null,

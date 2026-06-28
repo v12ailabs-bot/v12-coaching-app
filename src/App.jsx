@@ -1210,6 +1210,8 @@ function ClientsPanel() {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [genMsg, setGenMsg] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [templateId, setTemplateId] = useState("");
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
@@ -1223,6 +1225,9 @@ function ClientsPanel() {
   };
 
   useEffect(()=>{loadClients();},[]);
+  useEffect(()=>{
+    supabase.from("program_templates").select("*").order("name").then(({data})=>setTemplates(data||[]));
+  },[]);
   useEffect(()=>{if(selected){loadEx(selected);setGenMsg(null);}},[selected]);
 
   const addEx = async()=>{
@@ -1245,11 +1250,11 @@ function ClientsPanel() {
       const r = await fetch("/api/generate-program",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({client_email:client.email}),
+        body:JSON.stringify({client_email:client.email, template_id:templateId||undefined}),
       });
       const data = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
-      setGenMsg({ok:true,text:`Generated "${data.program}" — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}.`});
+      setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}.`});
       await loadEx(selected);
     }catch(e){
       setGenMsg({ok:false,text:e.message});
@@ -1285,12 +1290,21 @@ function ClientsPanel() {
                 <div style={{fontSize:12,color:S.muted}}>{client.email} · Joined {client.created_at?.split("T")[0]}</div>
                 <div style={{fontSize:13,marginTop:4}}>{client.goal||"No goal set"}</div>
               </div>
-              <Btn onClick={()=>generateProgram(client)} disabled={generating}>
-                {generating?"Generating...":"⚡ Generate AI Program"}
-              </Btn>
+              <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:230}}>
+                <select value={templateId} onChange={e=>setTemplateId(e.target.value)}
+                  style={{background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 12px",fontSize:13,outline:"none"}}>
+                  <option value="">Client's Notion template (default)</option>
+                  {templates.map(t=>(
+                    <option key={t.id} value={t.id}>{t.name}</option>
+                  ))}
+                </select>
+                <Btn onClick={()=>generateProgram(client)} disabled={generating}>
+                  {generating?"Generating...":"⚡ Generate AI Program"}
+                </Btn>
+              </div>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:12}}>
-              Pulls this client's intake from Notion, builds a training + nutrition plan with AI, and publishes it to their portal.
+              Pulls this client's intake from Notion, builds a training + nutrition plan with AI from the selected template, and publishes it to their portal.
             </div>
             {genMsg && (
               <div style={{marginTop:12,padding:"10px 16px",fontSize:12,fontWeight:600,

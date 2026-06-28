@@ -14,14 +14,19 @@ intake data in Notion and published to the client portal.
 ## Program generation flow
 
 ```
-Coach clicks "Generate AI Program" (Clients panel)
+Client applies via Notion (intake row in the clients database)
         │
         ▼
-POST /api/generate-program  { client_email }
+Coach selects a client + a program template, clicks "Generate AI Program"
+        │
+        ▼
+POST /api/generate-program  { client_email, template_id }
         │
         ├─ 1. Read client intake from Notion        (api/_lib/notion.js)
-        ├─ 2. Generate training + nutrition plans    (api/_lib/anthropic.js, in parallel)
-        ├─ 3. Save to Supabase                       (api/_lib/supabaseAdmin.js)
+        ├─ 2. Load selected template from Supabase   (program_templates)
+        ├─ 3. Generate training + nutrition plans    (api/_lib/anthropic.js, in parallel)
+        │       training follows the chosen template; nutrition uses client data
+        ├─ 4. Save to Supabase                       (api/_lib/supabaseAdmin.js)
         │       • programs            (metadata)
         │       • exercises           (weekly split, source='ai')
         │       • nutrition_plans     (macros + meals JSON, active)
@@ -29,6 +34,10 @@ POST /api/generate-program  { client_email }
         ▼
 Client portal shows Training Plan + Nutrition pages
 ```
+
+Templates live in the `program_templates` table (seeded with defaults in
+`db/schema.sql`). The coach picks one in the Clients panel; if none is chosen,
+the client's Notion `Program Template` property is used as a fallback.
 
 ## Setup
 
