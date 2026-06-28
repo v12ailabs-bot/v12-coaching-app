@@ -6,7 +6,8 @@
 "dev": "vite",
 "build": "vite build",
 "preview": "vite preview",
-"migrate:notion": "node --env-file=.env scripts/migrate-notion.js"
+"migrate:notion": "node --env-file=.env scripts/migrate-notion.js",
+"migrate:checkins": "node --env-file=.env scripts/migrate-checkins-sheet.js"
 },
 "dependencies": {
 "@anthropic-ai/sdk": "^0.32.1",
