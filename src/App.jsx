@@ -1287,7 +1287,7 @@ function ProgressPhotos({ profile }) {
   );
 }
 
-function Workouts({ profile }) {
+function Workouts({ profile, readOnly }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -1339,13 +1339,13 @@ function Workouts({ profile }) {
 
   return (
     <div>
-      <PageTitle title="Workout Log" sub="Track your strength progression"/>
+      <PageTitle title="Workout Log" sub={readOnly?"Client's logged sessions":"Track your strength progression"}/>
       {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>Session logged!</div>}
       {exercises.length===0?(
         <Card style={{textAlign:"center",padding:48}}>
           <div style={{fontSize:32,marginBottom:12}}>🏋</div>
           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,marginBottom:8}}>No exercises assigned yet</div>
-          <div style={{color:S.muted,fontSize:13}}>Your coach will assign your program. Check back soon.</div>
+          <div style={{color:S.muted,fontSize:13}}>{readOnly?"This client has no program assigned yet.":"Your coach will assign your program. Check back soon."}</div>
         </Card>
       ):(
         <>
@@ -1418,9 +1418,9 @@ function Workouts({ profile }) {
               <Card>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
                   <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted}}>Session History</div>
-                  <Btn sm teal onClick={()=>{const open=!logMode; setLogMode(open); if(open) setSets(freshSets(selectedEx.sets));}}>{logMode?"Cancel":"+ Log Session"}</Btn>
+                  {!readOnly&&<Btn sm teal onClick={()=>{const open=!logMode; setLogMode(open); if(open) setSets(freshSets(selectedEx.sets));}}>{logMode?"Cancel":"+ Log Session"}</Btn>}
                 </div>
-                {logMode&&(
+                {!readOnly&&logMode&&(
                   <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {selectedEx.name}</div>
@@ -1835,6 +1835,7 @@ function CoachProgress() {
         ))}
       </div>
       {selected&&<Progress profile={selected}/>}
+      {selected&&<div style={{marginTop:8}}><Workouts profile={selected} readOnly/></div>}
       {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet.</div>}
     </div>
   );
