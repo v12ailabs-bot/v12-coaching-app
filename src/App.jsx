@@ -1212,6 +1212,9 @@ function ClientsPanel() {
   const [genMsg, setGenMsg] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState("");
+  const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
+  const [savingAssess, setSavingAssess] = useState(false);
+  const [assessMsg, setAssessMsg] = useState(null);
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
@@ -1229,6 +1232,29 @@ function ClientsPanel() {
     supabase.from("program_templates").select("*").order("name").then(({data})=>setTemplates(data||[]));
   },[]);
   useEffect(()=>{if(selected){loadEx(selected);setGenMsg(null);}},[selected]);
+  // Sync the assessment editor to the selected client.
+  useEffect(()=>{
+    const c = clients.find(x=>x.id===selected);
+    if(c) setAssess({
+      nervous_system_recruitment: c.nervous_system_recruitment ?? 5,
+      muscular_density_to_size: c.muscular_density_to_size ?? 5,
+      metabolic_work_capacity: c.metabolic_work_capacity ?? 5,
+    });
+    setAssessMsg(null);
+  },[selected, clients]);
+
+  const saveAssessment = async()=>{
+    setSavingAssess(true); setAssessMsg(null);
+    const {error} = await supabase.from("profiles").update({
+      nervous_system_recruitment: assess.nervous_system_recruitment,
+      muscular_density_to_size: assess.muscular_density_to_size,
+      metabolic_work_capacity: assess.metabolic_work_capacity,
+    }).eq("id",selected);
+    setSavingAssess(false);
+    if(error){ setAssessMsg({ok:false,text:error.message}); return; }
+    setAssessMsg({ok:true,text:"Assessment saved."});
+    await loadClients();
+  };
 
   const addEx = async()=>{
     if(!newEx.name) return;
@@ -1313,6 +1339,23 @@ function ClientsPanel() {
                 {genMsg.text}
               </div>
             )}
+          </Card>
+          <Card style={{marginBottom:20}}>
+            <CardTitle>V12 Assessment — three systems</CardTitle>
+            <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
+              Drives the weekly balance of the three pillars. Pulled from the client's Notion application; override here as you reassess.
+            </div>
+            <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:20}}>
+              <Sld label="Nervous System Recruitment" val={assess.nervous_system_recruitment} min={1} max={10} sfx="/10" onChange={v=>setAssess(p=>({...p,nervous_system_recruitment:v}))}/>
+              <Sld label="Muscular Density-to-Size" val={assess.muscular_density_to_size} min={1} max={10} sfx="/10" onChange={v=>setAssess(p=>({...p,muscular_density_to_size:v}))}/>
+              <Sld label="Metabolic Work Capacity" val={assess.metabolic_work_capacity} min={1} max={10} sfx="/10" onChange={v=>setAssess(p=>({...p,metabolic_work_capacity:v}))}/>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
+              <Btn onClick={saveAssessment} disabled={savingAssess}>{savingAssess?"Saving...":"Save Assessment"}</Btn>
+              {assessMsg && (
+                <span style={{fontSize:12,fontWeight:600,color:assessMsg.ok?S.accent2:"#ff6b5b"}}>{assessMsg.text}</span>
+              )}
+            </div>
           </Card>
           <Card>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -1515,6 +1558,35 @@ function TemplatesPanel() {
 
 const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 
+// Read-only display of the V12 three-system assessment + which pillar each drives.
+function AssessmentBar({ profile }) {
+  const items = [
+    ["nervous_system_recruitment", "Nervous System", "Powerlifting"],
+    ["muscular_density_to_size", "Density-to-Size", "Bodybuilding"],
+    ["metabolic_work_capacity", "Work Capacity", "Conditioning"],
+  ];
+  if (items.every(([k]) => profile[k] == null)) return null;
+  return (
+    <Card>
+      <CardTitle>V12 Assessment</CardTitle>
+      <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+        {items.map(([k, label, pillar]) => (
+          <div key={k}>
+            <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{label}</div>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, lineHeight: 1 }}>
+              {profile[k] ?? "—"}<span style={{ fontSize: 12, color: S.muted }}>/10</span>
+            </div>
+            <div style={{ height: 6, background: S.surface2, marginTop: 8, borderRadius: 3, overflow: "hidden" }}>
+              <div style={{ width: `${((profile[k] || 0) / 10) * 100}%`, height: "100%", background: S.accent }} />
+            </div>
+            <div style={{ fontSize: 10, color: S.muted, marginTop: 6 }}>{pillar}</div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function ClientProgram({ profile }) {
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1547,6 +1619,7 @@ function ClientProgram({ profile }) {
   return (
     <div>
       <PageTitle title="Training Plan" sub="Your current weekly program" />
+      <AssessmentBar profile={profile} />
       {exercises.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 48 }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>🏋</div>

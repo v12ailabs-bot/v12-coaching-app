@@ -21,15 +21,29 @@ export default async function handler(req, res) {
     }
 
     // 2. Make sure the client has an app profile to attach the program to.
+    //    Pull any stored assessment scores so coach overrides take priority.
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
-      .select("id")
+      .select(
+        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity"
+      )
       .eq("email", client_email)
       .maybeSingle();
     if (profileErr) throw profileErr;
     if (!profile) {
       return res.status(404).json({ error: "Client has not signed up in the app yet" });
     }
+
+    // Resolve the V12 assessment: a coach-set profile score wins over Notion.
+    const assessment = {
+      nervous_system_recruitment:
+        profile.nervous_system_recruitment ?? client.nervous_system_recruitment,
+      muscular_density_to_size:
+        profile.muscular_density_to_size ?? client.muscular_density_to_size,
+      metabolic_work_capacity:
+        profile.metabolic_work_capacity ?? client.metabolic_work_capacity,
+    };
+    const assessed = { ...client, ...assessment };
 
     // 3. Load the coach-selected template (falls back to the client's Notion
     //    template if none was chosen).
@@ -49,10 +63,11 @@ export default async function handler(req, res) {
         `${template.structure || template.description || ""}`
       : client.program_template;
 
-    // 4. Generate both plans concurrently, feeding the template into training.
+    // 4. Generate both plans concurrently, feeding the template + assessment
+    //    into training and the assessment into nutrition.
     const [training, nutrition] = await Promise.all([
-      generateTrainingPlan({ ...client, program_template: templateText }),
-      generateNutritionPlan(client),
+      generateTrainingPlan({ ...assessed, program_template: templateText }),
+      generateNutritionPlan(assessed),
     ]);
 
     // 4. Save program metadata.
@@ -125,10 +140,21 @@ export default async function handler(req, res) {
     });
     if (nutErr) throw nutErr;
 
-    // 7. Mark onboarding complete and sync the goal.
+    // 7. Mark onboarding complete, sync the goal, and persist the resolved
+    //    assessment (coerced to 1-10 ints; non-numeric Notion values -> null).
+    const toScore = (v) => {
+      const n = Math.round(Number(v));
+      return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : null;
+    };
     await supabaseAdmin
       .from("profiles")
-      .update({ goal: client.goal || null, onboarding_complete: true })
+      .update({
+        goal: client.goal || null,
+        onboarding_complete: true,
+        nervous_system_recruitment: toScore(assessment.nervous_system_recruitment),
+        muscular_density_to_size: toScore(assessment.muscular_density_to_size),
+        metabolic_work_capacity: toScore(assessment.metabolic_work_capacity),
+      })
       .eq("id", profile.id);
 
     return res.status(200).json({
