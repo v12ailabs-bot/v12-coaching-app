@@ -50,6 +50,9 @@ the client's Notion `Program Template` property is used as a fallback.
    ```
    db/schema.sql
    ```
+   This also creates the private `progress-photos` storage bucket and its access
+   policies (clients read/write their own folder; the coach reads all). Progress
+   photos are served via short-lived signed URLs.
 
 3. **Environment** — copy `.env.example` to `.env` and fill in:
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — browser (publishable) Supabase creds

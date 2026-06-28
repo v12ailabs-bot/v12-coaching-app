@@ -43,6 +43,7 @@ const S = {
   muted: "#666670",
   accent: "#FF4D00",
   accent2: "#00C9A7",
+  neon: "#C6FF00",
 };
 
 // Avatar colors, cycled by index.
@@ -736,6 +737,145 @@ const Btn = ({children,onClick,disabled,teal,sm,danger}) => (
   </button>
 );
 
+// Adherence over a trailing window: % of days with a daily check-in, plus the
+// training-completion rate among those check-ins. Shared by client + coach views.
+function adherenceFrom(checkins, days = 30) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cut = cutoff.toISOString().split("T")[0];
+  const recent = (checkins || []).filter((c) => c.date >= cut);
+  const checkinDays = new Set(recent.map((c) => c.date)).size;
+  const completed = recent.filter((c) => c.workout === "completed").length;
+  return {
+    score: Math.min(100, Math.round((checkinDays / days) * 100)),
+    checkinDays,
+    days,
+    trainingRate: recent.length ? Math.round((completed / recent.length) * 100) : 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// CLIENT — WELCOME (shown until the client is onboarded / has a program)
+// ---------------------------------------------------------------------------
+
+function ClientWelcome({ profile, setPage }) {
+  const [status, setStatus] = useState({ exercises: 0, nutrition: false, loading: true });
+
+  useEffect(() => {
+    (async () => {
+      const { count } = await supabase
+        .from("exercises")
+        .select("*", { count: "exact", head: true })
+        .eq("client_id", profile.id);
+      const { data: nut } = await supabase
+        .from("nutrition_plans")
+        .select("id")
+        .eq("client_id", profile.id)
+        .eq("active", true)
+        .limit(1)
+        .maybeSingle();
+      setStatus({ exercises: count || 0, nutrition: !!nut, loading: false });
+    })();
+  }, [profile.id]);
+
+  const firstName = (profile.name || "").split(" ")[0] || "Athlete";
+  const hasAssessment =
+    profile.nervous_system_recruitment != null ||
+    profile.muscular_density_to_size != null ||
+    profile.metabolic_work_capacity != null;
+  const steps = [
+    { label: "Account created", done: true },
+    { label: "V12 assessment received", done: hasAssessment },
+    { label: "Training program built", done: status.exercises > 0 },
+    { label: "Nutrition plan set", done: status.nutrition },
+  ];
+  const doneCount = steps.filter((s) => s.done).length;
+  const pct = Math.round((doneCount / steps.length) * 100);
+
+  const pillars = [
+    ["LOOK GOOD", "Bodybuilding volume for the physique — sarcoplasmic fullness and size."],
+    ["MOVE GOOD", "Athletic conditioning and explosive power — work capacity that carries over to life."],
+    ["PERFORM GOOD", "Powerlifting strength for a nervous system that recruits everything you've got."],
+  ];
+  const next = [
+    ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
+    ["✅", "Daily & weekly check-ins", "Log training, recovery, and measurements so we can adapt in real time."],
+    ["📈", "Progress tracking", "Weight, measurements, strength, photos, and an adherence score — all in one place."],
+  ];
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* Hero */}
+      <div style={{ position: "relative", overflow: "hidden", border: "1px solid " + S.border, background: S.surface, padding: "56px 40px", marginBottom: 24 }}>
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 20% 0%, rgba(198,255,0,.14) 0%, transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(255,77,0,.10) 0%, transparent 50%)" }} />
+        <div style={{ position: "relative" }}>
+          <div style={{ fontSize: 10, letterSpacing: 4, textTransform: "uppercase", color: S.neon, marginBottom: 14 }}>V12 Performance Systems · Private Client</div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 68, lineHeight: 0.95, letterSpacing: 1 }}>
+            WELCOME, {firstName.toUpperCase()}.
+          </div>
+          <div style={{ fontSize: 15, color: S.text, opacity: 0.9, maxWidth: 620, marginTop: 16, lineHeight: 1.7 }}>
+            You didn't join another fitness app. V12 is one hybrid system that builds the powerlifter's strength,
+            the bodybuilder's physique, and the athlete's engine — at the same time. You'll{" "}
+            <span style={{ color: S.neon, fontWeight: 700 }}>look good, move good, and perform good</span>, all at once.
+          </div>
+        </div>
+      </div>
+
+      {/* Three pillars */}
+      <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 24 }}>
+        {pillars.map(([title, body]) => (
+          <div key={title} style={{ background: S.surface, border: "1px solid " + S.border, borderTop: "2px solid " + S.neon, padding: 22 }}>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, color: S.neon, letterSpacing: 1 }}>{title}</div>
+            <div style={{ fontSize: 13, color: S.muted, marginTop: 8, lineHeight: 1.6 }}>{body}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* What to expect next */}
+      <Card>
+        <CardTitle>What happens next</CardTitle>
+        <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20 }}>
+          {next.map(([icon, title, body]) => (
+            <div key={title}>
+              <div style={{ fontSize: 26, marginBottom: 8 }}>{icon}</div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+              <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.6 }}>{body}</div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Onboarding status */}
+      <Card>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
+          <CardTitle>Your onboarding status</CardTitle>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{pct}%</div>
+        </div>
+        <div style={{ height: 8, background: S.surface2, borderRadius: 4, overflow: "hidden", marginBottom: 18 }}>
+          <div style={{ width: pct + "%", height: "100%", background: S.neon, transition: "width .4s" }} />
+        </div>
+        {status.loading ? (
+          <div className="spinner" style={{ margin: "10px auto" }} />
+        ) : (
+          steps.map((s) => (
+            <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 12, padding: "9px 0", borderBottom: "1px solid " + S.border }}>
+              <div style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, background: s.done ? S.neon : "transparent", color: s.done ? "#0A0A0B" : S.muted, border: s.done ? "none" : "1px solid " + S.border }}>
+                {s.done ? "✓" : ""}
+              </div>
+              <span style={{ fontSize: 13.5, color: s.done ? S.text : S.muted }}>{s.label}</span>
+              <span style={{ marginLeft: "auto", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: s.done ? S.neon : S.muted }}>{s.done ? "Done" : "Pending"}</span>
+            </div>
+          ))
+        )}
+        <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <Btn onClick={() => setPage("daily")}>Log your first check-in</Btn>
+          <button onClick={() => setPage("progress")} style={{ padding: "10px 20px", fontSize: 12, background: "transparent", color: S.text, border: "1px solid " + S.border, cursor: "pointer", fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>View progress</button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function ClientHome({ profile, setPage }) {
   const [checkins, setCheckins] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -908,12 +1048,20 @@ function Progress({ profile }) {
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
+  const adh = adherenceFrom(daily,30);
+  const lastWeight = daily.length?daily[daily.length-1].weight:null;
 
   return (
     <div>
       <PageTitle title="Progress" sub="Your data over time"/>
-      <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24}}>
-        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["goals","Goals"]].map(([id,label])=>(
+      <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
+        <Stat label="Adherence (30d)" value={adh.score} unit="%"/>
+        <Stat label="Check-in Days" value={adh.checkinDays} unit={"/"+adh.days}/>
+        <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
+        <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
+      </div>
+      <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
+        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
         ))}
       </div>
@@ -981,6 +1129,10 @@ function Progress({ profile }) {
         </div>
       ))}
 
+      {tab==="strength" && <StrengthTab profile={profile}/>}
+
+      {tab==="photos" && <ProgressPhotos profile={profile}/>}
+
       {tab==="goals" && (weekly.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           <CC title="Goal Progress" sub="Weekly percent">
@@ -1007,6 +1159,131 @@ function Progress({ profile }) {
           </CC>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Strength progression: top set per exercise per day, from the workout logs.
+function StrengthTab({ profile }) {
+  const [series, setSeries] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(()=>{
+    (async()=>{
+      const {data:logs} = await supabase.from("workout_logs").select("*").eq("client_id",profile.id).order("date");
+      const {data:exs} = await supabase.from("exercises").select("id,name,is_bodyweight").eq("client_id",profile.id);
+      const exMap = {}; (exs||[]).forEach(e=>{exMap[e.id]=e;});
+      const byEx = {};
+      (logs||[]).forEach(l=>{
+        const ex = exMap[l.exercise_id]; if(!ex) return;
+        const val = ex.is_bodyweight ? (l.reps||0) : (l.weight||0);
+        if(!byEx[l.exercise_id]) byEx[l.exercise_id] = {name:ex.name,is_bodyweight:ex.is_bodyweight,byDate:{}};
+        const d = byEx[l.exercise_id].byDate;
+        d[l.date] = Math.max(d[l.date]||0, val);
+      });
+      const out = Object.values(byEx).map(e=>({
+        name:e.name, is_bodyweight:e.is_bodyweight,
+        data:Object.entries(e.byDate).map(([date,value])=>({date,value})).sort((a,b)=>a.date<b.date?-1:1),
+      })).filter(e=>e.data.length>0);
+      setSeries(out); setLoading(false);
+    })();
+  },[profile.id]);
+
+  if(loading) return <div className="spinner" style={{margin:"40px auto"}}/>;
+  if(series.length===0) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No logged sessions yet. Strength progress appears as you log workouts.</Card>;
+
+  return (
+    <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+      {series.map(s=>(
+        <CC key={s.name} title={s.name} sub={s.is_bodyweight?"Top-set reps over time":"Top-set weight over time"}>
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={s.data}>
+              <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+              <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
+              <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+              <Tooltip {...TT}/>
+              <Line type="monotone" dataKey="value" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
+            </LineChart>
+          </ResponsiveContainer>
+        </CC>
+      ))}
+    </div>
+  );
+}
+
+// Progress photos: upload to private storage, gallery via short-lived signed URLs.
+function ProgressPhotos({ profile }) {
+  const [photos, setPhotos] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState(null);
+
+  const load = useCallback(async()=>{
+    const {data:rows} = await supabase.from("progress_photos").select("*").eq("client_id",profile.id).order("created_at",{ascending:false});
+    const paths = (rows||[]).map(r=>r.path);
+    const urls = {};
+    if(paths.length){
+      const {data:signed} = await supabase.storage.from("progress-photos").createSignedUrls(paths, 3600);
+      (signed||[]).forEach(s=>{ if(s.path && s.signedUrl) urls[s.path]=s.signedUrl; });
+    }
+    setPhotos((rows||[]).map(r=>({...r, url:urls[r.path]})));
+    setLoading(false);
+  },[profile.id]);
+  useEffect(()=>{load();},[load]);
+
+  const onUpload = async(e)=>{
+    const file = e.target.files?.[0]; if(!file) return;
+    setUploading(true); setErr(null);
+    try{
+      const ext = (file.name.split(".").pop()||"jpg").toLowerCase();
+      const path = `${profile.id}/${Date.now()}.${ext}`;
+      const {error:upErr} = await supabase.storage.from("progress-photos").upload(path, file, {upsert:false, contentType:file.type});
+      if(upErr) throw upErr;
+      const {error:insErr} = await supabase.from("progress_photos").insert({client_id:profile.id, path, taken_on:todayStr()});
+      if(insErr) throw insErr;
+      await load();
+    }catch(e2){ setErr(e2.message); }
+    finally{ setUploading(false); e.target.value=""; }
+  };
+
+  const remove = async(p)=>{
+    if(!window.confirm("Delete this photo?")) return;
+    await supabase.storage.from("progress-photos").remove([p.path]);
+    await supabase.from("progress_photos").delete().eq("id",p.id);
+    await load();
+  };
+
+  return (
+    <div>
+      <Card>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
+          <div>
+            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>Progress Photos</div>
+            <div style={{fontSize:11,color:S.muted}}>Private to you and your coach. Shoot in consistent lighting and angle for the best comparison.</div>
+          </div>
+          <label style={{...bS({}),background:S.neon,color:"#0A0A0B",display:"inline-block",cursor:uploading?"default":"pointer",opacity:uploading?0.6:1}}>
+            {uploading?"Uploading...":"+ Upload Photo"}
+            <input type="file" accept="image/*" onChange={onUpload} disabled={uploading} style={{display:"none"}}/>
+          </label>
+        </div>
+        {err && <div style={{color:"#ff6b5b",fontSize:12,marginTop:10}}>{err}</div>}
+      </Card>
+      {loading ? <div className="spinner" style={{margin:"40px auto"}}/> :
+        photos.length===0 ? <Card style={{textAlign:"center",padding:40,color:S.muted}}>No photos yet. Upload your first to start your visual timeline.</Card> :
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14}}>
+          {photos.map(p=>(
+            <div key={p.id} style={{border:"1px solid "+S.border,background:S.surface}}>
+              {p.url
+                ? <img src={p.url} alt="" style={{width:"100%",height:210,objectFit:"cover",display:"block"}}/>
+                : <div style={{height:210,display:"flex",alignItems:"center",justifyContent:"center",color:S.muted,fontSize:12}}>unavailable</div>}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px"}}>
+                <span style={{fontSize:11,color:S.muted}}>{p.taken_on||(p.created_at||"").slice(0,10)}</span>
+                <button onClick={()=>remove(p)} style={{background:"none",border:"none",color:"#ff6b5b",cursor:"pointer",fontSize:11,fontWeight:600}}>Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      }
     </div>
   );
 }
@@ -1146,53 +1423,117 @@ function Workouts({ profile }) {
   );
 }
 
+// Coach priority dashboard: surfaces clients who need attention based on missed
+// check-ins, low adherence, no recent activity, or a wrong-direction weight trend.
 function CoachHome({ setPage }) {
   const [clients, setClients] = useState([]);
-  const [counts, setCounts] = useState({});
+  const [byClient, setByClient] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
-    const load = async()=>{
-      const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
-      setClients(data||[]);
-      const c={};
-      for(const p of (data||[])){
-        const {count} = await supabase.from("daily_checkins").select("*",{count:"exact",head:true}).eq("client_id",p.id);
-        c[p.id]=count||0;
+    (async()=>{
+      const {data:cl} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
+      const list = cl||[];
+      const ids = list.map(c=>c.id);
+      const grouped = {};
+      if(ids.length){
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
+        const cut = cutoff.toISOString().split("T")[0];
+        const {data:ch} = await supabase.from("daily_checkins")
+          .select("client_id,date,weight,workout").in("client_id",ids).gte("date",cut).order("date");
+        (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
       }
-      setCounts(c);setLoading(false);
-    };
-    load();
+      setClients(list); setByClient(grouped); setLoading(false);
+    })();
   },[]);
 
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
+  const today = todayStr();
+  const daysSinceDate = (d)=> Math.round((new Date(today) - new Date(d)) / 86400000);
+
+  const assessed = clients.map(c=>{
+    const ch = byClient[c.id] || [];
+    const adh = adherenceFrom(ch, 30);
+    const last = ch.length ? ch[ch.length-1].date : null;
+    const since = last ? daysSinceDate(last) : null;
+    const flags = [];
+    if(since==null) flags.push({label:"No activity yet", tone:"red"});
+    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red"});
+    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber"});
+    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber"});
+    const weights = ch.filter(r=>r.weight!=null);
+    if(weights.length>=2){
+      const delta = weights[weights.length-1].weight - weights[0].weight;
+      const goal = (c.goal||"").toLowerCase();
+      const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goal);
+      const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goal);
+      if(wantsLoss && delta>1) flags.push({label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red"});
+      else if(wantsGain && delta<-1) flags.push({label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red"});
+    }
+    const severity = flags.reduce((s,f)=>s+(f.tone==="red"?2:1),0);
+    return {client:c, adh, last, since, flags, severity};
+  });
+
+  const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
+  const avgAdh = clients.length ? Math.round(assessed.reduce((s,a)=>s+a.adh.score,0)/clients.length) : 0;
+
+  const Chip = ({f}) => (
+    <span style={{padding:"3px 9px",fontSize:10,fontWeight:600,
+      background:f.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",
+      color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}</span>
+  );
+
   return (
     <div>
-      <PageTitle title="Coach Dashboard" sub="V12 System · All Clients"/>
+      <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
       <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Total Clients" value={clients.length} unit=""/>
-        <Stat label="Total Check-ins" value={Object.values(counts).reduce((a,b)=>a+b,0)} unit=""/>
-        <Stat label="Active Programs" value={clients.length} unit=""/>
-        <Stat label="System" value="V12" unit=""/>
+        <Stat label="Need Attention" value={needs.length} unit=""/>
+        <Stat label="On Track" value={clients.length-needs.length} unit=""/>
+        <Stat label="Avg Adherence" value={avgAdh} unit="%"/>
       </div>
+
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <CardTitle>Client Roster</CardTitle>
+          <CardTitle>⚠ Needs Attention</CardTitle>
           <Btn sm teal onClick={()=>setPage("clients")}>Manage Clients</Btn>
         </div>
-        {clients.length===0&&<div style={{color:S.muted,fontSize:13,padding:"20px 0"}}>No clients yet. Share the app URL with your clients.</div>}
-        {clients.map((c,i)=>(
-          <div key={c.id} onClick={()=>setPage("clients")}
-            style={{background:S.surface,border:"1px solid "+S.border,padding:"18px 20px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",marginBottom:10}}>
-            <div style={{width:46,height:46,borderRadius:"50%",background:COLORS[i%COLORS.length],color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-              {avatarFrom(c.name||c.email)}
+        {clients.length===0 && <div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No clients yet. Share the app URL with your clients.</div>}
+        {clients.length>0 && needs.length===0 && <div style={{color:S.accent2,fontSize:13,padding:"8px 0"}}>All clients are on track. Nice work.</div>}
+        {needs.map(a=>(
+          <div key={a.client.id} onClick={()=>setPage("clients")}
+            style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(a.severity>=2?"#c0392b":"#f5a623"),padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",marginBottom:10}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+              {avatarFrom(a.client.name||a.client.email)}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
+              <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"} · {a.last?`last check-in ${a.last}`:"never checked in"}</div>
+            </div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"50%"}}>
+              {a.flags.map((f,i)=><Chip key={i} f={f}/>)}
+            </div>
+          </div>
+        ))}
+      </Card>
+
+      <Card>
+        <CardTitle>All Clients</CardTitle>
+        {assessed.map((a,i)=>(
+          <div key={a.client.id} onClick={()=>setPage("clients")}
+            style={{background:S.surface,border:"1px solid "+S.border,padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",marginBottom:10}}>
+            <div style={{width:44,height:44,borderRadius:"50%",background:COLORS[i%COLORS.length],color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+              {avatarFrom(a.client.name||a.client.email)}
             </div>
             <div style={{flex:1}}>
-              <div style={{fontWeight:600,fontSize:14}}>{c.name||c.email}</div>
-              <div style={{fontSize:12,color:S.muted}}>{c.goal||"No goal set"}</div>
+              <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
+              <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"}</div>
             </div>
-            <div style={{textAlign:"right",fontSize:12,color:S.muted}}>{counts[c.id]||0} check-ins</div>
+            <div style={{textAlign:"right",fontSize:12}}>
+              <div style={{color:a.adh.score<50?"#f5a623":S.accent2,fontWeight:600}}>{a.adh.score}% adherence</div>
+              <div style={{color:S.muted,marginTop:2}}>{a.last?`last ${a.last}`:"no check-ins"}</div>
+            </div>
           </div>
         ))}
       </Card>
@@ -1792,7 +2133,9 @@ function ClientDashboard({ profile, logout }) {
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && <ClientHome profile={profile} setPage={setPage} />}
+      {page === "dashboard" && (profile.onboarding_complete
+        ? <ClientHome profile={profile} setPage={setPage} />
+        : <ClientWelcome profile={profile} setPage={setPage} />)}
       {page === "program" && <ClientProgram profile={profile} />}
       {page === "daily" && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}

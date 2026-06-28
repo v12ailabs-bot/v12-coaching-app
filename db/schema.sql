@@ -108,6 +108,16 @@ create table if not exists workout_logs (
   created_at timestamptz not null default now()
 );
 
+-- Progress photos: metadata rows; the image bytes live in Supabase Storage
+-- (bucket 'progress-photos'). `path` is the object path; URLs are signed on read.
+create table if not exists progress_photos (
+  id uuid primary key default gen_random_uuid(),
+  client_id uuid not null references profiles (id) on delete cascade,
+  path text not null,
+  taken_on date,
+  created_at timestamptz not null default now()
+);
+
 -- Program templates: reusable training blueprints the coach selects from at
 -- generation time. The AI follows the chosen template's structure. Seeded below.
 create table if not exists program_templates (
@@ -235,11 +245,17 @@ insert into program_templates (name, goal, days_per_week, description, structure
    'Full-body 3 days/week using machine and bodyweight basics. 6-8 exercises at 2-3 sets x 10-12 reps. Emphasize form and consistency; progress load slowly.')
 on conflict (name) do nothing;
 
+-- progress_photos
+alter table progress_photos add column if not exists path text;
+alter table progress_photos add column if not exists taken_on date;
+alter table progress_photos add column if not exists created_at timestamptz default now();
+
 create index if not exists idx_exercises_client on exercises (client_id);
 create index if not exists idx_nutrition_client_active on nutrition_plans (client_id, active);
 create index if not exists idx_daily_client_date on daily_checkins (client_id, date);
 create index if not exists idx_weekly_client_date on weekly_checkins (client_id, date);
 create index if not exists idx_logs_client_ex on workout_logs (client_id, exercise_id);
+create index if not exists idx_photos_client on progress_photos (client_id, created_at);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
@@ -321,3 +337,34 @@ drop policy if exists logs_select on workout_logs;
 create policy logs_select on workout_logs for select using (client_id = auth.uid() or public.is_coach());
 drop policy if exists logs_modify on workout_logs;
 create policy logs_modify on workout_logs for all using (client_id = auth.uid()) with check (client_id = auth.uid());
+
+-- progress_photos: a client manages their own; the coach can read all.
+alter table progress_photos enable row level security;
+drop policy if exists photos_select on progress_photos;
+create policy photos_select on progress_photos for select using (client_id = auth.uid() or public.is_coach());
+drop policy if exists photos_modify on progress_photos;
+create policy photos_modify on progress_photos for all using (client_id = auth.uid()) with check (client_id = auth.uid());
+
+-- ---------------------------------------------------------------------------
+-- Storage: progress photos bucket
+-- ---------------------------------------------------------------------------
+-- Private bucket; the app serves images via short-lived signed URLs. Files are
+-- stored under a per-client folder: '<client_id>/<filename>'.
+insert into storage.buckets (id, name, public)
+values ('progress-photos', 'progress-photos', false)
+on conflict (id) do nothing;
+
+-- A client reads/writes/deletes only files in their own folder; the coach reads all.
+drop policy if exists progress_photos_read on storage.objects;
+create policy progress_photos_read on storage.objects for select using (
+  bucket_id = 'progress-photos'
+  and (public.is_coach() or (storage.foldername(name))[1] = auth.uid()::text)
+);
+drop policy if exists progress_photos_insert on storage.objects;
+create policy progress_photos_insert on storage.objects for insert with check (
+  bucket_id = 'progress-photos' and (storage.foldername(name))[1] = auth.uid()::text
+);
+drop policy if exists progress_photos_delete on storage.objects;
+create policy progress_photos_delete on storage.objects for delete using (
+  bucket_id = 'progress-photos' and (storage.foldername(name))[1] = auth.uid()::text
+);
