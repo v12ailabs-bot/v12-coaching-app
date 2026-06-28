@@ -2184,8 +2184,12 @@ function ClientsPanel() {
     if(!vis.length){ setSelected(s=>s?null:s); return; }
     setSelected(s=>(s && vis.some(c=>c.id===s)) ? s : vis[0].id);
   },[clients, showArchived]);
+  // Program templates come from the Notion program library (via the API).
   useEffect(()=>{
-    supabase.from("program_templates").select("*").order("name").then(({data})=>setTemplates(data||[]));
+    fetch("/api/list-templates")
+      .then(r=>r.ok?r.json():{templates:[]})
+      .then(d=>setTemplates(d.templates||[]))
+      .catch(()=>setTemplates([]));
   },[]);
   useEffect(()=>{if(selected){loadEx(selected);setGenMsg(null);}},[selected]);
   // Sync the assessment editor to the selected client.
@@ -2325,7 +2329,9 @@ function ClientsPanel() {
                   style={{background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 12px",fontSize:13,outline:"none"}}>
                   <option value="">Client's Notion template (default)</option>
                   {templates.map(t=>(
-                    <option key={t.id} value={t.id}>{t.name}</option>
+                    <option key={t.id} value={t.id}>
+                      {t.name}{t.difficulty?` · ${t.difficulty}`:""}{t.duration?` · ${t.duration}`:""}
+                    </option>
                   ))}
                 </select>
                 <Btn onClick={()=>generateProgram(client)} disabled={generating}>
@@ -2877,7 +2883,7 @@ function ClientProgram({ profile }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Exercise", "Sets", "Reps", "Notes"].map((h) => (
+                  {["Exercise", "Section", "Sets", "Reps", "Notes"].map((h) => (
                     <th key={h} style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "8px 14px", borderBottom: "1px solid " + S.border }}>{h}</th>
                   ))}
                 </tr>
@@ -2889,6 +2895,7 @@ function ClientProgram({ profile }) {
                       {ex.name}
                       {ex.is_bodyweight && <span style={{ marginLeft: 8, fontSize: 9, color: S.muted }}>BW</span>}
                     </td>
+                    <td style={{ padding: "10px 14px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.section || "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.sets ?? "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.reps ?? "—"}</td>
                     <td style={{ padding: "10px 14px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.notes || "—"}</td>

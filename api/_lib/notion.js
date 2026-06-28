@@ -1,6 +1,6 @@
 import { Client } from "@notionhq/client";
 
-const notion = new Client({ auth: process.env.NOTION_API_KEY });
+export const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
 // Maps the fields we need -> the property names in your Notion clients database.
 // Adjust the right-hand side to match your database's exact column names.
@@ -24,7 +24,7 @@ const PROP = {
 };
 
 // Reads a single Notion property into a plain JS value, regardless of its type.
-function readProp(prop) {
+export function readProp(prop) {
   if (!prop) return null;
   switch (prop.type) {
     case "title":
