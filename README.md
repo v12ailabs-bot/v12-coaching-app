@@ -50,9 +50,25 @@ the client's Notion `Program Template` property is used as a fallback.
    ```
    db/schema.sql
    ```
-   This also creates the private `progress-photos` storage bucket and its access
-   policies (clients read/write their own folder; the coach reads all). Progress
-   photos are served via short-lived signed URLs.
+   The script is idempotent — **re-run it after pulling** to pick up new tables
+   and columns (`habits`, `habit_logs`, `coach_notes`, `conversations`,
+   `resources`, `program_versions`, plus `profiles.archived`, `programs.phase`,
+   and `program_templates.category`). It also creates the private `progress-photos`
+   storage bucket and its access policies (clients read/write their own folder;
+   the coach reads all). Progress photos are served via short-lived signed URLs.
+
+## Features
+
+- **Client:** welcome gate, training plan (with current phase), nutrition plan,
+  daily + weekly check-ins, daily **habits** tracker, workout logging + history,
+  progress charts (weight, wellness, measurements, strength, goals, photos), and
+  a **resource/recipe library**.
+- **Coach:** priority dashboard (missed check-in / low-adherence / low-nutrition
+  alerts), per-client **notes**, **conversation log**, **program-phase** control,
+  **habit** management, AI program generation, V12 assessment, **client archive**,
+  full read-only client history, **program version history** (auto-snapshot on
+  generate, manual snapshot, view + restore), template management (categories +
+  duplication), and library management.
 
 3. **Environment** — copy `.env.example` to `.env` and fill in:
    - `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` — browser (publishable) Supabase creds
