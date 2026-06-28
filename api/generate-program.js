@@ -1,167 +1,124 @@
-iport Anthropic from "@anthropic-ai/sdk";
-import { createClient } from "@supabase/supabase-js";
+import { getClientFromNotion } from "./_lib/notion.js";
+import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
+import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_SERVICE_KEY
-);
-
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
-
+// POST /api/generate-program  { client_email }
+// 1. Reads the client's intake from Notion
+// 2. Generates a training plan + nutrition plan with Claude (in parallel)
+// 3. Saves both to Supabase (the tables the client portal reads)
 export default async function handler(req, res) {
-  if (req.method !== "POST") return res.status(405).end();
+  if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
-  const {
-    client_email,
-    client_name,
-    goal,
-    days_available,
-    experience_level,
-    injuries,
-    equipment,
-    session_length,
-    program_template,
-  } = req.body;
+  const { client_email } = req.body || {};
+  if (!client_email) return res.status(400).json({ error: "client_email is required" });
 
   try {
-    // Build the program using Claude
-    const message = await anthropic.messages.create({
-      model: "claude-opus-4-6",
-      max_tokens: 4000,
-      messages: [
-        {
-          role: "user",
-          content: `You are V12 Performance Systems, an elite fitness coaching AI.
-
-Build a complete personalized weekly training program based on this client data and program template.
-
-CLIENT PROFILE:
-- Name: ${client_name}
-- Primary Goal: ${goal}
-- Training Days Per Week: ${days_available}
-- Experience Level: ${experience_level}
-- Injuries: ${injuries || "None"}
-- Equipment: ${equipment}
-- Session Length: ${session_length}
-
-PROGRAM TEMPLATE TO FOLLOW:
-${program_template}
-
-OUTPUT FORMAT — respond with valid JSON only, no other text:
-{
-  "program_name": "string",
-  "goal": "string",
-  "days_per_week": number,
-  "weeks": 12,
-  "weekly_split": [
-    {
-      "day": "Monday",
-      "focus": "string",
-      "exercises": [
-        {
-          "name": "string",
-          "category": "string",
-          "sets": number,
-          "reps": "string",
-          "is_bodyweight": boolean,
-          "notes": "string"
-        }
-      ]
+    // 1. Read client data from Notion.
+    const client = await getClientFromNotion(client_email);
+    if (!client) {
+      return res.status(404).json({ error: `No client found in Notion for ${client_email}` });
     }
-  ]
-}`,
-        },
-      ],
-    });
 
-    const programData = JSON.parse(message.content[0].text);
-
-    // Find or create the client profile in Supabase
-    const { data: profile } = await supabase
+    // 2. Make sure the client has an app profile to attach the program to.
+    const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select("id")
       .eq("email", client_email)
       .maybeSingle();
-
+    if (profileErr) throw profileErr;
     if (!profile) {
-      return res.status(404).json({ error: "Client profile not found in app" });
+      return res.status(404).json({ error: "Client has not signed up in the app yet" });
     }
 
-    // Delete old program if exists
-    const { data: oldProgram } = await supabase
-      .from("client_programs")
-      .select("id")
-      .eq("client_id", profile.id)
-      .eq("active", true)
-      .maybeSingle();
+    // 3. Generate both plans concurrently.
+    const [training, nutrition] = await Promise.all([
+      generateTrainingPlan(client),
+      generateNutritionPlan(client),
+    ]);
 
-    if (oldProgram) {
-      await supabase
-        .from("client_programs")
-        .update({ active: false })
-        .eq("id", oldProgram.id);
-    }
-
-    // Create the program in Supabase
-    const { data: newProgram } = await supabase
+    // 4. Save program metadata.
+    const { data: program, error: progErr } = await supabaseAdmin
       .from("programs")
       .insert({
-        name: programData.program_name,
-        goal: programData.goal,
-        experience_level: experience_level,
-        description: `Custom V12 program built for ${client_name}`,
-        weeks: 12,
+        client_id: profile.id,
+        name: training.program_name,
+        goal: training.goal || client.goal,
+        experience_level: client.experience_level,
+        description: `AI-generated V12 program for ${client.name || client_email}`,
+        weeks: training.weeks || 12,
       })
       .select()
       .single();
+    if (progErr) throw progErr;
 
-    // Insert all exercises
+    // 5. Replace previously AI-generated exercises (keep coach-added ones),
+    //    then insert the new weekly split into the per-client exercises table.
+    await supabaseAdmin
+      .from("exercises")
+      .delete()
+      .eq("client_id", profile.id)
+      .eq("source", "ai");
+
     const exercises = [];
-    for (const day of programData.weekly_split) {
-      for (let i = 0; i < day.exercises.length; i++) {
-        const ex = day.exercises[i];
+    for (const day of training.weekly_split || []) {
+      (day.exercises || []).forEach((ex, i) => {
         exercises.push({
-          program_id: newProgram.id,
+          client_id: profile.id,
+          program_id: program.id,
           name: ex.name,
-          category: ex.category,
+          category: ex.category || day.focus || null,
           day_of_week: day.day,
-          sets: ex.sets,
-          reps: ex.reps,
-          is_bodyweight: ex.is_bodyweight,
+          sets: ex.sets ?? null,
+          reps: ex.reps != null ? String(ex.reps) : null,
+          is_bodyweight: !!ex.is_bodyweight,
           notes: ex.notes || null,
           order_index: i,
+          source: "ai",
         });
-      }
+      });
+    }
+    if (exercises.length) {
+      const { error } = await supabaseAdmin.from("exercises").insert(exercises);
+      if (error) throw error;
     }
 
-    await supabase.from("program_exercises").insert(exercises);
+    // 6. Replace the active nutrition plan.
+    await supabaseAdmin
+      .from("nutrition_plans")
+      .update({ active: false })
+      .eq("client_id", profile.id)
+      .eq("active", true);
 
-    // Assign program to client
-    await supabase.from("client_programs").insert({
+    const { error: nutErr } = await supabaseAdmin.from("nutrition_plans").insert({
       client_id: profile.id,
-      program_id: newProgram.id,
-      start_date: new Date().toISOString().split("T")[0],
+      program_id: program.id,
+      name: nutrition.plan_name || "Nutrition Plan",
+      calories: nutrition.daily_calories ?? client.calorie_target ?? null,
+      protein_g: nutrition.protein_g ?? null,
+      carbs_g: nutrition.carbs_g ?? null,
+      fats_g: nutrition.fats_g ?? null,
+      hydration: nutrition.hydration || null,
+      guidelines: nutrition.guidelines || null,
+      meals: nutrition.meals || [],
       active: true,
     });
+    if (nutErr) throw nutErr;
 
-    // Update profile with goal and onboarding complete
-    await supabase
+    // 7. Mark onboarding complete and sync the goal.
+    await supabaseAdmin
       .from("profiles")
-      .update({
-        goal: goal,
-        onboarding_complete: true,
-      })
+      .update({ goal: client.goal || null, onboarding_complete: true })
       .eq("id", profile.id);
 
     return res.status(200).json({
       success: true,
-      program: programData.program_name,
+      program: training.program_name,
       exercises_created: exercises.length,
+      meals_created: (nutrition.meals || []).length,
+      calories: nutrition.daily_calories ?? null,
     });
   } catch (err) {
-    console.error(err);
-    return res.status(500).json({ error: err.message });
+    console.error("generate-program error:", err);
+    return res.status(500).json({ error: err.message || "Internal error" });
   }
 }
