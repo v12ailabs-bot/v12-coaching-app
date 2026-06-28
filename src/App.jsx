@@ -758,7 +758,7 @@ function adherenceFrom(checkins, days = 30) {
 // CLIENT — WELCOME (shown until the client is onboarded / has a program)
 // ---------------------------------------------------------------------------
 
-function ClientWelcome({ profile, setPage }) {
+function ClientWelcome({ profile, onEnter }) {
   const [status, setStatus] = useState({ exercises: 0, nutrition: false, loading: true });
 
   useEffect(() => {
@@ -867,9 +867,8 @@ function ClientWelcome({ profile, setPage }) {
             </div>
           ))
         )}
-        <div style={{ marginTop: 18, display: "flex", gap: 10, flexWrap: "wrap" }}>
-          <Btn onClick={() => setPage("daily")}>Log your first check-in</Btn>
-          <button onClick={() => setPage("progress")} style={{ padding: "10px 20px", fontSize: 12, background: "transparent", color: S.text, border: "1px solid " + S.border, cursor: "pointer", fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>View progress</button>
+        <div style={{ marginTop: 18 }}>
+          <Btn onClick={onEnter}>Enter your portal →</Btn>
         </div>
       </Card>
     </div>
@@ -2130,12 +2129,28 @@ function Shell({ profile, isCoach, logout, page, setPage, children }) {
 
 function ClientDashboard({ profile, logout }) {
   const [page, setPage] = useState("dashboard");
+  const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
+
+  // One-time welcome gate on first login; marks the profile so it never reappears.
+  const enterPortal = async () => {
+    setWelcomed(true);
+    await supabase.from("profiles").update({ welcome_seen: true }).eq("id", profile.id);
+  };
+
+  if (!welcomed) {
+    return (
+      <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
+        <TopBar profile={profile} isCoach={false} onLogout={logout} />
+        <main style={{ padding: "28px 32px", maxWidth: 1180, margin: "0 auto" }}>
+          <ClientWelcome profile={profile} onEnter={enterPortal} />
+        </main>
+      </div>
+    );
+  }
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && (profile.onboarding_complete
-        ? <ClientHome profile={profile} setPage={setPage} />
-        : <ClientWelcome profile={profile} setPage={setPage} />)}
+      {page === "dashboard" && <ClientHome profile={profile} setPage={setPage} />}
       {page === "program" && <ClientProgram profile={profile} />}
       {page === "daily" && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}

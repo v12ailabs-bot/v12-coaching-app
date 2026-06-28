@@ -9,6 +9,7 @@ create table if not exists profiles (
   role text not null default 'client',          -- 'coach' | 'client'
   goal text,
   onboarding_complete boolean not null default false,
+  welcome_seen boolean not null default false,
   -- V12 three-system assessment scores (1-10), set from Notion or by the coach.
   nervous_system_recruitment int,
   muscular_density_to_size int,
@@ -144,6 +145,7 @@ alter table profiles add column if not exists name text;
 alter table profiles add column if not exists role text default 'client';
 alter table profiles add column if not exists goal text;
 alter table profiles add column if not exists onboarding_complete boolean default false;
+alter table profiles add column if not exists welcome_seen boolean default false;
 alter table profiles add column if not exists nervous_system_recruitment int;
 alter table profiles add column if not exists muscular_density_to_size int;
 alter table profiles add column if not exists metabolic_work_capacity int;
