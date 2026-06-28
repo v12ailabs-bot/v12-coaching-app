@@ -27,6 +27,27 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
 
 const COACH_EMAIL = "coach@v12system.com";
 
+// On first login, pull any data the Notion migration staged for this person
+// (matched by name) into their real tables. Runs once — the RPC flips
+// profiles.staged_claimed so it won't repeat. Returns the (possibly refreshed)
+// profile row. Failures are non-fatal: the app still loads.
+async function claimStagedData(profileRow) {
+  if (!profileRow?.id || profileRow.staged_claimed) return profileRow;
+  try {
+    const { data: result, error } = await supabase.rpc("claim_staged_data");
+    if (error) { console.warn("claim_staged_data:", error.message); return profileRow; }
+    if (result?.claimed) {
+      console.log("Claimed staged data:", result);
+      const { data: fresh } = await supabase.from("profiles").select("*").eq("id", profileRow.id).maybeSingle();
+      return fresh || { ...profileRow, staged_claimed: true };
+    }
+    return { ...profileRow, staged_claimed: true };
+  } catch (e) {
+    console.warn("claim_staged_data exception:", e?.message || e);
+    return profileRow;
+  }
+}
+
 
 
 // ---------------------------------------------------------------------------
@@ -250,9 +271,11 @@ export default function App() {
 
 
 
-        setProfile(newProfile);
+        const claimedNew = await claimStagedData(newProfile);
 
-        return newProfile;
+        setProfile(claimedNew);
+
+        return claimedNew;
 
       }
 
@@ -262,9 +285,11 @@ export default function App() {
 
 
 
-      setProfile(data);
+      const claimed = await claimStagedData(data);
 
-      return data;
+      setProfile(claimed);
+
+      return claimed;
 
     } catch (err) {
 
