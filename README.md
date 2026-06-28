@@ -125,6 +125,25 @@ populated), the coach generates those with one click.
 Matching is by first name, normalized (`"Samer Haddad"` → `samer`), so the name
 the client signs up with must start with the same first name as in Notion.
 
+### Check-in history from Google Sheets
+
+`scripts/migrate-checkins-sheet.js` imports daily check-in history from a Google
+Sheet, matching by client name. A client who has already signed up gets rows
+written straight to `daily_checkins`; one who hasn't is staged in
+`staged_daily_checkins` and attached on signup (same claim flow).
+
+```bash
+# .env needs SUPABASE_URL, SUPABASE_SERVICE_KEY, GOOGLE_API_KEY
+npm run migrate:checkins                 # dry run
+npm run migrate:checkins -- --write      # persist
+npm run migrate:checkins -- --range 'Sheet1!A:Z' --names 'keana shaw,samer'
+```
+
+Columns are matched by header name (case-insensitive — see `HEADER_ALIASES` in
+the script); a name column and a date column are required. The sheet must be
+shared **Anyone with the link – Viewer** for the API key to read it (for a
+private sheet, share it with a service account instead).
+
 ## Build
 
 ```bash
