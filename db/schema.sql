@@ -545,3 +545,186 @@ drop policy if exists versions_select on program_versions;
 create policy versions_select on program_versions for select using (client_id = auth.uid() or public.is_coach());
 drop policy if exists versions_write on program_versions;
 create policy versions_write on program_versions for all using (public.is_coach()) with check (public.is_coach());
+
+-- ===========================================================================
+-- Notion migration staging + claim-on-signup
+-- ===========================================================================
+-- Existing clients have no profile row until they sign up (profiles.id -> auth
+-- .users). The migration script (scripts/migrate-notion.js) pulls their Notion
+-- data and parks it in these `staged_*` tables keyed by a normalized name. When
+-- the client signs up, the app calls claim_staged_data(), which matches by name
+-- and copies everything into their real tables, then flags the profile claimed.
+
+alter table profiles add column if not exists staged_claimed boolean not null default false;
+
+-- Normalized match key from a name: first token, lowercased, alphanumerics only.
+-- "Samer Haddad" -> "samer". The script computes the identical key in JS.
+create or replace function public.staged_name_key(p text)
+returns text language sql immutable as $$
+  select lower(regexp_replace(split_part(coalesce(trim(p), ''), ' ', 1), '[^A-Za-z0-9]', '', 'g'));
+$$;
+
+-- One row per staged client (intake + assessment + raw Notion capture).
+create table if not exists staged_clients (
+  client_key text primary key,
+  name text,
+  email text,
+  goal text,
+  experience_level text,
+  days_available text,
+  injuries text,
+  equipment text,
+  session_length text,
+  dietary_preference text,
+  allergies text,
+  calorie_target text,
+  program_template text,
+  nervous_system_recruitment int,
+  muscular_density_to_size int,
+  metabolic_work_capacity int,
+  notes text,                                    -- free-text page content
+  raw jsonb not null default '{}'::jsonb,        -- every Notion property, untouched
+  created_at timestamptz not null default now()
+);
+
+create table if not exists staged_daily_checkins (
+  id uuid primary key default gen_random_uuid(),
+  client_key text not null,
+  date date not null,
+  weight numeric, sleep int, energy int, mood int, water int, diet text, workout text
+);
+create table if not exists staged_weekly_checkins (
+  id uuid primary key default gen_random_uuid(),
+  client_key text not null,
+  date date not null,
+  chest numeric, waist numeric, hips numeric, arms numeric, feeling int, goal_progress int, notes text
+);
+create table if not exists staged_exercises (
+  id uuid primary key default gen_random_uuid(),
+  client_key text not null,
+  name text not null, category text, day_of_week text, sets int, reps text,
+  is_bodyweight boolean default false, notes text, order_index int default 0, source text default 'coach'
+);
+create table if not exists staged_workout_logs (
+  id uuid primary key default gen_random_uuid(),
+  client_key text not null,
+  exercise_name text not null, date date not null, sets int, reps int, weight numeric, time text
+);
+create table if not exists staged_nutrition_plans (
+  id uuid primary key default gen_random_uuid(),
+  client_key text not null,
+  name text, calories int, protein_g int, carbs_g int, fats_g int,
+  hydration text, guidelines text, meals jsonb not null default '[]'::jsonb
+);
+
+create index if not exists idx_staged_daily_key on staged_daily_checkins (client_key);
+create index if not exists idx_staged_weekly_key on staged_weekly_checkins (client_key);
+create index if not exists idx_staged_exercises_key on staged_exercises (client_key);
+create index if not exists idx_staged_logs_key on staged_workout_logs (client_key);
+create index if not exists idx_staged_nutrition_key on staged_nutrition_plans (client_key);
+
+-- Staging is coach/service-only. The migration script uses the service-role key
+-- (bypasses RLS); claim_staged_data() is SECURITY DEFINER (also bypasses).
+do $$ declare t text; begin
+  foreach t in array array['staged_clients','staged_daily_checkins','staged_weekly_checkins','staged_exercises','staged_workout_logs','staged_nutrition_plans']
+  loop
+    execute format('alter table %I enable row level security', t);
+    execute format('drop policy if exists %I on %I', t||'_coach', t);
+    execute format('create policy %I on %I for all using (public.is_coach()) with check (public.is_coach())', t||'_coach', t);
+  end loop;
+end $$;
+
+-- Called by the client right after signup. Matches staged data by name and
+-- copies it into their real tables. Idempotent: sets profiles.staged_claimed so
+-- it only runs once, and never clobbers values the client/coach already has.
+create or replace function public.claim_staged_data()
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_name text; v_claimed boolean; v_key text;
+  v_sc staged_clients%rowtype;
+  v_program_id uuid;
+  v_daily int := 0; v_weekly int := 0; v_ex int := 0; v_logs int := 0; v_nut int := 0;
+begin
+  if v_uid is null then return jsonb_build_object('claimed', false, 'reason', 'not authenticated'); end if;
+
+  select name, staged_claimed into v_name, v_claimed from profiles where id = v_uid;
+  if coalesce(v_claimed, false) then return jsonb_build_object('claimed', false, 'reason', 'already claimed'); end if;
+
+  v_key := staged_name_key(v_name);
+  if v_key is null or v_key = '' then return jsonb_build_object('claimed', false, 'reason', 'no name on profile'); end if;
+
+  select * into v_sc from staged_clients where client_key = v_key;
+  if not found then
+    -- Nothing staged for this name: flag so we don't re-check on every login.
+    update profiles set staged_claimed = true where id = v_uid;
+    return jsonb_build_object('claimed', false, 'reason', 'no staged data for ' || v_key);
+  end if;
+
+  -- 1. Profile intake/assessment — fill only where currently empty.
+  update profiles p set
+    goal = coalesce(p.goal, v_sc.goal),
+    nervous_system_recruitment = coalesce(p.nervous_system_recruitment, v_sc.nervous_system_recruitment),
+    muscular_density_to_size   = coalesce(p.muscular_density_to_size,   v_sc.muscular_density_to_size),
+    metabolic_work_capacity    = coalesce(p.metabolic_work_capacity,    v_sc.metabolic_work_capacity)
+  where p.id = v_uid;
+
+  -- 2. Daily check-ins
+  insert into daily_checkins (client_id, date, weight, sleep, energy, mood, water, diet, workout)
+  select v_uid, s.date, s.weight, s.sleep, s.energy, s.mood, s.water, s.diet, s.workout
+  from staged_daily_checkins s where s.client_key = v_key
+  on conflict (client_id, date) do nothing;
+  get diagnostics v_daily = row_count;
+
+  -- 3. Weekly check-ins
+  insert into weekly_checkins (client_id, date, chest, waist, hips, arms, feeling, goal_progress, notes)
+  select v_uid, s.date, s.chest, s.waist, s.hips, s.arms, s.feeling, s.goal_progress, s.notes
+  from staged_weekly_checkins s where s.client_key = v_key
+  on conflict (client_id, date) do nothing;
+  get diagnostics v_weekly = row_count;
+
+  -- 4. Program + exercises (only if staged and none assigned yet)
+  if exists (select 1 from staged_exercises where client_key = v_key)
+     and not exists (select 1 from exercises where client_id = v_uid) then
+    insert into programs (client_id, name, goal, description)
+    values (v_uid, coalesce(v_sc.program_template, 'Imported Program'), v_sc.goal, 'Imported from Notion')
+    returning id into v_program_id;
+
+    insert into exercises (client_id, program_id, name, category, day_of_week, sets, reps, is_bodyweight, notes, order_index, source)
+    select v_uid, v_program_id, s.name, s.category, s.day_of_week, s.sets, s.reps,
+           coalesce(s.is_bodyweight, false), s.notes, coalesce(s.order_index, 0), coalesce(s.source, 'coach')
+    from staged_exercises s where s.client_key = v_key;
+    get diagnostics v_ex = row_count;
+
+    -- 5. Workout logs — resolve exercise_id by name within the imported program.
+    insert into workout_logs (client_id, exercise_id, date, sets, reps, weight, time)
+    select v_uid, e.id, s.date, s.sets, s.reps, s.weight, s.time
+    from staged_workout_logs s
+    join exercises e on e.client_id = v_uid and lower(e.name) = lower(s.exercise_name)
+    where s.client_key = v_key;
+    get diagnostics v_logs = row_count;
+  end if;
+
+  -- 6. Nutrition plan (only if none active yet)
+  if exists (select 1 from staged_nutrition_plans where client_key = v_key)
+     and not exists (select 1 from nutrition_plans where client_id = v_uid and active) then
+    insert into nutrition_plans (client_id, program_id, name, calories, protein_g, carbs_g, fats_g, hydration, guidelines, meals, active)
+    select v_uid, v_program_id, coalesce(s.name, 'Imported Nutrition Plan'), s.calories, s.protein_g, s.carbs_g, s.fats_g,
+           s.hydration, s.guidelines, coalesce(s.meals, '[]'::jsonb), true
+    from staged_nutrition_plans s where s.client_key = v_key
+    limit 1;
+    get diagnostics v_nut = row_count;
+  end if;
+
+  update profiles set staged_claimed = true where id = v_uid;
+
+  return jsonb_build_object('claimed', true, 'key', v_key,
+    'daily', v_daily, 'weekly', v_weekly, 'exercises', v_ex, 'logs', v_logs, 'nutrition', v_nut);
+end;
+$$;
+
+grant execute on function public.claim_staged_data() to authenticated;

@@ -95,6 +95,36 @@ the `api/` handlers).
 Coach login is determined by `COACH_EMAIL` in `src/App.jsx`
 (`coach@v12system.com`); everyone else is a client.
 
+## Migrating existing clients from Notion
+
+`scripts/migrate-notion.js` pre-loads existing clients so their history is
+waiting on first login. Because a client has no `profiles` row until they sign
+up (it references `auth.users`), the script **stages** their Notion data keyed
+by name; when they sign up, the app calls the `claim_staged_data()` RPC, which
+matches the new profile **by name** and copies the staged rows into their real
+tables (then flags the profile so it never repeats).
+
+```bash
+# 1. Apply db/schema.sql (creates staged_* tables + the claim function).
+# 2. Ensure .env has NOTION_API_KEY, NOTION_DATABASE_ID, SUPABASE_URL,
+#    SUPABASE_SERVICE_KEY.
+npm run migrate:notion                 # dry run — prints what it found
+npm run migrate:notion -- --write      # persist to the staged_* tables
+npm run migrate:notion -- --names samer,phill,sidi,keana   # override targets
+```
+
+What imports reliably: intake + the V12 assessment from the main clients
+database, plus every raw property and page text (kept in `staged_clients.raw` /
+`.notes`). Check-in history and measurements import only if you keep them in
+**separate** Notion databases — set `NOTION_CHECKINS_DB_ID` /
+`NOTION_MEASUREMENTS_DB_ID` and confirm the property maps in the script's
+`CONFIG`; otherwise those sections are skipped with a log. Programs and nutrition
+aren't in Notion — once a migrated client signs up (intake + assessment already
+populated), the coach generates those with one click.
+
+Matching is by first name, normalized (`"Samer Haddad"` → `samer`), so the name
+the client signs up with must start with the same first name as in Notion.
+
 ## Build
 
 ```bash
