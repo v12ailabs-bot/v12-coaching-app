@@ -79,12 +79,24 @@ ${clientProfileBlock(client)}
 
 ${
   client.program_template
-    ? `TEMPLATE TO FOLLOW (use as the structural blueprint, adapted to the V12 method above):\n${client.program_template}\n`
-    : "No template provided — design the week from the V12 method and the assessment.\n"
+    ? `${client.program_template}\n\n` +
+      `Use this template as the framework. Replicate its WEEKLY SPLIT exactly — the ` +
+      `same training days and each day's focus — and within every session follow the ` +
+      `SESSION TEMPLATE slot order, filling each slot with the actual exercises that ` +
+      `best fit this client's assessment, goal, equipment, and injuries, using the ` +
+      `template's set×rep schemes. Apply the progression rule. Set each exercise's ` +
+      `"section" to its session slot (e.g. "Primary", "Secondary", "Accessory", ` +
+      `"Core", "Conditioning"). Map slots to V12 pillars: primary/secondary lifts -> ` +
+      `Powerlifting; accessories/hypertrophy -> Bodybuilding; conditioning/finishers ` +
+      `-> Conditioning; add explosive/power work where the template calls for it. ` +
+      `Bias volume by the client's three-system assessment.\n`
+    : "No template provided — design the week from the V12 method and the assessment, and still label each exercise with a sensible \"section\".\n"
 }
 Requirements for the output:
 - Each day's "focus" must name its primary V12 pillar(s), e.g. "Powerlifting — Lower" or "Hypertrophy + Conditioning".
 - Each exercise "category" must be one of: "Powerlifting", "Bodybuilding", "Power", or "Conditioning".
+- Each exercise "section" must name its session slot (e.g. "Primary", "Secondary", "Accessory", "Core", "Conditioning").
+- Within a day, order exercises by the template's session-slot order.
 - Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
 - Across the week, ALL THREE pillars must appear.
 
@@ -102,6 +114,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
         {
           "name": "string",
           "category": "Powerlifting | Bodybuilding | Power | Conditioning",
+          "section": "string (session slot, e.g. Primary, Accessory, Conditioning)",
           "sets": number,
           "reps": "string",
           "is_bodyweight": boolean,

@@ -23,9 +23,13 @@ Coach selects a client + a program template, clicks "Generate AI Program"
 POST /api/generate-program  { client_email, template_id }
         │
         ├─ 1. Read client intake from Notion        (api/_lib/notion.js)
-        ├─ 2. Load selected template from Supabase   (program_templates)
+        ├─ 2. Load selected template from the Notion program library
+        │       (api/_lib/notionTemplates.js) — reads its session structure
+        │       (Primary Strength, Secondary Strength, Accessories, Finishers,
+        │       Circuits, Core) as the framework
         ├─ 3. Generate training + nutrition plans    (api/_lib/anthropic.js, in parallel)
-        │       training follows the chosen template; nutrition uses client data
+        │       AI fills each section with real exercises from the assessment;
+        │       nutrition uses client data
         ├─ 4. Save to Supabase                       (api/_lib/supabaseAdmin.js)
         │       • programs            (metadata)
         │       • exercises           (weekly split, source='ai')
@@ -35,9 +39,22 @@ POST /api/generate-program  { client_email, template_id }
 Client portal shows Training Plan + Nutrition pages
 ```
 
-Templates live in the `program_templates` table (seeded with defaults in
-`db/schema.sql`). The coach picks one in the Clients panel; if none is chosen,
-the client's Notion `Program Template` property is used as a fallback.
+Templates live in the **Notion program library** (`NOTION_PROGRAM_LIBRARY_DB_ID`).
+Each template page has meta as properties (`program name`, `goal`, `difficulty`,
+`duration`, `Equipment`) and a body that defines a **WEEKLY SPLIT** (training days
++ each day's focus) and a **SESSION TEMPLATE** (the ordered session slots — primary
+lift, secondary lift, accessories, core, conditioning — with set×rep schemes) plus
+a progression rule. `api/_lib/notionTemplates.js` reads the meta + body into a
+framework. The coach picks a template in the Clients panel (loaded via
+`GET /api/list-templates`); the AI replicates the split and fills each session slot
+with real exercises chosen from the client's V12 assessment, tagging each with its
+`section`. If none is chosen, the client's Notion `Program Template` property is the
+fallback.
+
+> Inspect the library any time with `npm run inspect:templates` (prints each
+> template's properties + body; falls back to listing accessible databases if the
+> id is wrong). The old Supabase `program_templates` table and the coach
+> **Templates** panel are now legacy (no longer used for generation).
 
 ## Setup
 

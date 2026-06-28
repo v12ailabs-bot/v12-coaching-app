@@ -171,6 +171,7 @@ alter table exercises add column if not exists is_bodyweight boolean default fal
 alter table exercises add column if not exists notes text;
 alter table exercises add column if not exists order_index int default 0;
 alter table exercises add column if not exists source text default 'coach';
+alter table exercises add column if not exists section text;          -- template session section
 alter table exercises add column if not exists created_at timestamptz default now();
 
 -- nutrition_plans

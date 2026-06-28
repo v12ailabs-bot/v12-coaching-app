@@ -1,4 +1,5 @@
 import { getClientFromNotion } from "./_lib/notion.js";
+import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 
@@ -45,23 +46,18 @@ export default async function handler(req, res) {
     };
     const assessed = { ...client, ...assessment };
 
-    // 3. Load the coach-selected template (falls back to the client's Notion
-    //    template if none was chosen).
+    // 3. Load the coach-selected template from the Notion program library and
+    //    read its session structure as the AI framework. Falls back to the
+    //    client's own Notion `Program Template` property if none was chosen.
     let template = null;
     if (template_id) {
-      const { data, error } = await supabaseAdmin
-        .from("program_templates")
-        .select("*")
-        .eq("id", template_id)
-        .maybeSingle();
-      if (error) throw error;
-      template = data;
+      try {
+        template = await getProgramTemplate(template_id);
+      } catch (e) {
+        console.warn("Program library fetch failed, falling back:", e.message);
+      }
     }
-    const templateText = template
-      ? `${template.name}${template.goal ? ` (${template.goal})` : ""}` +
-        `${template.days_per_week ? ` — ${template.days_per_week} days/week` : ""}\n` +
-        `${template.structure || template.description || ""}`
-      : client.program_template;
+    const templateText = template?.frameworkText || client.program_template;
 
     // 4. Generate both plans concurrently, feeding the template + assessment
     //    into training and the assessment into nutrition.
@@ -103,6 +99,7 @@ export default async function handler(req, res) {
           program_id: program.id,
           name: ex.name,
           category: ex.category || day.focus || null,
+          section: ex.section || null,
           day_of_week: day.day,
           sets: ex.sets ?? null,
           reps: ex.reps != null ? String(ex.reps) : null,
