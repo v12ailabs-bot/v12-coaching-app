@@ -1215,6 +1215,7 @@ function ClientsPanel() {
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
+  const [syncing, setSyncing] = useState(false);
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
@@ -1254,6 +1255,26 @@ function ClientsPanel() {
     if(error){ setAssessMsg({ok:false,text:error.message}); return; }
     setAssessMsg({ok:true,text:"Assessment saved."});
     await loadClients();
+  };
+
+  // Re-pull this client's intake + scores from Notion into their profile.
+  const refreshFromNotion = async(client)=>{
+    setSyncing(true); setAssessMsg(null);
+    try{
+      const r = await fetch("/api/sync-client",{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({client_email:client.email}),
+      });
+      const data = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
+      setAssessMsg({ok:true,text:data.updated?.length?`Synced from Notion (${data.updated.join(", ")}).`:"Notion had nothing new to sync."});
+      await loadClients();
+    }catch(e){
+      setAssessMsg({ok:false,text:e.message});
+    }finally{
+      setSyncing(false);
+    }
   };
 
   const addEx = async()=>{
@@ -1341,7 +1362,12 @@ function ClientsPanel() {
             )}
           </Card>
           <Card style={{marginBottom:20}}>
-            <CardTitle>V12 Assessment — three systems</CardTitle>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
+              <CardTitle>V12 Assessment — three systems</CardTitle>
+              <Btn sm teal onClick={()=>refreshFromNotion(client)} disabled={syncing}>
+                {syncing?"Syncing...":"↻ Refresh from Notion"}
+              </Btn>
+            </div>
             <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
               Drives the weekly balance of the three pillars. Pulled from the client's Notion application; override here as you reassess.
             </div>
