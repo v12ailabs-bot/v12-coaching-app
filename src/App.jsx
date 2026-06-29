@@ -693,6 +693,12 @@ function TopBar({ profile, isCoach, onLogout }) {
     <div style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:S.accent}}>V12</div>
       <div style={{display:"flex",alignItems:"center",gap:14}}>
+        {!isCoach && profile?.dashboard_url && (
+          <a href={profile.dashboard_url} target="_blank" rel="noopener noreferrer"
+            style={{fontSize:11,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",color:S.accent2,textDecoration:"none",border:"1px solid "+S.border,padding:"7px 12px"}}>
+            ↗ My Dashboard
+          </a>
+        )}
         <span style={{fontSize:13,color:S.muted}}>{profile?.name||profile?.email}</span>
         <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>
           {avatarFrom(profile?.name||profile?.email)}
@@ -703,10 +709,15 @@ function TopBar({ profile, isCoach, onLogout }) {
   );
 }
 
-function Sidebar({ isCoach, page, setPage }) {
+function Sidebar({ isCoach, programOnly, page, setPage }) {
+  // Program-only clients get the self-guided portal: their plan, nutrition,
+  // workout logging, and the resource hub — no check-in prompts or habit tracking.
+  const clientNav = programOnly
+    ? [{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"resources",icon:"📚",label:"Library"}]
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"habits",icon:"🎯",label:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"progress",icon:"📈",label:"Progress"},{id:"resources",icon:"📚",label:"Library"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"templates",icon:"📋",label:"Templates"},{id:"library",icon:"📚",label:"Library"},{id:"progress",icon:"📈",label:"Progress"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"habits",icon:"🎯",label:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"progress",icon:"📈",label:"Progress"},{id:"resources",icon:"📚",label:"Library"}];
+    : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
       <div style={{padding:"0 14px"}}>
@@ -839,11 +850,18 @@ function ClientWelcome({ profile, onEnter }) {
     ["MOVE GOOD", "Athletic conditioning and explosive power — work capacity that carries over to life."],
     ["PERFORM GOOD", "Powerlifting strength for a nervous system that recruits everything you've got."],
   ];
-  const next = [
-    ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
-    ["✅", "Daily & weekly check-ins", "Log training, recovery, and measurements so we can adapt in real time."],
-    ["📈", "Progress tracking", "Weight, measurements, strength, photos, and an adherence score — all in one place."],
-  ];
+  const programOnly = profile.client_type === "program_only";
+  const next = programOnly
+    ? [
+        ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
+        ["🥗", "Nutrition plan", "Macro targets and meal guidance to fuel the work."],
+        ["🏋", "Log your training", "Track your sets and lifts as you work through the program, plus a full resource library."],
+      ]
+    : [
+        ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
+        ["✅", "Daily & weekly check-ins", "Log training, recovery, and measurements so we can adapt in real time."],
+        ["📈", "Progress tracking", "Weight, measurements, strength, photos, and an adherence score — all in one place."],
+      ];
 
   return (
     <div style={{ position: "relative" }}>
@@ -2156,6 +2174,9 @@ function ClientsPanel() {
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:""});
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [settingsMsg, setSettingsMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [progTick, setProgTick] = useState(0);
@@ -2200,8 +2221,25 @@ function ClientsPanel() {
       muscular_density_to_size: c.muscular_density_to_size ?? 5,
       metabolic_work_capacity: c.metabolic_work_capacity ?? 5,
     });
+    if(c) setSettings({
+      client_type: c.client_type || "coaching",
+      dashboard_url: c.dashboard_url || "",
+    });
     setAssessMsg(null);
+    setSettingsMsg(null);
   },[selected, clients]);
+
+  const saveSettings = async()=>{
+    setSavingSettings(true); setSettingsMsg(null);
+    const {error} = await supabase.from("profiles").update({
+      client_type: settings.client_type,
+      dashboard_url: settings.dashboard_url.trim() || null,
+    }).eq("id",selected);
+    setSavingSettings(false);
+    if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
+    setSettingsMsg({ok:true,text:"Client settings saved."});
+    await loadClients();
+  };
 
   const saveAssessment = async()=>{
     setSavingAssess(true); setAssessMsg(null);
@@ -2353,6 +2391,30 @@ function ClientsPanel() {
                 {genMsg.text}
               </div>
             )}
+          </Card>
+          <Card style={{marginBottom:20}}>
+            <CardTitle>Client Settings</CardTitle>
+            <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
+              Coaching clients get the full portal (check-ins, habits, progress, coach notes). Program-only clients get a self-guided portal: their plan, nutrition, workout logging, and the resource hub — no check-in prompts.
+            </div>
+            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <Fld label="Client Type">
+                <select value={settings.client_type} onChange={e=>setSettings(p=>({...p,client_type:e.target.value}))}
+                  style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
+                  <option value="coaching">Coaching (full portal)</option>
+                  <option value="program_only">Program only (no check-ins)</option>
+                </select>
+              </Fld>
+              <Fld label="Notion Dashboard URL">
+                <Inp type="url" value={settings.dashboard_url} onChange={e=>setSettings(p=>({...p,dashboard_url:e.target.value}))} placeholder="https://notion.so/..."/>
+              </Fld>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
+              <Btn onClick={saveSettings} disabled={savingSettings}>{savingSettings?"Saving...":"Save Settings"}</Btn>
+              {settingsMsg && (
+                <span style={{fontSize:12,fontWeight:600,color:settingsMsg.ok?S.accent2:"#ff6b5b"}}>{settingsMsg.text}</span>
+              )}
+            </div>
           </Card>
           <Card style={{marginBottom:20}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
@@ -2996,11 +3058,12 @@ function Nutrition({ profile }) {
 // ---------------------------------------------------------------------------
 
 function Shell({ profile, isCoach, logout, page, setPage, children }) {
+  const programOnly = !isCoach && profile?.client_type === "program_only";
   return (
     <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
       <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
-        <Sidebar isCoach={isCoach} page={page} setPage={setPage} />
+        <Sidebar isCoach={isCoach} programOnly={programOnly} page={page} setPage={setPage} />
         <main style={{ flex: 1, padding: "28px 32px", maxWidth: 1180, width: "100%" }}>
           {children}
         </main>
@@ -3010,7 +3073,8 @@ function Shell({ profile, isCoach, logout, page, setPage, children }) {
 }
 
 function ClientDashboard({ profile, logout }) {
-  const [page, setPage] = useState("dashboard");
+  const programOnly = profile.client_type === "program_only";
+  const [page, setPage] = useState(programOnly ? "program" : "dashboard");
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
 
   // One-time welcome gate on first login; marks the profile so it never reappears.
@@ -3032,14 +3096,14 @@ function ClientDashboard({ profile, logout }) {
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && <ClientHome profile={profile} setPage={setPage} />}
+      {page === "dashboard" && !programOnly && <ClientHome profile={profile} setPage={setPage} />}
       {page === "program" && <ClientProgram profile={profile} />}
-      {page === "daily" && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
-      {page === "weekly" && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
-      {page === "progress" && <Progress profile={profile} />}
+      {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "progress" && !programOnly && <Progress profile={profile} />}
       {page === "workouts" && <Workouts profile={profile} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
-      {page === "habits" && <Habits profile={profile} />}
+      {page === "habits" && !programOnly && <Habits profile={profile} />}
       {page === "resources" && <Resources />}
     </Shell>
   );

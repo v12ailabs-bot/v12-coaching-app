@@ -7,6 +7,8 @@ create table if not exists profiles (
   email text unique not null,
   name text,
   role text not null default 'client',          -- 'coach' | 'client'
+  client_type text not null default 'coaching', -- 'coaching' | 'program_only'
+  dashboard_url text,                            -- optional Notion dashboard link for the client
   goal text,
   onboarding_complete boolean not null default false,
   welcome_seen boolean not null default false,
@@ -143,6 +145,8 @@ create table if not exists program_templates (
 -- profiles
 alter table profiles add column if not exists name text;
 alter table profiles add column if not exists role text default 'client';
+alter table profiles add column if not exists client_type text not null default 'coaching';
+alter table profiles add column if not exists dashboard_url text;
 alter table profiles add column if not exists goal text;
 alter table profiles add column if not exists onboarding_complete boolean default false;
 alter table profiles add column if not exists welcome_seen boolean default false;
