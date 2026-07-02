@@ -123,7 +123,10 @@ function GlobalStyles() {
       @keyframes spin { to { transform: rotate(360deg); } }
       input[type="range"] { width: 100%; accent-color: ${S.accent}; }
       @media (max-width: 720px) {
-        .sidebar { display: none; }
+        .sidebar { display: flex; position: fixed; bottom: 0; left: 0; right: 0; top: auto; width: 100%; height: 60px; flex-direction: row; justify-content: space-around; align-items: center; padding: 0; overflow: visible; z-index: 999; border-top: 1px solid #333; border-right: none; }
+        .sidebar nav { display: flex; flex-direction: row; width: 100%; justify-content: space-around; }
+        .sidebar nav a, .sidebar nav button { display: flex; flex-direction: column; align-items: center; font-size: 10px; padding: 4px 2px; }
+        .main-content { padding-bottom: 70px; }
         .g4 { grid-template-columns: repeat(2, 1fr) !important; }
         .g2, .g3, .cg { grid-template-columns: 1fr !important; }
       }
@@ -1075,20 +1078,52 @@ function WeeklyCheckin({ profile, onDone }) {
     <div>
       <PageTitle title="Weekly Check-In" sub={"Week of "+weekStart}/>
       <Card>
-        <CardTitle>Measurements (inches)</CardTitle>
-        <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
-          {["chest","waist","hips","arms"].map(m=>(
-            <Fld key={m} label={m.charAt(0).toUpperCase()+m.slice(1)}><Inp type="number" step="0.1" value={form[m]} onChange={e=>set(m,e.target.value)} placeholder="0.0"/></Fld>
-          ))}
+        <CardTitle>Body Stats</CardTitle>
+        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
+          <Fld label="Bodyweight (lbs)"><Inp type="number" step="0.1" value={form.bodyweight||""} onChange={e=>set("bodyweight",e.target.value)} placeholder="lbs"/></Fld>
+          <Fld label="Waist (inches)"><Inp type="number" step="0.1" value={form.waist||""} onChange={e=>set("waist",e.target.value)} placeholder="inches"/></Fld>
         </div>
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-          <Sld label="Overall Feeling" val={form.feeling} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
-          <Sld label="Goal Progress" val={form.goal_progress} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
-        </div>
-        <Fld label="Notes / Goal Review">
-          <textarea rows={3} value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="What went well? What needs work?"
-            style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
+        <Fld label="Week #"><Inp type="number" value={form.week_number||""} onChange={e=>set("week_number",e.target.value)} placeholder="e.g. 4"/></Fld>
+      </Card>
+      <Card>
+        <CardTitle>Training</CardTitle>
+        <Fld label="Training days completed"><Inp type="number" min={0} max={7} value={form.training_days||""} onChange={e=>set("training_days",e.target.value)} placeholder="0-7"/></Fld>
+        <Fld label="How did your workouts feel?"><textarea rows={2} value={form.workout_feel||""} onChange={e=>set("workout_feel",e.target.value)} placeholder="Strong, tired, inconsistent..." style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="How was your pump & muscle engagement?"><textarea rows={2} value={form.pump||""} onChange={e=>set("pump",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Any exercises feel especially bad or good?"><textarea rows={2} value={form.exercise_feedback||""} onChange={e=>set("exercise_feedback",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Did any lifts or movements improve?"><textarea rows={2} value={form.lifts_improved||""} onChange={e=>set("lifts_improved",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Did anything feel weaker than usual?"><textarea rows={2} value={form.felt_weaker||""} onChange={e=>set("felt_weaker",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Cardio performance vs last week">
+          <select value={form.cardio_performance||""} onChange={e=>set("cardio_performance",e.target.value)} style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 14px",fontSize:14,outline:"none"}}>
+            <option value="">Select...</option><option>Better</option><option>Same</option><option>Worse</option>
+          </select>
         </Fld>
+      </Card>
+      <Card>
+        <CardTitle>Nutrition</CardTitle>
+        <Sld label="Protein & calorie goal compliance" val={form.nutrition_compliance||5} min={1} max={10} sfx="/10" onChange={v=>set("nutrition_compliance",v)}/>
+      </Card>
+      <Card>
+        <CardTitle>Recovery</CardTitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <Sld label="Sleep Quality" val={form.sleep_quality||5} min={1} max={10} sfx="/10" onChange={v=>set("sleep_quality",v)}/>
+          <Sld label="Hydration Quality" val={form.hydration_quality||5} min={1} max={10} sfx="/10" onChange={v=>set("hydration_quality",v)}/>
+          <Sld label="Discipline Level" val={form.discipline_level||5} min={1} max={10} sfx="/10" onChange={v=>set("discipline_level",v)}/>
+          <Sld label="Confidence in Program" val={form.confidence_level||5} min={1} max={10} sfx="/10" onChange={v=>set("confidence_level",v)}/>
+        </div>
+        <Fld label="Emotional stress or mental blocks?"><textarea rows={2} value={form.mental_blocks||""} onChange={e=>set("mental_blocks",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+      </Card>
+      <Card>
+        <CardTitle>Wins & Challenges</CardTitle>
+        <Fld label="What went well this week?"><textarea rows={2} value={form.what_went_well||""} onChange={e=>set("what_went_well",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Physical or lifestyle wins?"><textarea rows={2} value={form.lifestyle_wins||""} onChange={e=>set("lifestyle_wins",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Biggest challenge this week?"><textarea rows={2} value={form.biggest_challenge||""} onChange={e=>set("biggest_challenge",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Anything holding back progress?"><textarea rows={2} value={form.holding_back||""} onChange={e=>set("holding_back",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+      </Card>
+      <Card>
+        <CardTitle>For Your Coach</CardTitle>
+        <Fld label="Anything you want adjusted?"><textarea rows={2} value={form.adjustments||""} onChange={e=>set("adjustments",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        <Fld label="Questions for your coach?"><textarea rows={2} value={form.coach_questions||""} onChange={e=>set("coach_questions",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <div style={{marginTop:8}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Submit Weekly Check-In"}</Btn></div>
       </Card>
     </div>
