@@ -640,6 +640,16 @@ function LoginScreen() {
     setLoading(false);
   };
 
+  const resetPassword = async () => {
+    setError(""); setSuccess("");
+    if (!email) { setError("Enter your email address above, then click Forgot Password."); return; }
+    setLoading(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin });
+    if (error) setError(error.message);
+    else setSuccess("Password reset email sent. Check your inbox.");
+    setLoading(false);
+  };
+
   const signUp = async () => {
     setError(""); setLoading(true);
     const { error } = await supabase.auth.signUp({
@@ -679,6 +689,12 @@ function LoginScreen() {
         {F("Password","password",password,setPassword,"••••••••")}
         {error && <div style={{color:S.accent,fontSize:12,marginBottom:12}}>{error}</div>}
         {success && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 16px",fontSize:12,fontWeight:600,marginBottom:12}}>{success}</div>}
+        {tab==="signin" && (
+          <div style={{textAlign:"right",marginBottom:12}}>
+            <span onClick={resetPassword}
+              style={{color:S.accent,fontSize:12,cursor:"pointer"}}>Forgot password?</span>
+          </div>
+        )}
         <button onClick={tab==="signin"?signIn:signUp} disabled={loading}
           style={{...bS({width:"100%",padding:14}),background:S.accent,color:"white",opacity:loading?0.5:1}}>
           {loading?"Please wait...":tab==="signin"?"Sign In":"Create Account"}
