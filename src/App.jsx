@@ -1069,23 +1069,38 @@ function DailyCheckin({ profile, onDone }) {
 
 function WeeklyCheckin({ profile, onDone }) {
   const weekStart = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
-  const [form, setForm] = useState({chest:"",waist:"",hips:"",arms:"",feeling:7,goal_progress:70,notes:""});
+  const [form, setForm] = useState({
+    bodyweight:"", waist:"", week_number:"",
+    training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
+    nutrition_compliance:5, sleep_quality:5, hydration_quality:5, discipline_level:5, confidence_level:5, mental_blocks:"",
+    what_went_well:"", lifestyle_wins:"", biggest_challenge:"", holding_back:"",
+    adjustments:"", coach_questions:"",
+  });
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [error, setError] = useState("");
   const [existing, setExisting] = useState(null);
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
+  // Numeric columns — coerced to number|null on save so empty inputs don't
+  // hit non-numeric Postgres columns.
+  const NUMERIC = ["bodyweight","waist","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level"];
+
   useEffect(()=>{
     supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle()
-      .then(({data})=>{if(data){setExisting(data);setForm({chest:data.chest||"",waist:data.waist||"",hips:data.hips||"",arms:data.arms||"",feeling:data.feeling,goal_progress:data.goal_progress,notes:data.notes||""});}});
+      .then(({data})=>{if(data){setExisting(data);setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;});}});
   },[profile.id]);
 
   const submit = async () => {
-    setLoading(true);
-    const entry = {client_id:profile.id,date:weekStart,...form,chest:parseFloat(form.chest)||null,waist:parseFloat(form.waist)||null,hips:parseFloat(form.hips)||null,arms:parseFloat(form.arms)||null};
-    if(existing) await supabase.from("weekly_checkins").update(entry).eq("id",existing.id);
-    else await supabase.from("weekly_checkins").insert(entry);
-    setSaved(true);setLoading(false);setTimeout(onDone,1400);
+    setLoading(true); setError("");
+    const entry = {client_id:profile.id, date:weekStart, ...form};
+    NUMERIC.forEach(k=>{const n=parseFloat(entry[k]);entry[k]=Number.isNaN(n)?null:n;});
+    const { error } = existing
+      ? await supabase.from("weekly_checkins").update(entry).eq("id",existing.id)
+      : await supabase.from("weekly_checkins").insert(entry);
+    setLoading(false);
+    if(error){ setError(error.message); return; }
+    setSaved(true); setTimeout(onDone,1400);
   };
 
   if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>Weekly check-in logged!</div></div>;
@@ -1140,6 +1155,7 @@ function WeeklyCheckin({ profile, onDone }) {
         <CardTitle>For Your Coach</CardTitle>
         <Fld label="Anything you want adjusted?"><textarea rows={2} value={form.adjustments||""} onChange={e=>set("adjustments",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <Fld label="Questions for your coach?"><textarea rows={2} value={form.coach_questions||""} onChange={e=>set("coach_questions",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
+        {error && <div style={{color:S.accent,fontSize:13,marginBottom:8}}>Couldn't save: {error}</div>}
         <div style={{marginTop:8}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Submit Weekly Check-In"}</Btn></div>
       </Card>
     </div>

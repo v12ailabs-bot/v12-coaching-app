@@ -94,6 +94,32 @@ create table if not exists weekly_checkins (
   feeling int,
   goal_progress int,
   notes text,
+  -- body stats
+  bodyweight numeric,
+  week_number int,
+  -- training
+  training_days int,
+  workout_feel text,
+  pump text,
+  exercise_feedback text,
+  lifts_improved text,
+  felt_weaker text,
+  cardio_performance text,
+  -- nutrition & recovery (1-10 scales)
+  nutrition_compliance int,
+  sleep_quality int,
+  hydration_quality int,
+  discipline_level int,
+  confidence_level int,
+  mental_blocks text,
+  -- wins & challenges
+  what_went_well text,
+  lifestyle_wins text,
+  biggest_challenge text,
+  holding_back text,
+  -- for coach
+  adjustments text,
+  coach_questions text,
   created_at timestamptz not null default now(),
   unique (client_id, date)
 );
@@ -213,6 +239,27 @@ alter table weekly_checkins add column if not exists arms numeric;
 alter table weekly_checkins add column if not exists feeling int;
 alter table weekly_checkins add column if not exists goal_progress int;
 alter table weekly_checkins add column if not exists notes text;
+alter table weekly_checkins add column if not exists bodyweight numeric;
+alter table weekly_checkins add column if not exists week_number int;
+alter table weekly_checkins add column if not exists training_days int;
+alter table weekly_checkins add column if not exists workout_feel text;
+alter table weekly_checkins add column if not exists pump text;
+alter table weekly_checkins add column if not exists exercise_feedback text;
+alter table weekly_checkins add column if not exists lifts_improved text;
+alter table weekly_checkins add column if not exists felt_weaker text;
+alter table weekly_checkins add column if not exists cardio_performance text;
+alter table weekly_checkins add column if not exists nutrition_compliance int;
+alter table weekly_checkins add column if not exists sleep_quality int;
+alter table weekly_checkins add column if not exists hydration_quality int;
+alter table weekly_checkins add column if not exists discipline_level int;
+alter table weekly_checkins add column if not exists confidence_level int;
+alter table weekly_checkins add column if not exists mental_blocks text;
+alter table weekly_checkins add column if not exists what_went_well text;
+alter table weekly_checkins add column if not exists lifestyle_wins text;
+alter table weekly_checkins add column if not exists biggest_challenge text;
+alter table weekly_checkins add column if not exists holding_back text;
+alter table weekly_checkins add column if not exists adjustments text;
+alter table weekly_checkins add column if not exists coach_questions text;
 
 -- workout_logs
 alter table workout_logs add column if not exists client_id uuid references profiles (id) on delete cascade;
