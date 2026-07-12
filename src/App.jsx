@@ -97,6 +97,13 @@ const TT = {
 // Today's date as YYYY-MM-DD.
 const todayStr = () => new Date().toISOString().split("T")[0];
 
+// TRAINING (programs + exercises + program_versions) can be SHARED between
+// linked training partners: a client's `shared_program_owner_id` points at the
+// partner who owns the shared training rows. Pass a profile/client row and get
+// back the id whose training rows it should read/write. Nutrition, workout
+// logs, check-ins, and photos always use the client's OWN id — never this.
+const trainingOwnerId = (p) => p?.shared_program_owner_id || p?.id;
+
 // Initials from a name ("Jane Doe" -> "JD") or email ("you@x.com" -> "Y").
 function avatarFrom(nameOrEmail = "") {
   const s = String(nameOrEmail).trim();
@@ -838,7 +845,7 @@ function ClientWelcome({ profile, onEnter }) {
       const { count } = await supabase
         .from("exercises")
         .select("*", { count: "exact", head: true })
-        .eq("client_id", profile.id);
+        .eq("client_id", trainingOwnerId(profile));
       const { data: nut } = await supabase
         .from("nutrition_plans")
         .select("id")
@@ -848,7 +855,7 @@ function ClientWelcome({ profile, onEnter }) {
         .maybeSingle();
       setStatus({ exercises: count || 0, nutrition: !!nut, loading: false });
     })();
-  }, [profile.id]);
+  }, [profile.id, profile.shared_program_owner_id]);
 
   const firstName = (profile.name || "").split(" ")[0] || "Athlete";
   const hasAssessment =
@@ -1641,10 +1648,10 @@ function Workouts({ profile, readOnly }) {
   const [saved, setSaved] = useState(false);
 
   const loadEx = useCallback(async()=>{
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",profile.id).order("created_at");
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile)).order("created_at");
     setExercises(data||[]);
     if(data&&data.length>0&&!selected) setSelected(data[0].id);
-  },[profile.id]);
+  },[profile.id,profile.shared_program_owner_id]);
 
   useEffect(()=>{loadEx();},[loadEx]);
   useEffect(()=>{
@@ -2452,6 +2459,15 @@ function ClientsPanel() {
   const [syncing, setSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [progTick, setProgTick] = useState(0);
+  const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
+  const [savingPartner, setSavingPartner] = useState(false);
+  const [partnerMsg, setPartnerMsg] = useState(null);
+
+  // The id whose TRAINING rows (program + exercises) the selected client shares.
+  // For a linked partner this is their owner; otherwise the client itself.
+  // Nutrition and check-ins always use the client's own id, never this.
+  const selClient = clients.find(c=>c.id===selected);
+  const trainOwnerId = selClient?.shared_program_owner_id || selected;
 
   const loadClients = async()=>{
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
@@ -2484,7 +2500,7 @@ function ClientsPanel() {
       .then(d=>setTemplates(d.templates||[]))
       .catch(()=>setTemplates([]));
   },[]);
-  useEffect(()=>{if(selected){loadEx(selected);setGenMsg(null);}},[selected]);
+  useEffect(()=>{if(selected){loadEx(trainOwnerId);setGenMsg(null);}},[selected,trainOwnerId]);
   // Sync the assessment editor to the selected client.
   useEffect(()=>{
     const c = clients.find(x=>x.id===selected);
@@ -2497,8 +2513,10 @@ function ClientsPanel() {
       client_type: c.client_type || "coaching",
       dashboard_url: c.dashboard_url || "",
     });
+    if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
     setSettingsMsg(null);
+    setPartnerMsg(null);
   },[selected, clients]);
 
   const saveSettings = async()=>{
@@ -2510,6 +2528,27 @@ function ClientsPanel() {
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
     setSettingsMsg({ok:true,text:"Client settings saved."});
+    await loadClients();
+  };
+
+  // Link/unlink the selected client to a training partner. Setting an owner
+  // makes this client SHARE that owner's training program (exercises + phase +
+  // version history); clearing it makes the client's training independent
+  // again. Nutrition is never affected either way.
+  const savePartner = async()=>{
+    setSavingPartner(true); setPartnerMsg(null);
+    const owner = partnerId || null;
+    if(owner && owner===selected){
+      setSavingPartner(false);
+      setPartnerMsg({ok:false,text:"A client can't be their own training partner."});
+      return;
+    }
+    const {error} = await supabase.from("profiles")
+      .update({shared_program_owner_id:owner}).eq("id",selected);
+    setSavingPartner(false);
+    if(error){ setPartnerMsg({ok:false,text:error.message}); return; }
+    const ownerName = clients.find(c=>c.id===owner)?.name;
+    setPartnerMsg({ok:true,text:owner?`Now sharing ${ownerName||"partner"}'s training program.`:"Training unlinked — this client has an independent program again."});
     await loadClients();
   };
 
@@ -2550,12 +2589,12 @@ function ClientsPanel() {
     if(!newEx.name) return;
     setSaving(true);
     await supabase.from("exercises").insert({
-      client_id:selected, name:newEx.name.trim(), category:newEx.category.trim()||null,
+      client_id:trainOwnerId, name:newEx.name.trim(), category:newEx.category.trim()||null,
       day_of_week:newEx.day_of_week||null, sets:parseInt(newEx.sets)||null,
       reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
       is_bodyweight:newEx.is_bodyweight, source:"coach",
     });
-    await loadEx(selected);
+    await loadEx(trainOwnerId);
     setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false});
     setShowAdd(false);setSaving(false);
   };
@@ -2568,7 +2607,7 @@ function ClientsPanel() {
       : "Remove this exercise?";
     if(!window.confirm(msg)) return;
     await supabase.from("exercises").delete().eq("id",id);
-    await loadEx(selected);
+    await loadEx(trainOwnerId);
   };
   // Edit an assigned exercise in place — the coach's progression / customization knob.
   const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
@@ -2581,7 +2620,7 @@ function ClientsPanel() {
       reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null,
     }).eq("id",editEx.id);
     setEditEx(null);
-    await loadEx(selected);
+    await loadEx(trainOwnerId);
   };
 
   // Runs the pipeline: Notion -> AI -> Supabase. scope "full" regenerates the
@@ -2601,8 +2640,8 @@ function ClientsPanel() {
         setGenMsg({ok:true,text:`Nutrition plan regenerated — ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}. Training program left unchanged.`});
       }else{
         setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}${data.exercises_preserved?` · kept ${data.exercises_preserved} exercise${data.exercises_preserved>1?"s":""} with logged history`:""}.`});
-        await loadEx(selected);
-        await createProgramVersion(client.id, `AI generated${data.template?` · ${data.template}`:""}`);
+        await loadEx(trainOwnerId);
+        await createProgramVersion(trainOwnerId, `AI generated${data.template?` · ${data.template}`:""}`);
       }
       setProgTick(t=>t+1);
     }catch(e){
@@ -2705,6 +2744,32 @@ function ClientsPanel() {
             </div>
           </Card>
           <Card style={{marginBottom:20}}>
+            <CardTitle>Training Partner</CardTitle>
+            <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
+              Link this client to a partner to SHARE one training program — the same exercises, phase, and version history, so editing one updates both. Each partner keeps their OWN nutrition plan, workout logs, and check-ins. Log your training against the shared exercises with your own weights.
+            </div>
+            <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
+              <Fld label="Share training program with">
+                <select value={partnerId} onChange={e=>setPartnerId(e.target.value)}
+                  style={{width:"100%",minWidth:240,background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
+                  <option value="">Independent (no partner)</option>
+                  {clients
+                    .filter(c=>c.id!==selected && !c.shared_program_owner_id)
+                    .map(c=>(<option key={c.id} value={c.id}>{c.name||c.email}</option>))}
+                </select>
+              </Fld>
+              <Btn onClick={savePartner} disabled={savingPartner}>{savingPartner?"Saving...":"Save Partner Link"}</Btn>
+              {partnerMsg && (
+                <span style={{fontSize:12,fontWeight:600,color:partnerMsg.ok?S.accent2:"#ff6b5b"}}>{partnerMsg.text}</span>
+              )}
+            </div>
+            {selClient?.shared_program_owner_id && (
+              <div style={{fontSize:12,color:S.accent2,marginTop:12,fontWeight:600}}>
+                Currently sharing {clients.find(c=>c.id===selClient.shared_program_owner_id)?.name||"a partner"}'s training program.
+              </div>
+            )}
+          </Card>
+          <Card style={{marginBottom:20}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12}}>
               <CardTitle>V12 Assessment — three systems</CardTitle>
               <Btn sm teal onClick={()=>refreshFromNotion(client)} disabled={syncing}>
@@ -2726,8 +2791,8 @@ function ClientsPanel() {
               )}
             </div>
           </Card>
-          <ProgramPhase clientId={client.id} />
-          <ProgramVersions clientId={client.id} refreshKey={progTick} onRestored={()=>loadEx(selected)} />
+          <ProgramPhase clientId={trainOwnerId} />
+          <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
           <CoachNutrition clientId={client.id} refreshKey={progTick} />
           <CoachHabits clientId={client.id} />
           <CoachNotes clientId={client.id} />
@@ -3176,7 +3241,7 @@ function ClientProgram({ profile }) {
     supabase
       .from("exercises")
       .select("*")
-      .eq("client_id", profile.id)
+      .eq("client_id", trainingOwnerId(profile))
       .order("order_index")
       .then(({ data }) => {
         setExercises(data || []);
@@ -3185,12 +3250,12 @@ function ClientProgram({ profile }) {
     supabase
       .from("programs")
       .select("name,phase,phase_note")
-      .eq("client_id", profile.id)
+      .eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
       .then(({ data }) => setProgram(data || null));
-  }, [profile.id]);
+  }, [profile.id, profile.shared_program_owner_id]);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 

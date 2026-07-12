@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select(
-        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity"
+        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id"
       )
       .eq("email", client_email)
       .maybeSingle();
@@ -37,6 +37,12 @@ export default async function handler(req, res) {
     if (!profile) {
       return res.status(404).json({ error: "Client has not signed up in the app yet" });
     }
+
+    // TRAINING is shared between linked partners: a client with a
+    // shared_program_owner_id writes its program + exercises against the
+    // owner's id, so both partners see the same training. NUTRITION and logged
+    // history stay keyed to this client's OWN id (profile.id) — always separate.
+    const trainingOwnerId = profile.shared_program_owner_id || profile.id;
 
     // Resolve the V12 assessment: a coach-set profile score wins over Notion.
     const assessment = {
@@ -84,7 +90,7 @@ export default async function handler(req, res) {
       const { data: latest } = await supabaseAdmin
         .from("programs")
         .select("id")
-        .eq("client_id", profile.id)
+        .eq("client_id", trainingOwnerId)
         .order("created_at", { ascending: false })
         .limit(1)
         .maybeSingle();
@@ -93,7 +99,7 @@ export default async function handler(req, res) {
       const { data: newProgram, error: progErr } = await supabaseAdmin
         .from("programs")
         .insert({
-          client_id: profile.id,
+          client_id: trainingOwnerId,
           name: training.program_name,
           goal: training.goal || client.goal,
           experience_level: client.experience_level,
@@ -115,15 +121,17 @@ export default async function handler(req, res) {
       const { data: aiExercises } = await supabaseAdmin
         .from("exercises")
         .select("id")
-        .eq("client_id", profile.id)
+        .eq("client_id", trainingOwnerId)
         .eq("source", "ai");
       const aiIds = (aiExercises || []).map((e) => e.id);
 
       if (aiIds.length) {
+        // Preserve an exercise if ANY partner has logged sets against it (logs
+        // are per-client but the exercise rows are shared), so regenerating one
+        // partner's program never destroys the other partner's history.
         const { data: logged } = await supabaseAdmin
           .from("workout_logs")
           .select("exercise_id")
-          .eq("client_id", profile.id)
           .in("exercise_id", aiIds);
         preservedIds = [...new Set((logged || []).map((l) => l.exercise_id))];
 
@@ -140,7 +148,7 @@ export default async function handler(req, res) {
       for (const day of training.weekly_split || []) {
         (day.exercises || []).forEach((ex, i) => {
           exercises.push({
-            client_id: profile.id,
+            client_id: trainingOwnerId,
             program_id: program.id,
             name: ex.name,
             category: ex.category || day.focus || null,
