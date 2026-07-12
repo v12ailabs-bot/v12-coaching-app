@@ -3,6 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MODEL = "claude-opus-4-8";
+// A full 12-week, multi-day split (or a detailed meal plan) can exceed a few
+// thousand tokens; 4000 truncated the JSON mid-string for larger clients.
+const MAX_TOKENS = 16000;
 
 // Parses model output as JSON, tolerating markdown code fences.
 function parseJson(text) {
@@ -67,7 +70,7 @@ and session length.`;
 export async function generateTrainingPlan(client) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: MAX_TOKENS,
     messages: [
       {
         role: "user",
@@ -136,7 +139,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 export async function generateNutritionPlan(client) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 4000,
+    max_tokens: MAX_TOKENS,
     messages: [
       {
         role: "user",
