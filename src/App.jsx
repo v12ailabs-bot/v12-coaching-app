@@ -2439,6 +2439,7 @@ function ClientsPanel() {
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [genScope, setGenScope] = useState(null);
   const [genMsg, setGenMsg] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState("");
@@ -2559,6 +2560,13 @@ function ClientsPanel() {
     setShowAdd(false);setSaving(false);
   };
   const delEx = async(id)=>{
+    // Deleting an exercise cascade-deletes its workout_logs. Warn the coach when
+    // there's logged history on the line so it isn't lost silently.
+    const {count} = await supabase.from("workout_logs").select("id",{count:"exact",head:true}).eq("exercise_id",id);
+    const msg = count
+      ? `This exercise has ${count} logged set${count>1?"s":""}. Deleting it will permanently remove that logged history too. Continue?`
+      : "Remove this exercise?";
+    if(!window.confirm(msg)) return;
     await supabase.from("exercises").delete().eq("id",id);
     await loadEx(selected);
   };
@@ -2576,25 +2584,31 @@ function ClientsPanel() {
     await loadEx(selected);
   };
 
-  // Runs the full pipeline: Notion -> AI (training + nutrition) -> Supabase.
-  const generateProgram = async(client)=>{
-    setGenerating(true); setGenMsg(null);
+  // Runs the pipeline: Notion -> AI -> Supabase. scope "full" regenerates the
+  // whole program (training + nutrition); "nutrition" regenerates only the
+  // nutrition plan and leaves training + logged history untouched.
+  const generateProgram = async(client, scope="full")=>{
+    setGenerating(true); setGenScope(scope); setGenMsg(null);
     try{
       const r = await fetch("/api/generate-program",{
         method:"POST",
         headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({client_email:client.email, template_id:templateId||undefined}),
+        body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope}),
       });
       const data = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
-      setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}.`});
-      await loadEx(selected);
-      await createProgramVersion(client.id, `AI generated${data.template?` · ${data.template}`:""}`);
+      if(data.scope==="nutrition"){
+        setGenMsg({ok:true,text:`Nutrition plan regenerated — ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}. Training program left unchanged.`});
+      }else{
+        setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}${data.exercises_preserved?` · kept ${data.exercises_preserved} exercise${data.exercises_preserved>1?"s":""} with logged history`:""}.`});
+        await loadEx(selected);
+        await createProgramVersion(client.id, `AI generated${data.template?` · ${data.template}`:""}`);
+      }
       setProgTick(t=>t+1);
     }catch(e){
       setGenMsg({ok:false,text:e.message});
     }finally{
-      setGenerating(false);
+      setGenerating(false); setGenScope(null);
     }
   };
 
@@ -2644,7 +2658,10 @@ function ClientsPanel() {
                   ))}
                 </select>
                 <Btn onClick={()=>generateProgram(client)} disabled={generating}>
-                  {generating?"Generating...":"⚡ Generate AI Program"}
+                  {generating&&genScope==="full"?"Generating...":"⚡ Generate AI Program"}
+                </Btn>
+                <Btn sm teal onClick={()=>generateProgram(client,"nutrition")} disabled={generating}>
+                  {generating&&genScope==="nutrition"?"Generating...":"🥗 Regenerate Nutrition Only"}
                 </Btn>
                 <button onClick={()=>setArchived(client, !client.archived)}
                   style={{padding:"8px 14px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:S.muted}}>
@@ -2653,7 +2670,7 @@ function ClientsPanel() {
               </div>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:12}}>
-              Pulls this client's intake from Notion, builds a training + nutrition plan with AI from the selected template, and publishes it to their portal.
+              Pulls this client's intake from Notion, builds a training + nutrition plan with AI from the selected template, and publishes it to their portal. "Regenerate Nutrition Only" rebuilds just the nutrition plan and leaves the training program and logged history untouched.
             </div>
             {genMsg && (
               <div style={{marginTop:12,padding:"10px 16px",fontSize:12,fontWeight:600,
