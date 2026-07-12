@@ -8,7 +8,9 @@
 "preview": "vite preview",
 "migrate:notion": "node --env-file=.env scripts/migrate-notion.js",
 "migrate:checkins": "node --env-file=.env scripts/migrate-checkins-sheet.js",
-"inspect:templates": "node --env-file=.env scripts/inspect-notion-templates.js"
+"inspect:templates": "node --env-file=.env scripts/inspect-notion-templates.js",
+"create:templates": "node --env-file=.env scripts/create-notion-templates.js",
+"link:partners": "node --env-file=.env scripts/link-partners.js"
 },
 "dependencies": {
 "@anthropic-ai/sdk": "^0.32.1",
