@@ -1070,7 +1070,7 @@ function DailyCheckin({ profile, onDone }) {
 function WeeklyCheckin({ profile, onDone }) {
   const weekStart = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
   const [form, setForm] = useState({
-    bodyweight:"", waist:"", week_number:"",
+    bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
     nutrition_compliance:5, sleep_quality:5, hydration_quality:5, discipline_level:5, confidence_level:5, mental_blocks:"",
     what_went_well:"", lifestyle_wins:"", biggest_challenge:"", holding_back:"",
@@ -1084,7 +1084,7 @@ function WeeklyCheckin({ profile, onDone }) {
 
   // Numeric columns — coerced to number|null on save so empty inputs don't
   // hit non-numeric Postgres columns.
-  const NUMERIC = ["bodyweight","waist","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level"];
+  const NUMERIC = ["bodyweight","waist","chest","hips","arms","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level"];
 
   useEffect(()=>{
     supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle()
@@ -1113,6 +1113,9 @@ function WeeklyCheckin({ profile, onDone }) {
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
           <Fld label="Bodyweight (lbs)"><Inp type="number" step="0.1" value={form.bodyweight||""} onChange={e=>set("bodyweight",e.target.value)} placeholder="lbs"/></Fld>
           <Fld label="Waist (inches)"><Inp type="number" step="0.1" value={form.waist||""} onChange={e=>set("waist",e.target.value)} placeholder="inches"/></Fld>
+          <Fld label="Chest (inches)"><Inp type="number" step="0.1" value={form.chest||""} onChange={e=>set("chest",e.target.value)} placeholder="inches"/></Fld>
+          <Fld label="Hips (inches)"><Inp type="number" step="0.1" value={form.hips||""} onChange={e=>set("hips",e.target.value)} placeholder="inches"/></Fld>
+          <Fld label="Arms (inches)"><Inp type="number" step="0.1" value={form.arms||""} onChange={e=>set("arms",e.target.value)} placeholder="inches"/></Fld>
         </div>
         <Fld label="Week #"><Inp type="number" value={form.week_number||""} onChange={e=>set("week_number",e.target.value)} placeholder="e.g. 4"/></Fld>
       </Card>
