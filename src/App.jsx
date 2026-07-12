@@ -1341,25 +1341,46 @@ function StrengthTab({ profile }) {
   );
 }
 
-// Progress photos: upload to private storage, gallery via short-lived signed URLs.
+// Sunday that starts the week containing `s` (mirrors WeeklyCheckin's weekStart
+// so a photo's derived week matches its check-in's stored date).
+const weekStartOf = (s) => { const d=new Date(s); d.setDate(d.getDate()-d.getDay()); return d.toISOString().split("T")[0]; };
+// "2026-07-11" -> "7/11/2026"
+const fmtWeek = (s) => { const [y,m,d]=s.split("-"); return `${+m}/${+d}/${y}`; };
+
+// Progress photos: grouped into weekly sets. Each photo links to that week's
+// weekly check-in when one exists (checkin_id); otherwise it's bucketed by the
+// week its taken_on falls in. Upload stamps today; storage is private (signed URLs).
 function ProgressPhotos({ profile }) {
   const [photos, setPhotos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState(null);
+  const [activeWeek, setActiveWeek] = useState(null);
 
   const load = useCallback(async()=>{
-    const {data:rows} = await supabase.from("progress_photos").select("*").eq("client_id",profile.id).order("created_at",{ascending:false});
+    const [{data:rows}, {data:checkins}] = await Promise.all([
+      supabase.from("progress_photos").select("*").eq("client_id",profile.id).order("taken_on",{ascending:false}),
+      supabase.from("weekly_checkins").select("id,date").eq("client_id",profile.id),
+    ]);
+    const ciDate = {}; (checkins||[]).forEach(c=>{ ciDate[c.id]=c.date; });
     const paths = (rows||[]).map(r=>r.path);
     const urls = {};
     if(paths.length){
       const {data:signed} = await supabase.storage.from("progress-photos").createSignedUrls(paths, 3600);
       (signed||[]).forEach(s=>{ if(s.path && s.signedUrl) urls[s.path]=s.signedUrl; });
     }
-    setPhotos((rows||[]).map(r=>({...r, url:urls[r.path]})));
+    setPhotos((rows||[]).map(r=>{
+      const base = (r.checkin_id && ciDate[r.checkin_id]) || r.taken_on || (r.created_at||"").slice(0,10);
+      return {...r, url:urls[r.path], week: base ? weekStartOf(base) : null};
+    }));
     setLoading(false);
   },[profile.id]);
   useEffect(()=>{load();},[load]);
+
+  // Distinct weeks, newest first; keep a valid tab selected.
+  const weeks = [...new Set(photos.map(p=>p.week).filter(Boolean))].sort().reverse();
+  const active = (activeWeek && weeks.includes(activeWeek)) ? activeWeek : (weeks[0]||null);
+  const shown = photos.filter(p=>p.week===active);
 
   const onUpload = async(e)=>{
     const file = e.target.files?.[0]; if(!file) return;
@@ -1369,8 +1390,12 @@ function ProgressPhotos({ profile }) {
       const path = `${profile.id}/${Date.now()}.${ext}`;
       const {error:upErr} = await supabase.storage.from("progress-photos").upload(path, file, {upsert:false, contentType:file.type});
       if(upErr) throw upErr;
-      const {error:insErr} = await supabase.from("progress_photos").insert({client_id:profile.id, path, taken_on:todayStr()});
+      // Link to this week's check-in if the client has already logged one.
+      const wk = weekStartOf(todayStr());
+      const {data:ci} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",wk).maybeSingle();
+      const {error:insErr} = await supabase.from("progress_photos").insert({client_id:profile.id, path, taken_on:todayStr(), checkin_id:ci?.id||null});
       if(insErr) throw insErr;
+      setActiveWeek(wk);
       await load();
     }catch(e2){ setErr(e2.message); }
     finally{ setUploading(false); e.target.value=""; }
@@ -1389,7 +1414,7 @@ function ProgressPhotos({ profile }) {
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:12}}>
           <div>
             <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>Progress Photos</div>
-            <div style={{fontSize:11,color:S.muted}}>Private to you and your coach. Shoot in consistent lighting and angle for the best comparison.</div>
+            <div style={{fontSize:11,color:S.muted}}>Private to you and your coach. Grouped by check-in week — shoot in consistent lighting and angle for the best comparison.</div>
           </div>
           <label style={{...bS({}),background:S.neon,color:"#0A0A0B",display:"inline-block",cursor:uploading?"default":"pointer",opacity:uploading?0.6:1}}>
             {uploading?"Uploading...":"+ Upload Photo"}
@@ -1400,19 +1425,32 @@ function ProgressPhotos({ profile }) {
       </Card>
       {loading ? <div className="spinner" style={{margin:"40px auto"}}/> :
         photos.length===0 ? <Card style={{textAlign:"center",padding:40,color:S.muted}}>No photos yet. Upload your first to start your visual timeline.</Card> :
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14}}>
-          {photos.map(p=>(
-            <div key={p.id} style={{border:"1px solid "+S.border,background:S.surface}}>
-              {p.url
-                ? <img src={p.url} alt="" style={{width:"100%",height:210,objectFit:"cover",display:"block"}}/>
-                : <div style={{height:210,display:"flex",alignItems:"center",justifyContent:"center",color:S.muted,fontSize:12}}>unavailable</div>}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px"}}>
-                <span style={{fontSize:11,color:S.muted}}>{p.taken_on||(p.created_at||"").slice(0,10)}</span>
-                <button onClick={()=>remove(p)} style={{background:"none",border:"none",color:"#ff6b5b",cursor:"pointer",fontSize:11,fontWeight:600}}>Delete</button>
+        <>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap",margin:"16px 0"}}>
+            {weeks.map(w=>{
+              const on = w===active;
+              return (
+                <button key={w} onClick={()=>setActiveWeek(w)}
+                  style={{padding:"7px 14px",fontSize:12,fontWeight:600,cursor:"pointer",border:"1px solid "+(on?S.neon:S.border),background:on?S.neon:S.surface,color:on?"#0A0A0B":S.text}}>
+                  {fmtWeek(w)} <span style={{opacity:.65,fontWeight:400}}>· {photos.filter(p=>p.week===w).length}</span>
+                </button>
+              );
+            })}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:14}}>
+            {shown.map(p=>(
+              <div key={p.id} style={{border:"1px solid "+S.border,background:S.surface}}>
+                {p.url
+                  ? <img src={p.url} alt="" style={{width:"100%",height:210,objectFit:"cover",display:"block"}}/>
+                  : <div style={{height:210,display:"flex",alignItems:"center",justifyContent:"center",color:S.muted,fontSize:12}}>unavailable</div>}
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px"}}>
+                  <span style={{fontSize:11,color:S.muted}}>{p.taken_on||(p.created_at||"").slice(0,10)}</span>
+                  <button onClick={()=>remove(p)} style={{background:"none",border:"none",color:"#ff6b5b",cursor:"pointer",fontSize:11,fontWeight:600}}>Delete</button>
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        </>
       }
     </div>
   );

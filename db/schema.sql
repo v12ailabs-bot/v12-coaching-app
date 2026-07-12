@@ -144,6 +144,9 @@ create table if not exists progress_photos (
   client_id uuid not null references profiles (id) on delete cascade,
   path text not null,
   taken_on date,
+  -- Links a photo to that week's weekly check-in when one exists. Nullable:
+  -- unlinked photos are grouped by the week their taken_on falls in.
+  checkin_id uuid references weekly_checkins (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
@@ -302,6 +305,7 @@ on conflict (name) do nothing;
 -- progress_photos
 alter table progress_photos add column if not exists path text;
 alter table progress_photos add column if not exists taken_on date;
+alter table progress_photos add column if not exists checkin_id uuid references weekly_checkins (id) on delete set null;
 alter table progress_photos add column if not exists created_at timestamptz default now();
 
 create index if not exists idx_exercises_client on exercises (client_id);
@@ -310,6 +314,7 @@ create index if not exists idx_daily_client_date on daily_checkins (client_id, d
 create index if not exists idx_weekly_client_date on weekly_checkins (client_id, date);
 create index if not exists idx_logs_client_ex on workout_logs (client_id, exercise_id);
 create index if not exists idx_photos_client on progress_photos (client_id, created_at);
+create index if not exists idx_photos_checkin on progress_photos (checkin_id);
 
 -- ---------------------------------------------------------------------------
 -- Row Level Security
