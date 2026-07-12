@@ -7,17 +7,20 @@ export const notion = new Client({ auth: process.env.NOTION_API_KEY });
 const PROP = {
   email: "Email",
   name: "Name",
-  goal: "Goal",
-  daysAvailable: "Training Days",
-  experienceLevel: "Experience Level",
-  injuries: "Injuries",
-  equipment: "Equipment",
-  sessionLength: "Session Length",
+  goal: "what's your #1 Primary Goal right now?",
+  daysAvailable: "Days Available / Week",
+  experienceLevel: "Training Experience",
+  injuries: "any injuries ( past or present) and if so what triggers it?",
+  equipment: "where will you primarily train?",
+  sessionLength: "how much time can you realistically dedicate to each workout session?",
+  // Not collected in the current intake DB — left mapped for other databases;
+  // resolve to null here and the AI prompt falls back gracefully.
   dietaryPreference: "Dietary Preference",
   allergies: "Allergies",
   calorieTarget: "Calorie Target",
-  programTemplate: "Program Template",
-  // V12 three-system assessment (numbers 1-10, or selects). Optional.
+  // Relation to the program library — the client's assigned program page.
+  programTemplate: "program library (assigned program)",
+  // V12 three-system assessment: coach-set on the profile, not in intake. Optional.
   nervousSystem: "Nervous System Recruitment",
   densityToSize: "Muscular Density-to-Size",
   workCapacity: "Metabolic Work Capacity",
@@ -48,6 +51,11 @@ export function readProp(prop) {
       return prop.url || null;
     case "date":
       return prop.date?.start || null;
+    case "relation":
+      // Array of related page ids (empty relation -> null).
+      return (prop.relation || []).map((r) => r.id).filter(Boolean).length
+        ? prop.relation.map((r) => r.id)
+        : null;
     case "formula":
       return readFormula(prop.formula);
     default:
@@ -135,7 +143,8 @@ export async function getClientFromNotion(email) {
     dietary_preference: get("dietaryPreference"),
     allergies: get("allergies"),
     calorie_target: get("calorieTarget"),
-    program_template: get("programTemplate"),
+    // First related program-library page id, if the intake assigns one.
+    program_template_id: (get("programTemplate") || [])[0] || null,
     nervous_system_recruitment: get("nervousSystem"),
     muscular_density_to_size: get("densityToSize"),
     metabolic_work_capacity: get("workCapacity"),

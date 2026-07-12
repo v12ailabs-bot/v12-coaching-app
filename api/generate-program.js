@@ -50,14 +50,15 @@ export default async function handler(req, res) {
     //    read its session structure as the AI framework. Falls back to the
     //    client's own Notion `Program Template` property if none was chosen.
     let template = null;
-    if (template_id) {
+    const chosenTemplate = template_id || client.program_template_id;
+    if (chosenTemplate) {
       try {
-        template = await getProgramTemplate(template_id);
+        template = await getProgramTemplate(chosenTemplate);
       } catch (e) {
         console.warn("Program library fetch failed, falling back:", e.message);
       }
     }
-    const templateText = template?.frameworkText || client.program_template;
+    const templateText = template?.frameworkText || null;
 
     // 4. Generate both plans concurrently, feeding the template + assessment
     //    into training and the assessment into nutrition.
