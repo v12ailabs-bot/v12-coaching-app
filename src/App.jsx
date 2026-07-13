@@ -856,6 +856,44 @@ const Btn = ({children,onClick,disabled,teal,sm,danger}) => (
   </button>
 );
 
+// Collapsible "folder" for grouping content by training day. Closed by default;
+// clicking the header row toggles it. Shared by the client Training Plan and the
+// coach exercise editor so a multi-day program reads as folders, not one long list.
+function DayFolder({ title, meta, children, defaultOpen = false }) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ background: S.surface, border: "1px solid " + S.border, marginBottom: 12 }}>
+      <button onClick={() => setOpen((o) => !o)}
+        style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          background: open ? S.surface2 : "transparent", border: "none", cursor: "pointer", padding: "15px 18px", textAlign: "left", color: S.text }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+          <span style={{ fontSize: 12, color: S.accent, flexShrink: 0, display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>
+          <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
+          {meta && <span style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap", flexShrink: 0 }}>{meta}</span>}
+        </span>
+        <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, flexShrink: 0 }}>{open ? "Hide" : "Open"}</span>
+      </button>
+      {open && <div style={{ padding: "16px 18px 18px" }}>{children}</div>}
+    </div>
+  );
+}
+
+// Group exercises by training day, returned as [day, exercises] pairs ordered
+// Monday→Sunday with "Unscheduled" last. Shared by the client plan + coach editor.
+function groupByDay(list) {
+  const byDay = {};
+  for (const ex of list) {
+    const k = ex.day_of_week || "Unscheduled";
+    (byDay[k] = byDay[k] || []).push(ex);
+  }
+  return Object.keys(byDay)
+    .sort((a, b) => {
+      const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
+      return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+    })
+    .map((day) => [day, byDay[day]]);
+}
+
 // Adherence over a trailing window: % of days with a daily check-in, plus the
 // training-completion rate among those check-ins. Shared by client + coach views.
 function adherenceFrom(checkins, days = 30) {
@@ -2965,9 +3003,11 @@ function ClientsPanel() {
               </div>
             )}
             {exercises.length===0&&<div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No exercises assigned yet.</div>}
+            {groupByDay(exercises).map(([day,dayExs])=>(
+            <DayFolder key={day} title={day} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`}>
             {isMobile ? (
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
-              {exercises.map(ex=>{
+              {dayExs.map(ex=>{
                 const editing = editEx?.id===ex.id;
                 const d = editEx?.draft || {};
                 const setD = (k,v)=>setEditEx(p=>({...p,draft:{...p.draft,[k]:v}}));
@@ -3013,7 +3053,7 @@ function ClientsPanel() {
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>{["Exercise","Day","Sets","Reps","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
               <tbody>
-                {exercises.map(ex=>{
+                {dayExs.map(ex=>{
                   const editing = editEx?.id===ex.id;
                   const d = editEx?.draft || {};
                   const setD = (k,v)=>setEditEx(p=>({...p,draft:{...p.draft,[k]:v}}));
@@ -3055,6 +3095,8 @@ function ClientsPanel() {
               </tbody>
             </table>
             )}
+            </DayFolder>
+            ))}
           </Card>
         </>
       )}
@@ -3475,11 +3517,7 @@ function ClientProgram({ profile }) {
         </Card>
       ) : (
         days.map((day) => (
-          <Card key={day}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 14 }}>
-              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22 }}>{day}</div>
-              <div style={{ fontSize: 11, color: S.muted }}>{byDay[day][0]?.category || ""}</div>
-            </div>
+          <DayFolder key={day} title={day} meta={`${byDay[day].length} exercise${byDay[day].length > 1 ? "s" : ""}${byDay[day][0]?.category ? ` · ${byDay[day][0].category}` : ""}`}>
             <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
               <thead>
@@ -3505,7 +3543,7 @@ function ClientProgram({ profile }) {
               </tbody>
             </table>
             </div>
-          </Card>
+          </DayFolder>
         ))
       )}
     </div>
