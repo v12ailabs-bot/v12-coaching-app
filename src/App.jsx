@@ -1110,6 +1110,7 @@ function WeeklyCheckin({ profile, onDone }) {
     bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
     nutrition_compliance:5, sleep_quality:5, hydration_quality:5, discipline_level:5, confidence_level:5, mental_blocks:"",
+    goal_progress:50, feeling:5,
     what_went_well:"", lifestyle_wins:"", biggest_challenge:"", holding_back:"",
     adjustments:"", coach_questions:"",
   });
@@ -1121,7 +1122,7 @@ function WeeklyCheckin({ profile, onDone }) {
 
   // Numeric columns — coerced to number|null on save so empty inputs don't
   // hit non-numeric Postgres columns.
-  const NUMERIC = ["bodyweight","waist","chest","hips","arms","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level"];
+  const NUMERIC = ["bodyweight","waist","chest","hips","arms","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level","goal_progress","feeling"];
 
   useEffect(()=>{
     supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle()
@@ -1185,6 +1186,13 @@ function WeeklyCheckin({ profile, onDone }) {
         <Fld label="Emotional stress or mental blocks?"><textarea rows={2} value={form.mental_blocks||""} onChange={e=>set("mental_blocks",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
       </Card>
       <Card>
+        <CardTitle>Progress Toward Your Goal</CardTitle>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <Sld label="Progress toward your goal" val={form.goal_progress??50} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
+          <Sld label="How this week felt overall" val={form.feeling??5} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
+        </div>
+      </Card>
+      <Card>
         <CardTitle>Wins & Challenges</CardTitle>
         <Fld label="What went well this week?"><textarea rows={2} value={form.what_went_well||""} onChange={e=>set("what_went_well",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <Fld label="Physical or lifestyle wins?"><textarea rows={2} value={form.lifestyle_wins||""} onChange={e=>set("lifestyle_wins",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
@@ -1213,6 +1221,7 @@ function Progress({ profile }) {
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
+  const emptyWeekly = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins yet. Submit a Weekly Check-In to see this chart.</Card>;
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
   const adh = adherenceFrom(daily,30);
   const nut = nutritionScoreFrom(daily,30);
@@ -1278,7 +1287,7 @@ function Progress({ profile }) {
         </div>
       ))}
 
-      {tab==="measurements" && (weekly.length===0?empty:(
+      {tab==="measurements" && (weekly.length===0?emptyWeekly:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
             <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
@@ -1300,7 +1309,7 @@ function Progress({ profile }) {
 
       {tab==="photos" && <ProgressPhotos profile={profile}/>}
 
-      {tab==="goals" && (weekly.length===0?empty:(
+      {tab==="goals" && (weekly.length===0?emptyWeekly:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           <CC title="Goal Progress" sub="Weekly percent">
             <ResponsiveContainer width="100%" height="100%">
@@ -2485,7 +2494,7 @@ function ClientsPanel() {
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [syncing, setSyncing] = useState(false);
@@ -2547,6 +2556,7 @@ function ClientsPanel() {
     if(c) setSettings({
       client_type: c.client_type || "coaching",
       dashboard_url: c.dashboard_url || "",
+      goal: c.goal || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     if(c) setCoachMsg(c.coach_message || "");
@@ -2561,6 +2571,7 @@ function ClientsPanel() {
     const {error} = await supabase.from("profiles").update({
       client_type: settings.client_type,
       dashboard_url: settings.dashboard_url.trim() || null,
+      goal: settings.goal.trim() || null,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -2784,6 +2795,12 @@ function ClientsPanel() {
               <Fld label="Notion Dashboard URL">
                 <Inp type="url" value={settings.dashboard_url} onChange={e=>setSettings(p=>({...p,dashboard_url:e.target.value}))} placeholder="https://notion.so/..."/>
               </Fld>
+              <Fld label="Primary Goal">
+                <Inp type="text" value={settings.goal} onChange={e=>setSettings(p=>({...p,goal:e.target.value}))} placeholder="e.g. Fat loss, Hypertrophy, Strength"/>
+              </Fld>
+            </div>
+            <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
+              Goal shows on this client's overview and their portal. Pulled from their Notion intake on sync; set it here to add or override it.
             </div>
             <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
               <Btn onClick={saveSettings} disabled={savingSettings}>{savingSettings?"Saving...":"Save Settings"}</Btn>
