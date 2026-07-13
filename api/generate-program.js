@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select(
-        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id"
+        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal"
       )
       .eq("email", client_email)
       .maybeSingle();
@@ -203,7 +203,9 @@ export default async function handler(req, res) {
       await supabaseAdmin
         .from("profiles")
         .update({
-          goal: client.goal || null,
+          // Preserve a coach-set (or previously stored) goal; only fall back to
+          // the Notion intake goal when the profile has none yet.
+          goal: profile.goal || client.goal || null,
           onboarding_complete: true,
           nervous_system_recruitment: toScore(assessment.nervous_system_recruitment),
           muscular_density_to_size: toScore(assessment.muscular_density_to_size),
