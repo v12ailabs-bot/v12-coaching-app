@@ -26,7 +26,7 @@ export default async function handler(req, res) {
 
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
-      .select("id")
+      .select("id, goal")
       .eq("email", client_email)
       .maybeSingle();
     if (profileErr) throw profileErr;
@@ -40,7 +40,9 @@ export default async function handler(req, res) {
 
     const update = {};
     if (client.name) update.name = client.name;
-    if (client.goal) update.goal = client.goal;
+    // Only fill the goal from Notion when the profile has none — never clobber a
+    // coach-set (or previously stored) goal on refresh. Coach override wins.
+    if (client.goal && !profile.goal) update.goal = client.goal;
     if (ns != null) update.nervous_system_recruitment = ns;
     if (ds != null) update.muscular_density_to_size = ds;
     if (wc != null) update.metabolic_work_capacity = wc;
