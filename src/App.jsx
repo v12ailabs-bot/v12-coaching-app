@@ -2580,16 +2580,13 @@ function ClientsPanel() {
     await loadClients();
   };
 
-  // Discard the coach's goal override and re-pull the goal from Notion. Clears
-  // profiles.goal first (so sync-client, which only fills an empty goal, will
-  // repopulate it), then syncs. Reflects the result back into the editor.
+  // Stage the client's Notion intake goal into the editor WITHOUT persisting.
+  // Reads Notion read-only (/api/notion-goal) and drops the value into the Goal
+  // field; nothing is written until the coach clicks Save Settings.
   const resetGoalToNotion = async(client)=>{
-    if(!window.confirm("Reset this client's goal to their Notion intake answer? Your manually set goal will be discarded.")) return;
     setResettingGoal(true); setSettingsMsg(null);
     try{
-      const { error: clearErr } = await supabase.from("profiles").update({goal:null}).eq("id",selected);
-      if(clearErr) throw clearErr;
-      const r = await fetch("/api/sync-client",{
+      const r = await fetch("/api/notion-goal",{
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({client_email:client.email}),
       });
@@ -2597,8 +2594,7 @@ function ClientsPanel() {
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
       const pulled = data.goal || "";
       setSettings(p=>({...p, goal: pulled}));
-      setSettingsMsg({ok:true, text: pulled?`Goal reset from Notion: "${pulled}".`:"Cleared. Notion has no goal on file for this client."});
-      await loadClients();
+      setSettingsMsg({ok:true, text: pulled?`Notion goal "${pulled}" loaded into the field — click Save Settings to apply.`:"Notion has no goal on file for this client. Field cleared — click Save Settings to apply."});
     }catch(e){
       setSettingsMsg({ok:false,text:e.message});
     }finally{
@@ -2831,7 +2827,7 @@ function ClientsPanel() {
               </Fld>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
-              Goal shows on this client's overview and their portal. Set it here to add or override it — your value then sticks through Notion syncs and program regenerations. Use "Reset to Notion" to discard your override and re-pull the client's intake answer.
+              Goal shows on this client's overview and their portal. Set it here to add or override it — your value then sticks through Notion syncs and program regenerations. Use "Reset to Notion" to load their Notion intake answer into the field; nothing changes until you click Save Settings.
             </div>
             <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
               <Btn onClick={saveSettings} disabled={savingSettings}>{savingSettings?"Saving...":"Save Settings"}</Btn>
