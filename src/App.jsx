@@ -2523,11 +2523,7 @@ function CoachNutrition({ clientId, refreshKey }) {
             </div>
           )}
           {(Array.isArray(plan.meals) ? plan.meals : []).map((m, i) => (
-            <div key={i} style={{ borderTop: "1px solid " + S.border, paddingTop: 12, marginTop: 12 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 8 }}>
-                <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18 }}>{m.meal || "Meal " + (i + 1)}</div>
-                <div style={{ fontSize: 11, color: S.muted }}>{m.time || ""}</div>
-              </div>
+            <DayFolder key={i} title={m.meal || "Meal " + (i + 1)} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
               <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 8, flexWrap: "wrap" }}>
                 {m.calories != null && <span>{m.calories} kcal</span>}
                 {m.protein_g != null && <span>P {m.protein_g}g</span>}
@@ -2539,7 +2535,7 @@ function CoachNutrition({ clientId, refreshKey }) {
                   <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
                 ))}
               </ul>
-            </div>
+            </DayFolder>
           ))}
           {msg && <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b", marginTop: 12 }}>{msg.text}</div>}
         </>
