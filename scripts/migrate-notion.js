@@ -29,6 +29,7 @@
 
 import { Client } from "@notionhq/client";
 import { createClient } from "@supabase/supabase-js";
+import { toScore } from "../api/_lib/scores.js";
 
 // ----- config --------------------------------------------------------------
 
@@ -137,10 +138,6 @@ async function pageText(pageId, depth = 0) {
 const nameKey = (name) =>
   String(name || "").trim().split(/\s+/)[0].toLowerCase().replace(/[^a-z0-9]/g, "");
 
-const toScore = (v) => {
-  const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : null;
-};
 const toInt = (v) => { const n = parseInt(v); return Number.isFinite(n) ? n : null; };
 const toNum = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : null; };
 

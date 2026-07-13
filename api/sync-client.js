@@ -1,11 +1,6 @@
 import { getClientFromNotion } from "./_lib/notion.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
-
-// Coerce a Notion value into a 1-10 score, or null if not numeric.
-const toScore = (v) => {
-  const n = Math.round(Number(v));
-  return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : null;
-};
+import { toScore } from "./_lib/scores.js";
 
 // POST /api/sync-client  { client_email }
 // Re-pulls the client's intake from Notion and updates their app profile

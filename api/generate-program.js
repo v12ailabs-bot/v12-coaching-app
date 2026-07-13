@@ -2,6 +2,7 @@ import { getClientFromNotion } from "./_lib/notion.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { toScore } from "./_lib/scores.js";
 
 // POST /api/generate-program  { client_email, template_id? }
 // 1. Reads the client's intake from Notion
@@ -193,12 +194,6 @@ export default async function handler(req, res) {
 
     // 7. Mark onboarding complete, sync the goal, and persist the resolved
     //    assessment (coerced to 1-10 ints; non-numeric Notion values -> null).
-    const toScore = (v) => {
-      // Blank/absent stays null so the AI infers, rather than Number("") -> 0 -> 1.
-      if (v == null || (typeof v === "string" && v.trim() === "")) return null;
-      const n = Math.round(Number(v));
-      return Number.isFinite(n) ? Math.min(10, Math.max(1, n)) : null;
-    };
     if (!nutritionOnly) {
       await supabaseAdmin
         .from("profiles")
