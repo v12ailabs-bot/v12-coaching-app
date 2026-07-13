@@ -122,8 +122,11 @@ function GlobalStyles() {
     <style>{`
       @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
       * { box-sizing: border-box; }
+      /* Portrait-first: never let content force a horizontal scroll. */
+      html, body { max-width: 100%; overflow-x: hidden; }
       body { margin: 0; background: ${S.bg}; color: ${S.text};
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      img { max-width: 100%; }
       .spinner { width: 32px; height: 32px; border-radius: 50%;
         border: 3px solid ${S.border}; border-top-color: ${S.accent};
         animation: spin 0.8s linear infinite; }
@@ -133,9 +136,12 @@ function GlobalStyles() {
         .sidebar { display: flex; position: fixed; bottom: 0; left: 0; right: 0; top: auto; width: 100%; height: 60px; flex-direction: row; justify-content: space-around; align-items: center; padding: 0; overflow: visible; z-index: 999; border-top: 1px solid #333; border-right: none; }
         .sidebar nav { display: flex; flex-direction: row; width: 100%; justify-content: space-around; }
         .sidebar nav a, .sidebar nav button { display: flex; flex-direction: column; align-items: center; font-size: 10px; padding: 4px 2px; }
-        .main-content { padding-bottom: 70px; }
+        .main-content { padding: 18px 16px 84px !important; }
+        .topbar { padding: 0 14px !important; }
+        .card { padding: 16px !important; }
         .g4 { grid-template-columns: repeat(2, 1fr) !important; }
         .g2, .g3, .cg { grid-template-columns: 1fr !important; }
+        table { font-size: 12px; }
       }
     `}</style>
   );
@@ -716,17 +722,17 @@ function LoginScreen() {
 
 function TopBar({ profile, isCoach, onLogout }) {
   return (
-    <div style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:S.accent}}>V12</div>
-      <div style={{display:"flex",alignItems:"center",gap:14}}>
+    <div className="topbar" style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
+      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:S.accent,flexShrink:0}}>V12</div>
+      <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
         {!isCoach && profile?.dashboard_url && (
           <a href={profile.dashboard_url} target="_blank" rel="noopener noreferrer"
             style={{fontSize:11,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",color:S.accent2,textDecoration:"none",border:"1px solid "+S.border,padding:"7px 12px"}}>
             ↗ My Dashboard
           </a>
         )}
-        <span style={{fontSize:13,color:S.muted}}>{profile?.name||profile?.email}</span>
-        <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700}}>
+        <span style={{fontSize:13,color:S.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{profile?.name||profile?.email}</span>
+        <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>
           {avatarFrom(profile?.name||profile?.email)}
         </div>
         <button onClick={onLogout} style={{...bS({}),background:"transparent",color:S.text,border:"1px solid "+S.border,padding:"7px 14px",fontSize:10}}>Sign out</button>
@@ -760,7 +766,7 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
   );
 }
 
-const Card = ({children,style}) => <div style={{background:S.surface,border:"1px solid "+S.border,padding:24,marginBottom:20,...style}}>{children}</div>;
+const Card = ({children,style}) => <div className="card" style={{background:S.surface,border:"1px solid "+S.border,padding:24,marginBottom:20,...style}}>{children}</div>;
 const CardTitle = ({children}) => <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:16}}>{children}</div>;
 const PageTitle = ({title,sub}) => <><div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:38,lineHeight:1,marginBottom:4}}>{title}</div><div style={{fontSize:13,color:S.muted,marginBottom:28}}>{sub}</div></>;
 const Stat = ({label,value,unit}) => (
@@ -770,6 +776,29 @@ const Stat = ({label,value,unit}) => (
   </div>
 );
 const Fld = ({label,children}) => <div style={{marginBottom:16}}><label style={{display:"block",fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>{label}</label>{children}</div>;
+
+// Client-visible message from the coach (profiles.coach_message). Read-only for
+// the client; edited by the coach in ClientsPanel. Fetches the latest value so
+// a coach edit shows without the client re-logging in. Renders nothing when the
+// field is blank. Placed at the top of the Dashboard and the Training Plan.
+function CoachMessage({ profile }) {
+  const [msg, setMsg] = useState(profile?.coach_message || "");
+  useEffect(() => {
+    let alive = true;
+    supabase.from("profiles").select("coach_message").eq("id", profile.id).maybeSingle()
+      .then(({ data }) => { if (alive) setMsg(data?.coach_message || ""); });
+    return () => { alive = false; };
+  }, [profile.id]);
+  if (!msg.trim()) return null;
+  return (
+    <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: 20 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>💬</span> Message from your coach
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap" }}>{msg}</div>
+    </Card>
+  );
+}
 const Inp = (props) => <input {...props} style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",...props.style}}/>;
 const Sld = ({label,val,min,max,sfx,onChange}) => (
   <div>
@@ -982,6 +1011,7 @@ function ClientHome({ profile, setPage }) {
   return (
     <div>
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
+      <CoachMessage profile={profile} />
       {!doneToday && (
         <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
           <span style={{fontSize:13}}>Reminder: Daily check-in not done yet.</span>
@@ -1776,7 +1806,7 @@ function Workouts({ profile, readOnly }) {
                       <div style={{fontSize:11,color:S.muted}}>Target: {selectedEx.sets??"—"} × {selectedEx.reps??"—"}</div>
                     </div>
                     {sets.map((s,i)=>(
-                      <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+                      <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:11,color:S.muted,width:42}}>Set {i+1}</span>
                         {!selectedEx.is_bodyweight&&<input type="number" placeholder="lbs" value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>}
                         <input type="number" placeholder={selectedEx.reps?`reps (${selectedEx.reps})`:"reps"} value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:110,outline:"none"}}/>
@@ -1790,7 +1820,8 @@ function Workouts({ profile, readOnly }) {
                     </div>
                   </div>
                 )}
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
+                <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
                   <thead><tr>{["Date","Weight","Reps","Set","Time"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
                   <tbody>
                     {[...logs].reverse().map((row,i)=>(
@@ -1805,6 +1836,7 @@ function Workouts({ profile, readOnly }) {
                     {logs.length===0&&<tr><td colSpan={5} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
                   </tbody>
                 </table>
+                </div>
               </Card>
             </>
           )}
@@ -2462,6 +2494,9 @@ function ClientsPanel() {
   const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerMsg, setPartnerMsg] = useState(null);
+  const [coachMsg, setCoachMsg] = useState("");            // client-visible message draft
+  const [savingCoachMsg, setSavingCoachMsg] = useState(false);
+  const [coachMsgStatus, setCoachMsgStatus] = useState(null);
 
   // The id whose TRAINING rows (program + exercises) the selected client shares.
   // For a linked partner this is their owner; otherwise the client itself.
@@ -2514,6 +2549,8 @@ function ClientsPanel() {
       dashboard_url: c.dashboard_url || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
+    if(c) setCoachMsg(c.coach_message || "");
+    setCoachMsgStatus(null);
     setAssessMsg(null);
     setSettingsMsg(null);
     setPartnerMsg(null);
@@ -2549,6 +2586,18 @@ function ClientsPanel() {
     if(error){ setPartnerMsg({ok:false,text:error.message}); return; }
     const ownerName = clients.find(c=>c.id===owner)?.name;
     setPartnerMsg({ok:true,text:owner?`Now sharing ${ownerName||"partner"}'s training program.`:"Training unlinked — this client has an independent program again."});
+    await loadClients();
+  };
+
+  // Save the client-visible coach message (profiles.coach_message). Shown to the
+  // client at the top of their Dashboard + Training Plan; blank clears it.
+  const saveCoachMessage = async()=>{
+    setSavingCoachMsg(true); setCoachMsgStatus(null);
+    const {error} = await supabase.from("profiles")
+      .update({coach_message: coachMsg.trim() || null}).eq("id",selected);
+    setSavingCoachMsg(false);
+    if(error){ setCoachMsgStatus({ok:false,text:error.message}); return; }
+    setCoachMsgStatus({ok:true,text:coachMsg.trim()?"Message saved — your client can see it now.":"Message cleared."});
     await loadClients();
   };
 
@@ -2794,6 +2843,21 @@ function ClientsPanel() {
           <ProgramPhase clientId={trainOwnerId} />
           <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
           <CoachNutrition clientId={client.id} refreshKey={progTick} />
+          <Card style={{marginBottom:20}}>
+            <CardTitle>Client-Visible Message</CardTitle>
+            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>
+              A short note your CLIENT sees at the top of their Dashboard and Training Plan. Use it for weekly feedback or encouragement. Separate from your private coach notes below. Leave blank to hide it.
+            </div>
+            <textarea rows={4} value={coachMsg} onChange={e=>setCoachMsg(e.target.value)}
+              placeholder="e.g. Great work last week — bump squat to 3×5 and prioritize sleep. Proud of you."
+              style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
+            <div style={{display:"flex",alignItems:"center",gap:14,marginTop:14}}>
+              <Btn onClick={saveCoachMessage} disabled={savingCoachMsg}>{savingCoachMsg?"Saving...":"Save Message"}</Btn>
+              {coachMsgStatus && (
+                <span style={{fontSize:12,fontWeight:600,color:coachMsgStatus.ok?S.accent2:"#ff6b5b"}}>{coachMsgStatus.text}</span>
+              )}
+            </div>
+          </Card>
           <CoachHabits clientId={client.id} />
           <CoachNotes clientId={client.id} />
           <CoachConversations clientId={client.id} />
@@ -3273,6 +3337,7 @@ function ClientProgram({ profile }) {
   return (
     <div>
       <PageTitle title="Training Plan" sub="Your current weekly program" />
+      <CoachMessage profile={profile} />
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -3296,7 +3361,8 @@ function ClientProgram({ profile }) {
               <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22 }}>{day}</div>
               <div style={{ fontSize: 11, color: S.muted }}>{byDay[day][0]?.category || ""}</div>
             </div>
-            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
               <thead>
                 <tr>
                   {["Exercise", "Section", "Sets", "Reps", "Notes"].map((h) => (
@@ -3319,6 +3385,7 @@ function ClientProgram({ profile }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </Card>
         ))
       )}
@@ -3418,7 +3485,7 @@ function Shell({ profile, isCoach, logout, page, setPage, children }) {
       <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
         <Sidebar isCoach={isCoach} programOnly={programOnly} page={page} setPage={setPage} />
-        <main style={{ flex: 1, padding: "28px 32px", maxWidth: 1180, width: "100%" }}>
+        <main className="main-content" style={{ flex: 1, minWidth: 0, padding: "28px 32px", maxWidth: 1180, width: "100%" }}>
           {children}
         </main>
       </div>
@@ -3441,7 +3508,7 @@ function ClientDashboard({ profile, logout }) {
     return (
       <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
         <TopBar profile={profile} isCoach={false} onLogout={logout} />
-        <main style={{ padding: "28px 32px", maxWidth: 1180, margin: "0 auto" }}>
+        <main className="main-content" style={{ padding: "28px 32px", maxWidth: 1180, margin: "0 auto" }}>
           <ClientWelcome profile={profile} onEnter={enterPortal} />
         </main>
       </div>
