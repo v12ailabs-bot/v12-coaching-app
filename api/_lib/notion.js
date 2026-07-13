@@ -4,15 +4,42 @@ export const notion = new Client({ auth: process.env.NOTION_API_KEY });
 
 // Maps the fields we need -> the property names in your Notion clients database.
 // Adjust the right-hand side to match your database's exact column names.
-const PROP = {
+export const PROP = {
   email: "Email",
   name: "Name",
   goal: "what's your #1 Primary Goal right now?",
   daysAvailable: "Days Available / Week",
   experienceLevel: "Training Experience",
   injuries: "any injuries ( past or present) and if so what triggers it?",
+  // Structured hard-constraint flags — two multi_select columns you check "all
+  // that apply". Option labels should match the keys in api/_lib/anthropic.js
+  // (CONTRAINDICATIONS / HEALTH_GUIDANCE) to activate a specific AVOID rule.
+  // Absent columns resolve to null and impose no constraint.
+  injuryFlags: "Injuries / Limitations",
+  healthFlags: "Health Conditions",
   equipment: "where will you primarily train?",
+  // Home-gym detail — refines `equipment` when they train at home. Note the
+  // trailing space in the column name (matches the Notion schema exactly).
+  homeEquipment: "if you train at home which equipment do you have access to? ",
   sessionLength: "how much time can you realistically dedicate to each workout session?",
+  // Intake context that improves programming + nutrition (previously unused).
+  // Exact names/whitespace/typos below match the live Notion schema.
+  age: "age",
+  currentWeight: "current weight",
+  targetChange: "Target Change (lbs)",
+  activityLevel: "which best describes your daily activity level?",
+  sleepHours: "how many hours of sleep do you average pernight ",
+  trainingTenure: "how long have you been consistently training?",
+  nutritionConsistency: "Nutrition Consistency",
+  // Adherence / psychology — sets plan complexity, sustainability, and coaching
+  // tone. Exact names below (note en-dash in Commitment, trailing space in
+  // barriers) match the live Notion schema.
+  coachingStyle: "Coaching Style Preference",
+  commitmentLevel: "Commitment Level (1–10)",
+  confidence: "How confident are you that can follow a structured program for the next 12 weeks? (1-10)",
+  pastBarriers: "what has prevented you from reaching your goal in the past? ",
+  pastStruggles: "Past Struggles",
+  whyNow: "Why Now?",
   // Not collected in the current intake DB — left mapped for other databases;
   // resolve to null here and the AI prompt falls back gracefully.
   dietaryPreference: "Dietary Preference",
@@ -138,7 +165,23 @@ export async function getClientFromNotion(email) {
     days_available: get("daysAvailable"),
     experience_level: get("experienceLevel"),
     injuries: get("injuries"),
+    injury_flags: get("injuryFlags"),
+    health_flags: get("healthFlags"),
     equipment: get("equipment"),
+    home_equipment: get("homeEquipment"),
+    age: get("age"),
+    current_weight: get("currentWeight"),
+    target_change: get("targetChange"),
+    activity_level: get("activityLevel"),
+    sleep_hours: get("sleepHours"),
+    training_tenure: get("trainingTenure"),
+    nutrition_consistency: get("nutritionConsistency"),
+    coaching_style: get("coachingStyle"),
+    commitment_level: get("commitmentLevel"),
+    confidence: get("confidence"),
+    past_barriers: get("pastBarriers"),
+    past_struggles: get("pastStruggles"),
+    why_now: get("whyNow"),
     session_length: get("sessionLength"),
     dietary_preference: get("dietaryPreference"),
     allergies: get("allergies"),
