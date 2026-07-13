@@ -2497,6 +2497,7 @@ function ClientsPanel() {
   const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
+  const [resettingGoal, setResettingGoal] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [progTick, setProgTick] = useState(0);
@@ -2577,6 +2578,32 @@ function ClientsPanel() {
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
     setSettingsMsg({ok:true,text:"Client settings saved."});
     await loadClients();
+  };
+
+  // Discard the coach's goal override and re-pull the goal from Notion. Clears
+  // profiles.goal first (so sync-client, which only fills an empty goal, will
+  // repopulate it), then syncs. Reflects the result back into the editor.
+  const resetGoalToNotion = async(client)=>{
+    if(!window.confirm("Reset this client's goal to their Notion intake answer? Your manually set goal will be discarded.")) return;
+    setResettingGoal(true); setSettingsMsg(null);
+    try{
+      const { error: clearErr } = await supabase.from("profiles").update({goal:null}).eq("id",selected);
+      if(clearErr) throw clearErr;
+      const r = await fetch("/api/sync-client",{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({client_email:client.email}),
+      });
+      const data = await r.json().catch(()=>({}));
+      if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
+      const pulled = data.goal || "";
+      setSettings(p=>({...p, goal: pulled}));
+      setSettingsMsg({ok:true, text: pulled?`Goal reset from Notion: "${pulled}".`:"Cleared. Notion has no goal on file for this client."});
+      await loadClients();
+    }catch(e){
+      setSettingsMsg({ok:false,text:e.message});
+    }finally{
+      setResettingGoal(false);
+    }
   };
 
   // Link/unlink the selected client to a training partner. Setting an owner
@@ -2797,10 +2824,14 @@ function ClientsPanel() {
               </Fld>
               <Fld label="Primary Goal">
                 <Inp type="text" value={settings.goal} onChange={e=>setSettings(p=>({...p,goal:e.target.value}))} placeholder="e.g. Fat loss, Hypertrophy, Strength"/>
+                <button onClick={()=>resetGoalToNotion(client)} disabled={resettingGoal||syncing}
+                  style={{marginTop:8,padding:"6px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:S.muted}}>
+                  {resettingGoal?"Resetting...":"↺ Reset to Notion"}
+                </button>
               </Fld>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
-              Goal shows on this client's overview and their portal. Pulled from their Notion intake on sync; set it here to add or override it.
+              Goal shows on this client's overview and their portal. Set it here to add or override it — your value then sticks through Notion syncs and program regenerations. Use "Reset to Notion" to discard your override and re-pull the client's intake answer.
             </div>
             <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
               <Btn onClick={saveSettings} disabled={savingSettings}>{savingSettings?"Saving...":"Save Settings"}</Btn>
