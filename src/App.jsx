@@ -2771,7 +2771,7 @@ function ClientsPanel() {
       {client&&(
         <>
           <Card style={{marginBottom:20}}>
-            <div style={{display:"flex",gap:16,alignItems:"center"}}>
+            <div style={{display:"flex",gap:16,alignItems:"center",flexWrap:"wrap"}}>
               <div style={{width:52,height:52,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,fontWeight:700,flexShrink:0}}>
                 {avatarFrom(client.name||client.email)}
               </div>
@@ -3157,8 +3157,8 @@ function TemplatesPanel() {
 
       {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
         <Card key={t.id}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
-            <div style={{flex:1}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{t.name}</div>
                 {t.category && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{t.category}</span>}
@@ -3287,8 +3287,8 @@ function ResourcesPanel() {
       )}
       {items.map(r=>(
         <Card key={r.id}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16}}>
-            <div style={{flex:1}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:0}}>
               <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
                 <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{r.title}</div>
                 <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{r.category||r.kind}</span>
