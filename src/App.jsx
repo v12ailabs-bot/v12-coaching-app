@@ -133,9 +133,20 @@ function GlobalStyles() {
       @keyframes spin { to { transform: rotate(360deg); } }
       input[type="range"] { width: 100%; accent-color: ${S.accent}; }
       @media (max-width: 720px) {
-        .sidebar { display: flex; position: fixed; bottom: 0; left: 0; right: 0; top: auto; width: 100%; height: 60px; flex-direction: row; justify-content: space-around; align-items: center; padding: 0; overflow: visible; z-index: 999; border-top: 1px solid #333; border-right: none; }
-        .sidebar nav { display: flex; flex-direction: row; width: 100%; justify-content: space-around; }
-        .sidebar nav a, .sidebar nav button { display: flex; flex-direction: column; align-items: center; font-size: 10px; padding: 4px 2px; }
+        /* Collapse the left sidebar into a fixed bottom tab bar. These need
+           !important: the <nav> and its items carry inline styles, which
+           otherwise beat plain stylesheet rules even inside a media query. */
+        .sidebar { position: fixed !important; bottom: 0; left: 0; right: 0; top: auto !important;
+          width: 100% !important; height: 58px !important; flex-shrink: 0;
+          padding: 0 !important; border-right: none !important; border-top: 1px solid #333;
+          overflow-x: auto !important; overflow-y: hidden !important; z-index: 999; }
+        .sidebar-inner { display: flex !important; flex-direction: row; width: 100%;
+          justify-content: space-around; align-items: stretch; padding: 0 !important; }
+        .sidebar-heading { display: none !important; }
+        .sidebar-item { flex: 1; min-width: 52px; flex-direction: column !important;
+          justify-content: center; gap: 3px !important; font-size: 9px !important;
+          padding: 7px 4px !important; margin-bottom: 0 !important; text-align: center;
+          white-space: nowrap; border-radius: 0 !important; }
         .main-content { padding: 18px 16px 84px !important; }
         .topbar { padding: 0 14px !important; }
         .card { padding: 16px !important; }
@@ -752,10 +763,10 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
     : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
-      <div style={{padding:"0 14px"}}>
-        <div style={{fontSize:9,letterSpacing:"2.5px",textTransform:"uppercase",color:S.muted,padding:"0 10px",marginBottom:6}}>{isCoach?"Coach":"Training"}</div>
+      <div className="sidebar-inner" style={{padding:"0 14px"}}>
+        <div className="sidebar-heading" style={{fontSize:9,letterSpacing:"2.5px",textTransform:"uppercase",color:S.muted,padding:"0 10px",marginBottom:6}}>{isCoach?"Coach":"Training"}</div>
         {nav.map(item=>(
-          <div key={item.id} onClick={()=>setPage(item.id)}
+          <div key={item.id} className="sidebar-item" onClick={()=>setPage(item.id)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",fontSize:13,fontWeight:500,color:page===item.id?S.accent:S.muted,cursor:"pointer",borderRadius:3,marginBottom:1,background:page===item.id?"rgba(255,77,0,.12)":"transparent"}}>
             <span style={{fontSize:15,width:20,textAlign:"center"}}>{item.icon}</span>
             <span>{item.label}</span>
