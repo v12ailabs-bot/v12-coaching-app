@@ -97,6 +97,23 @@ const TT = {
 // Today's date as YYYY-MM-DD.
 const todayStr = () => new Date().toISOString().split("T")[0];
 
+// True when the viewport is at the mobile breakpoint, so components can swap a
+// dense desktop table for a stacked card layout. Mirrors the 720px CSS query.
+function useIsMobile() {
+  const query = "(max-width: 720px)";
+  const [mobile, setMobile] = useState(
+    typeof window !== "undefined" && window.matchMedia(query).matches
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const on = () => setMobile(mq.matches);
+    on();
+    mq.addEventListener ? mq.addEventListener("change", on) : mq.addListener(on);
+    return () => (mq.removeEventListener ? mq.removeEventListener("change", on) : mq.removeListener(on));
+  }, []);
+  return mobile;
+}
+
 // TRAINING (programs + exercises + program_versions) can be SHARED between
 // linked training partners: a client's `shared_program_owner_id` points at the
 // partner who owns the shared training rows. Pass a profile/client row and get
@@ -2489,6 +2506,7 @@ function CoachNutrition({ clientId, refreshKey }) {
 }
 
 function ClientsPanel() {
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState(null);
   const [exercises, setExercises] = useState([]);
@@ -2947,6 +2965,51 @@ function ClientsPanel() {
               </div>
             )}
             {exercises.length===0&&<div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No exercises assigned yet.</div>}
+            {isMobile ? (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {exercises.map(ex=>{
+                const editing = editEx?.id===ex.id;
+                const d = editEx?.draft || {};
+                const setD = (k,v)=>setEditEx(p=>({...p,draft:{...p.draft,[k]:v}}));
+                const eInp = {background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:14,outline:"none",width:"100%"};
+                const lbl = {fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted,marginBottom:4,display:"block"};
+                return (
+                  <div key={ex.id} style={{background:S.surface2,border:"1px solid "+S.border,padding:14}}>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,marginBottom:editing?12:8}}>
+                      {ex.name}{ex.is_bodyweight&&<span style={{marginLeft:6,fontSize:9,color:S.muted}}>BW</span>}
+                    </div>
+                    {editing?(
+                      <>
+                        <div style={{marginBottom:10}}><label style={lbl}>Day</label><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+                        <div style={{display:"flex",gap:10,marginBottom:10}}>
+                          <div style={{flex:1}}><label style={lbl}>Sets</label><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={eInp}/></div>
+                          <div style={{flex:1}}><label style={lbl}>Reps</label><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={eInp}/></div>
+                        </div>
+                        <div style={{marginBottom:12}}><label style={lbl}>Notes</label><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></div>
+                        <div style={{display:"flex",gap:8}}>
+                          <Btn sm teal onClick={saveEditEx}>Save</Btn>
+                          <button onClick={()=>setEditEx(null)} style={{padding:"7px 14px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600}}>Cancel</button>
+                        </div>
+                      </>
+                    ):(
+                      <>
+                        <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,color:S.muted,marginBottom:ex.notes?8:12}}>
+                          <span><span style={{opacity:.65}}>Day </span>{ex.day_of_week||"—"}</span>
+                          <span><span style={{opacity:.65}}>Sets </span>{ex.sets??"—"}</span>
+                          <span><span style={{opacity:.65}}>Reps </span>{ex.reps||"—"}</span>
+                        </div>
+                        {ex.notes&&<div style={{fontSize:13,lineHeight:1.6,color:S.text,marginBottom:12}}>{ex.notes}</div>}
+                        <div style={{display:"flex",gap:8}}>
+                          <Btn sm teal onClick={()=>startEditEx(ex)}>Edit</Btn>
+                          <Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            ) : (
             <table style={{width:"100%",borderCollapse:"collapse"}}>
               <thead><tr>{["Exercise","Day","Sets","Reps","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
               <tbody>
@@ -2991,6 +3054,7 @@ function ClientsPanel() {
                 })}
               </tbody>
             </table>
+            )}
           </Card>
         </>
       )}
