@@ -878,20 +878,23 @@ function DayFolder({ title, meta, children, defaultOpen = false }) {
   );
 }
 
-// Group exercises by training day, returned as [day, exercises] pairs ordered
-// Monday→Sunday with "Unscheduled" last. Shared by the client plan + coach editor.
+// Group exercises by training day, returned as {day, exercises, label} ordered
+// Monday→Sunday with "Unscheduled" last. `label` is a schedule-agnostic sequential
+// "Day 1..N" (positional, so a Mon/Wed/Fri plan reads Day 1/2/3, not 1/3/5); the
+// underlying day_of_week is untouched. Shared by the client plan + coach editor.
 function groupByDay(list) {
   const byDay = {};
   for (const ex of list) {
     const k = ex.day_of_week || "Unscheduled";
     (byDay[k] = byDay[k] || []).push(ex);
   }
+  let n = 0;
   return Object.keys(byDay)
     .sort((a, b) => {
       const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
       return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
     })
-    .map((day) => [day, byDay[day]]);
+    .map((day) => ({ day, exercises: byDay[day], label: day === "Unscheduled" ? "Unscheduled" : `Day ${++n}` }));
 }
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the
@@ -1783,13 +1786,10 @@ function Workouts({ profile, readOnly }) {
   const selectedEx = exercises.find(e=>e.id===selected);
   const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
 
-  // Group the program's exercises by training day for the selector.
-  const byDay = {};
-  exercises.forEach(ex=>{ const k = ex.day_of_week || "Other"; (byDay[k]=byDay[k]||[]).push(ex); });
-  const dayKeys = Object.keys(byDay).sort((a,b)=>{
-    const ia=DAY_ORDER.indexOf(a), ib=DAY_ORDER.indexOf(b);
-    return (ia===-1?99:ia)-(ib===-1?99:ib);
-  });
+  // Group the program's exercises into sequential "Day 1..N" for the selector.
+  const dayGroups = groupByDay(exercises);
+  const dayLabelOf = {};
+  dayGroups.forEach(g=>g.exercises.forEach(e=>{dayLabelOf[e.id]=g.label;}));
 
   return (
     <div>
@@ -1804,11 +1804,11 @@ function Workouts({ profile, readOnly }) {
       ):(
         <>
           <div style={{marginBottom:22}}>
-            {dayKeys.map(day=>(
+            {dayGroups.map(({day,exercises:dayExs,label})=>(
               <div key={day} style={{marginBottom:14}}>
-                <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:8}}>{day}</div>
+                <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:8}}>{label}</div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {byDay[day].map(ex=>(
+                  {dayExs.map(ex=>(
                     <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
                       style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,77,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
                       {ex.name}
@@ -1824,7 +1824,7 @@ function Workouts({ profile, readOnly }) {
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
                   <div style={{flex:1,minWidth:200}}>
                     <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{selectedEx.name}</div>
-                    <div style={{fontSize:12,color:S.muted}}>{[selectedEx.day_of_week,selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
+                    <div style={{fontSize:12,color:S.muted}}>{[dayLabelOf[selectedEx.id],selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
                     {selectedEx.notes&&<div style={{fontSize:12,color:S.muted,marginTop:8,lineHeight:1.6,maxWidth:560}}>{selectedEx.notes}</div>}
                   </div>
                   <div style={{display:"flex",gap:24}}>
@@ -2140,6 +2140,11 @@ function ProgramVersions({ clientId, refreshKey, onRestored }) {
       {versions.map((v) => {
         const exs = v.snapshot?.exercises || [];
         const open = openId === v.id;
+        // Sequential "Day 1..N" labels for this snapshot (matches the live views).
+        const dayLabelOf = {};
+        { let n = 0; [...new Set(exs.map((e) => e.day_of_week).filter(Boolean))]
+            .sort((a, b) => (DAY_ORDER.indexOf(a) === -1 ? 99 : DAY_ORDER.indexOf(a)) - (DAY_ORDER.indexOf(b) === -1 ? 99 : DAY_ORDER.indexOf(b)))
+            .forEach((day) => { dayLabelOf[day] = "Day " + (++n); }); }
         return (
           <div key={v.id} style={{ border: "1px solid " + S.border, background: S.surface2, padding: "12px 14px", marginBottom: 10 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
@@ -2160,7 +2165,7 @@ function ProgramVersions({ clientId, refreshKey, onRestored }) {
                   {exs.map((e, i) => (
                     <tr key={i}>
                       <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid " + S.border }}>{e.name}</td>
-                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.day_of_week || "—"}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{dayLabelOf[e.day_of_week] || "—"}</td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.sets ?? "—"}</td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.reps || "—"}</td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.notes || "—"}</td>
@@ -2986,7 +2991,7 @@ function ClientsPanel() {
                     <select value={newEx.day_of_week} onChange={e=>setNewEx(p=>({...p,day_of_week:e.target.value}))}
                       style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
                       <option value="">Unscheduled</option>
-                      {DAY_ORDER.map(d=><option key={d} value={d}>{d}</option>)}
+                      {DAY_ORDER.map((d,i)=><option key={d} value={d}>{"Day "+(i+1)}</option>)}
                     </select>
                   </Fld>
                   <Fld label="Sets"><Inp type="number" value={newEx.sets} onChange={e=>setNewEx(p=>({...p,sets:e.target.value}))} placeholder="e.g. 4"/></Fld>
@@ -3003,8 +3008,8 @@ function ClientsPanel() {
               </div>
             )}
             {exercises.length===0&&<div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No exercises assigned yet.</div>}
-            {groupByDay(exercises).map(([day,dayExs])=>(
-            <DayFolder key={day} title={day} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`}>
+            {groupByDay(exercises).map(({day,exercises:dayExs,label})=>(
+            <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`}>
             {isMobile ? (
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               {dayExs.map(ex=>{
@@ -3020,7 +3025,7 @@ function ClientsPanel() {
                     </div>
                     {editing?(
                       <>
-                        <div style={{marginBottom:10}}><label style={lbl}>Day</label><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map(x=><option key={x} value={x}>{x}</option>)}</select></div>
+                        <div style={{marginBottom:10}}><label style={lbl}>Day</label><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map((x,i)=><option key={x} value={x}>{"Day "+(i+1)}</option>)}</select></div>
                         <div style={{display:"flex",gap:10,marginBottom:10}}>
                           <div style={{flex:1}}><label style={lbl}>Sets</label><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={eInp}/></div>
                           <div style={{flex:1}}><label style={lbl}>Reps</label><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={eInp}/></div>
@@ -3034,7 +3039,6 @@ function ClientsPanel() {
                     ):(
                       <>
                         <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,color:S.muted,marginBottom:ex.notes?8:12}}>
-                          <span><span style={{opacity:.65}}>Day </span>{ex.day_of_week||"—"}</span>
                           <span><span style={{opacity:.65}}>Sets </span>{ex.sets??"—"}</span>
                           <span><span style={{opacity:.65}}>Reps </span>{ex.reps||"—"}</span>
                         </div>
@@ -3064,7 +3068,7 @@ function ClientsPanel() {
                       <td style={{...cell,fontWeight:500}}>{ex.name}{ex.is_bodyweight&&<span style={{marginLeft:6,fontSize:9,color:S.muted}}>BW</span>}</td>
                       {editing?(
                         <>
-                          <td style={cell}><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map(x=><option key={x} value={x}>{x}</option>)}</select></td>
+                          <td style={cell}><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map((x,i)=><option key={x} value={x}>{"Day "+(i+1)}</option>)}</select></td>
                           <td style={cell}><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={{...eInp,width:60}}/></td>
                           <td style={cell}><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={{...eInp,width:80}}/></td>
                           <td style={cell}><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></td>
@@ -3077,7 +3081,7 @@ function ClientsPanel() {
                         </>
                       ):(
                         <>
-                          <td style={{...cell,color:S.muted}}>{ex.day_of_week||"—"}</td>
+                          <td style={{...cell,color:S.muted}}>{label}</td>
                           <td style={{...cell,color:S.muted}}>{ex.sets??"—"}</td>
                           <td style={{...cell,color:S.muted}}>{ex.reps||"—"}</td>
                           <td style={{...cell,color:S.muted,maxWidth:240}}>{ex.notes||"—"}</td>
@@ -3484,16 +3488,8 @@ function ClientProgram({ profile }) {
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
-  // Group by day; exercises with no day fall under "Unscheduled".
-  const byDay = {};
-  for (const ex of exercises) {
-    const key = ex.day_of_week || "Unscheduled";
-    (byDay[key] = byDay[key] || []).push(ex);
-  }
-  const days = Object.keys(byDay).sort((a, b) => {
-    const ia = DAY_ORDER.indexOf(a), ib = DAY_ORDER.indexOf(b);
-    return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
-  });
+  // Group into sequential "Day 1..N" folders (see groupByDay).
+  const dayGroups = groupByDay(exercises);
 
   return (
     <div>
@@ -3516,8 +3512,8 @@ function ClientProgram({ profile }) {
           <div style={{ color: S.muted, fontSize: 13 }}>Your coach will generate your program soon.</div>
         </Card>
       ) : (
-        days.map((day) => (
-          <DayFolder key={day} title={day} meta={`${byDay[day].length} exercise${byDay[day].length > 1 ? "s" : ""}${byDay[day][0]?.category ? ` · ${byDay[day][0].category}` : ""}`}>
+        dayGroups.map(({ day, exercises: dayExs, label }) => (
+          <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length > 1 ? "s" : ""}${dayExs[0]?.category ? ` · ${dayExs[0].category}` : ""}`}>
             <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
               <thead>
@@ -3528,7 +3524,7 @@ function ClientProgram({ profile }) {
                 </tr>
               </thead>
               <tbody>
-                {byDay[day].map((ex) => (
+                {dayExs.map((ex) => (
                   <tr key={ex.id}>
                     <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 500, borderBottom: "1px solid " + S.border }}>
                       {ex.name}
@@ -3609,11 +3605,7 @@ function Nutrition({ profile }) {
       )}
 
       {meals.map((m, i) => (
-        <Card key={i}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>{m.meal || "Meal " + (i + 1)}</div>
-            <div style={{ fontSize: 11, color: S.muted }}>{m.time || ""}</div>
-          </div>
+        <DayFolder key={i} title={m.meal || "Meal " + (i + 1)} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
           <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
             {m.calories != null && <span>{m.calories} kcal</span>}
             {m.protein_g != null && <span>P {m.protein_g}g</span>}
@@ -3625,7 +3617,7 @@ function Nutrition({ profile }) {
               <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
             ))}
           </ul>
-        </Card>
+        </DayFolder>
       ))}
     </div>
   );
