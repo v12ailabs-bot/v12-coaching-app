@@ -158,12 +158,16 @@ function GlobalStyles() {
           padding: 0 !important; border-right: none !important; border-top: 1px solid #333;
           overflow-x: auto !important; overflow-y: hidden !important; z-index: 999; }
         .sidebar-inner { display: flex !important; flex-direction: row; width: 100%;
-          justify-content: space-around; align-items: stretch; padding: 0 !important; }
+          align-items: stretch; padding: 0 !important; }
         .sidebar-heading { display: none !important; }
-        .sidebar-item { flex: 1; min-width: 52px; flex-direction: column !important;
+        /* flex:1 1 0 + min-width:0 lets all tabs share the width evenly and shrink
+           to fit (no horizontal scroll); the label truncates instead of spilling
+           into its neighbour, which is what made the client's 9 tabs overlap. */
+        .sidebar-item { flex: 1 1 0; min-width: 0; flex-direction: column !important;
           justify-content: center; gap: 3px !important; font-size: 9px !important;
-          padding: 7px 4px !important; margin-bottom: 0 !important; text-align: center;
-          white-space: nowrap; border-radius: 0 !important; }
+          padding: 7px 3px !important; margin-bottom: 0 !important; text-align: center;
+          white-space: nowrap; border-radius: 0 !important; overflow: hidden; }
+        .sidebar-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
         .main-content { padding: 18px 16px 84px !important; }
         .topbar { padding: 0 14px !important; }
         .card { padding: 16px !important; }
@@ -860,13 +864,16 @@ function TopBar({ profile, isCoach, onLogout }) {
 }
 
 function Sidebar({ isCoach, programOnly, page, setPage }) {
+  const isMobile = useIsMobile();
   // Program-only clients get the self-guided portal: their plan, nutrition,
   // workout logging, and the resource hub — no check-in prompts or habit tracking.
+  // `short` labels are used in the cramped mobile bottom bar (clients have 9 tabs;
+  // the full labels overlap at that width).
   const clientNav = programOnly
-    ? [{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"resources",icon:"📚",label:"Library"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard"},{id:"program",icon:"📋",label:"Training Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition"},{id:"daily",icon:"✅",label:"Daily Check-In"},{id:"weekly",icon:"🔥",label:"Weekly Check-In"},{id:"habits",icon:"🎯",label:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log"},{id:"progress",icon:"📈",label:"Progress"},{id:"resources",icon:"📚",label:"Library"}];
+    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"workouts",icon:"🏋",label:"Workout Log",short:"Log"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log",short:"Log"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview"},{id:"clients",icon:"👥",label:"Clients"},{id:"templates",icon:"📋",label:"Templates"},{id:"library",icon:"📚",label:"Library"},{id:"progress",icon:"📈",label:"Progress"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
     : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
@@ -876,7 +883,7 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
           <div key={item.id} className="sidebar-item" onClick={()=>setPage(item.id)}
             style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",fontSize:13,fontWeight:500,color:page===item.id?S.accent:S.muted,cursor:"pointer",borderRadius:3,marginBottom:1,background:page===item.id?"rgba(255,77,0,.12)":"transparent"}}>
             <span style={{fontSize:15,width:20,textAlign:"center"}}>{item.icon}</span>
-            <span>{item.label}</span>
+            <span className="sidebar-label">{isMobile&&item.short?item.short:item.label}</span>
           </div>
         ))}
       </div>
@@ -1406,10 +1413,16 @@ function Progress({ profile }) {
   const [tab, setTab] = useState("weight");
   const [daily, setDaily] = useState([]);
   const [weekly, setWeekly] = useState([]);
+  const [habits, setHabits] = useState([]);
+  const [habitLogs, setHabitLogs] = useState([]);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
     supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setWeekly((data||[]).map((w,i)=>({...w,week:"Wk"+(i+1)}))));
+    supabase.from("habits").select("*").eq("client_id",profile.id).eq("active",true).order("order_index").then(({data})=>setHabits(data||[]));
+    // Last 30 days of habit completions, for the coach-visible adherence grid.
+    const cut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
+    supabase.from("habit_logs").select("*").eq("client_id",profile.id).gte("date",cut).then(({data})=>setHabitLogs(data||[]));
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
@@ -1429,7 +1442,7 @@ function Progress({ profile }) {
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
-        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
+        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],["notes","Check-in Notes"],["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
         ))}
       </div>
@@ -1499,6 +1512,10 @@ function Progress({ profile }) {
 
       {tab==="strength" && <StrengthTab profile={profile}/>}
 
+      {tab==="habits" && <HabitsProgress habits={habits} logs={habitLogs}/>}
+
+      {tab==="notes" && <CheckinNotes weekly={weekly}/>}
+
       {tab==="photos" && <ProgressPhotos profile={profile}/>}
 
       {tab==="goals" && (weekly.length===0?emptyWeekly:(
@@ -1527,6 +1544,99 @@ function Progress({ profile }) {
           </CC>
         </div>
       ))}
+    </div>
+  );
+}
+
+// Daily-habit adherence, surfaced inside Progress so the coach (via CoachProgress)
+// can see whether the client is actually checking habits off. Read-only 14-day
+// grid plus a 30-day completion rate per habit.
+function HabitsProgress({ habits, logs }) {
+  if(!habits.length) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No habits assigned yet.</Card>;
+  const days14 = Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(13-i));return d.toISOString().split("T")[0];});
+  const doneOn = (habitId,date)=>logs.some(l=>l.habit_id===habitId && l.date===date && l.done);
+  const rate = (habitId)=>{ // % of the last 30 days this habit was completed
+    const done = logs.filter(l=>l.habit_id===habitId && l.done).length;
+    return Math.round((done/30)*100);
+  };
+  const overall = Math.round((logs.filter(l=>l.done).length/(habits.length*30))*100);
+  return (
+    <div>
+      <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:22}}>
+        <Stat label="Active Habits" value={habits.length} unit=""/>
+        <Stat label="Adherence (30d)" value={isNaN(overall)?0:overall} unit="%"/>
+        <Stat label="Done Today" value={habits.filter(h=>doneOn(h.id,todayStr())).length} unit={"/"+habits.length}/>
+      </div>
+      <Card>
+        <CardTitle>Last 14 days</CardTitle>
+        <div style={{overflowX:"auto"}}>
+          <table style={{borderCollapse:"collapse",minWidth:560}}>
+            <thead>
+              <tr>
+                <th style={{textAlign:"left",padding:"6px 10px",fontSize:10,color:S.muted}}></th>
+                {days14.map(d=><th key={d} style={{padding:"6px 4px",fontSize:9,color:S.muted,fontWeight:600}}>{d.slice(5)}</th>)}
+                <th style={{padding:"6px 8px",fontSize:9,color:S.muted,fontWeight:600}}>30d</th>
+              </tr>
+            </thead>
+            <tbody>
+              {habits.map(h=>(
+                <tr key={h.id}>
+                  <td style={{padding:"6px 10px",fontSize:12,whiteSpace:"nowrap",color:S.text}}>{h.name}</td>
+                  {days14.map(d=>(
+                    <td key={d} style={{padding:"5px 4px",textAlign:"center"}}>
+                      <div style={{width:16,height:16,borderRadius:3,margin:"0 auto",background:doneOn(h.id,d)?S.neon:S.surface2,border:"1px solid "+S.border}}/>
+                    </td>
+                  ))}
+                  <td style={{padding:"5px 8px",textAlign:"center",fontSize:12,fontWeight:600,color:S.text}}>{rate(h.id)}%</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+// Free-text weekly check-in answers, folded into one collapsible folder per week
+// so the coach can read what the client actually wrote. Numeric-only weeks (no
+// text) are still listed so nothing looks missing.
+const CHECKIN_QA = [
+  ["workout_feel","How workouts felt"],
+  ["pump","Pump & muscle engagement"],
+  ["exercise_feedback","Exercises that felt good/bad"],
+  ["lifts_improved","Lifts that improved"],
+  ["felt_weaker","Felt weaker than usual"],
+  ["cardio_performance","Cardio vs last week"],
+  ["mental_blocks","Stress / mental blocks"],
+  ["what_went_well","What went well"],
+  ["lifestyle_wins","Physical / lifestyle wins"],
+  ["biggest_challenge","Biggest challenge"],
+  ["holding_back","Holding back progress"],
+  ["adjustments","Wants adjusted"],
+  ["coach_questions","Questions for coach"],
+];
+function CheckinNotes({ weekly }) {
+  if(!weekly.length) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins yet.</Card>;
+  // Most recent first, and open the latest by default.
+  const ordered = [...weekly].reverse();
+  return (
+    <div>
+      {ordered.map((w,idx)=>{
+        const answered = CHECKIN_QA.filter(([k])=>String(w[k]||"").trim());
+        return (
+          <DayFolder key={w.id||w.week} title={w.week} meta={w.date} defaultOpen={idx===0}>
+            {answered.length===0
+              ? <div style={{color:S.muted,fontSize:13}}>No written notes for this week (numbers only).</div>
+              : answered.map(([k,label])=>(
+                  <div key={k} style={{marginBottom:14}}>
+                    <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>{label}</div>
+                    <div style={{fontSize:14,lineHeight:1.6,color:S.text,whiteSpace:"pre-wrap"}}>{w[k]}</div>
+                  </div>
+                ))}
+          </DayFolder>
+        );
+      })}
     </div>
   );
 }
@@ -1968,8 +2078,7 @@ function Workouts({ profile, readOnly }) {
         <>
           <div style={{marginBottom:22}}>
             {dayGroups.map(({day,exercises:dayExs,label})=>(
-              <div key={day} style={{marginBottom:14}}>
-                <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:8}}>{label}</div>
+              <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`} defaultOpen={dayExs.some(e=>e.id===selected)}>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {dayExs.map(ex=>(
                     <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
@@ -1978,7 +2087,7 @@ function Workouts({ profile, readOnly }) {
                     </button>
                   ))}
                 </div>
-              </div>
+              </DayFolder>
             ))}
           </div>
           {selectedEx&&(
