@@ -1203,11 +1203,18 @@ function ClientWelcome({ profile, onEnter }) {
 
 function ClientHome({ profile, setPage }) {
   const [checkins, setCheckins] = useState([]);
+  const [weeklyDone, setWeeklyDone] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
-    supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date")
-      .then(({data})=>{setCheckins(data||[]);setLoading(false);});
+    (async()=>{
+      const {data:ci} = await supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date");
+      setCheckins(ci||[]);
+      const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
+      const {data:wc} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",ws).maybeSingle();
+      setWeeklyDone(!!wc);
+      setLoading(false);
+    })();
   },[profile.id]);
 
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
@@ -1224,9 +1231,15 @@ function ClientHome({ profile, setPage }) {
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
       {!doneToday && (
-        <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12,flexWrap:"wrap"}}>
           <span style={{fontSize:13}}>Reminder: Daily check-in not done yet.</span>
           <Btn sm onClick={()=>setPage("daily")}>Do it now</Btn>
+        </div>
+      )}
+      {!weeklyDone && (
+        <div style={{background:"rgba(0,201,167,.10)",border:"1px solid rgba(0,201,167,.28)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:13}}>Your weekly check-in is due this week — it's how your coach adjusts your plan.</span>
+          <Btn sm teal onClick={()=>setPage("weekly")}>Start weekly</Btn>
         </div>
       )}
       <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:22}}>
