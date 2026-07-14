@@ -897,6 +897,39 @@ function groupByDay(list) {
     .map((day) => ({ day, exercises: byDay[day], label: day === "Unscheduled" ? "Unscheduled" : `Day ${++n}` }));
 }
 
+// Strength-progress grouping. The coach-set exercise_type wins; otherwise the
+// group is auto-detected from the free-text section/category/name. Warm-ups are
+// surfaced so the Strength tab can exclude them (they belong in the workout log).
+const EX_TYPES = ["Compound", "Accessory", "Circuit", "Warmup"];
+function strengthGroupOf(ex) {
+  const explicit = (ex?.exercise_type || "").trim().toLowerCase();
+  if (explicit) {
+    const m = EX_TYPES.find((t) => t.toLowerCase() === explicit);
+    if (m) return m;
+  }
+  const hay = `${ex?.section || ""} ${ex?.category || ""} ${ex?.name || ""}`.toLowerCase();
+  if (/warm|mobility|activation|stretch/.test(hay)) return "Warmup";
+  if (/condition|circuit|finish|metcon|interval|cardio|amrap|emom|sprint/.test(hay)) return "Circuit";
+  if (/primary|main|compound|strength|powerlifting/.test(hay)) return "Compound";
+  return "Accessory";
+}
+
+// Parse a free-text time entry ("1:30", "90", "45s") to seconds, for graphing.
+function parseTimeSec(t) {
+  if (t == null) return null;
+  const s = String(t).trim();
+  if (!s) return null;
+  if (s.includes(":")) return s.split(":").reduce((acc, p) => acc * 60 + (parseFloat(p) || 0), 0);
+  const n = parseFloat(s.replace(/[^\d.]/g, ""));
+  return isNaN(n) ? null : n;
+}
+// Seconds -> "m:ss" (or "45s" under a minute).
+function fmtSec(sec) {
+  if (sec == null) return "—";
+  const m = Math.floor(sec / 60), s = Math.round(sec % 60);
+  return m > 0 ? `${m}:${String(s).padStart(2, "0")}` : `${s}s`;
+}
+
 // Adherence over a trailing window: % of days with a daily check-in, plus the
 // training-completion rate among those check-ins. Shared by client + coach views.
 function adherenceFrom(checkins, days = 30) {
@@ -1408,49 +1441,89 @@ function Progress({ profile }) {
   );
 }
 
-// Strength progression: top set per exercise per day, from the workout logs.
+// Strength progression grouped into collapsible Compound / Accessory / Circuit
+// folders (coach-set exercise_type, else auto-detected). Warm-ups are excluded —
+// they belong in the workout log. Each folder opens to per-exercise graphs:
+// weight+reps for lifts, best logged time for circuits.
 function StrengthTab({ profile }) {
-  const [series, setSeries] = useState([]);
+  const [groups, setGroups] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
     (async()=>{
       const {data:logs} = await supabase.from("workout_logs").select("*").eq("client_id",profile.id).order("date");
-      const {data:exs} = await supabase.from("exercises").select("id,name,is_bodyweight").eq("client_id",profile.id);
+      const {data:exs} = await supabase.from("exercises").select("id,name,is_bodyweight,section,category,exercise_type").eq("client_id",trainingOwnerId(profile));
       const exMap = {}; (exs||[]).forEach(e=>{exMap[e.id]=e;});
+      // Top set per exercise per date: heaviest weight (with its reps), best reps,
+      // and fastest logged time. Warm-ups are skipped entirely.
       const byEx = {};
       (logs||[]).forEach(l=>{
         const ex = exMap[l.exercise_id]; if(!ex) return;
-        const val = ex.is_bodyweight ? (l.reps||0) : (l.weight||0);
-        if(!byEx[l.exercise_id]) byEx[l.exercise_id] = {name:ex.name,is_bodyweight:ex.is_bodyweight,byDate:{}};
-        const d = byEx[l.exercise_id].byDate;
-        d[l.date] = Math.max(d[l.date]||0, val);
+        const grp = strengthGroupOf(ex); if(grp==="Warmup") return;
+        if(!byEx[l.exercise_id]) byEx[l.exercise_id] = {ex, grp, byDate:{}};
+        const rec = byEx[l.exercise_id].byDate;
+        const cur = rec[l.date] || {weight:0, reps:0, timeSec:null};
+        const w = l.weight||0, r = l.reps||0, ts = parseTimeSec(l.time);
+        if(w > cur.weight){ cur.weight=w; if(r) cur.reps=r; }
+        if(!w && r > cur.reps) cur.reps=r;                       // bodyweight: best reps
+        if(ts!=null && (cur.timeSec==null || ts < cur.timeSec)) cur.timeSec=ts;
+        rec[l.date]=cur;
       });
-      const out = Object.values(byEx).map(e=>({
-        name:e.name, is_bodyweight:e.is_bodyweight,
-        data:Object.entries(e.byDate).map(([date,value])=>({date,value})).sort((a,b)=>a.date<b.date?-1:1),
-      })).filter(e=>e.data.length>0);
-      setSeries(out); setLoading(false);
+      const series = Object.values(byEx).map(({ex,grp,byDate})=>({
+        id:ex.id, name:ex.name, is_bodyweight:ex.is_bodyweight, grp,
+        data:Object.entries(byDate).map(([date,v])=>({date,...v})).sort((a,b)=>a.date<b.date?-1:1),
+      })).filter(s=>s.data.length>0);
+      const g = {Compound:[], Accessory:[], Circuit:[]};
+      series.forEach(s=>{ (g[s.grp]||g.Accessory).push(s); });
+      setGroups(g); setLoading(false);
     })();
-  },[profile.id]);
+  },[profile.id, profile.shared_program_owner_id]);
 
   if(loading) return <div className="spinner" style={{margin:"40px auto"}}/>;
-  if(series.length===0) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No logged sessions yet. Strength progress appears as you log workouts.</Card>;
+  const total = groups ? groups.Compound.length+groups.Accessory.length+groups.Circuit.length : 0;
+  if(total===0) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No logged sessions yet. Strength progress appears as you log workouts.</Card>;
 
+  const FOLDERS = [{key:"Compound",title:"Compounds"},{key:"Accessory",title:"Accessories"},{key:"Circuit",title:"Circuits"}];
   return (
-    <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-      {series.map(s=>(
-        <CC key={s.name} title={s.name} sub={s.is_bodyweight?"Top-set reps over time":"Top-set weight over time"}>
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={s.data}>
-              <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-              <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-              <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-              <Tooltip {...TT}/>
-              <Line type="monotone" dataKey="value" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
-            </LineChart>
-          </ResponsiveContainer>
-        </CC>
+    <div>
+      {FOLDERS.filter(f=>groups[f.key].length>0).map(f=>(
+        <DayFolder key={f.key} title={f.title} meta={`${groups[f.key].length} exercise${groups[f.key].length>1?"s":""}`}>
+          <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+            {groups[f.key].map(s=>(
+              <CC key={s.id} title={s.name} sub={f.key==="Circuit"?"Best logged time":(s.is_bodyweight?"Top-set reps":"Top-set weight + reps")}>
+                <ResponsiveContainer width="100%" height="100%">
+                  {f.key==="Circuit" ? (
+                    <LineChart data={s.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
+                      <YAxis tick={{fontSize:10,fill:"#666"}} tickFormatter={fmtSec} domain={["auto","auto"]}/>
+                      <Tooltip {...TT} formatter={v=>[fmtSec(v),"Time"]}/>
+                      <Line type="monotone" dataKey="timeSec" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  ) : s.is_bodyweight ? (
+                    <LineChart data={s.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
+                      <YAxis tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
+                      <Tooltip {...TT}/>
+                      <Line type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  ) : (
+                    <LineChart data={s.data}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
+                      <YAxis yAxisId="w" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
+                      <YAxis yAxisId="r" orientation="right" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
+                      <Tooltip {...TT}/>
+                      <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight (lb)" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
+                      <Line yAxisId="r" type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:2}}/>
+                    </LineChart>
+                  )}
+                </ResponsiveContainer>
+              </CC>
+            ))}
+          </div>
+        </DayFolder>
       ))}
     </div>
   );
@@ -2550,7 +2623,7 @@ function ClientsPanel() {
   const [selected, setSelected] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false});
+  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:""});
   const [editEx, setEditEx] = useState(null);   // {id, draft} | null
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -2743,10 +2816,10 @@ function ClientsPanel() {
       client_id:trainOwnerId, name:newEx.name.trim(), category:newEx.category.trim()||null,
       day_of_week:newEx.day_of_week||null, sets:parseInt(newEx.sets)||null,
       reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
-      is_bodyweight:newEx.is_bodyweight, source:"coach",
+      is_bodyweight:newEx.is_bodyweight, exercise_type:newEx.exercise_type||null, source:"coach",
     });
     await loadEx(trainOwnerId);
-    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false});
+    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:""});
     setShowAdd(false);setSaving(false);
   };
   const delEx = async(id)=>{
@@ -2762,13 +2835,13 @@ function ClientsPanel() {
   };
   // Edit an assigned exercise in place — the coach's progression / customization knob.
   const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
-    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"",
+    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"", exercise_type:ex.exercise_type||"",
   }});
   const saveEditEx = async()=>{
     const d = editEx.draft;
     await supabase.from("exercises").update({
       day_of_week:d.day_of_week||null, sets:parseInt(d.sets)||null,
-      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null,
+      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null,
     }).eq("id",editEx.id);
     setEditEx(null);
     await loadEx(trainOwnerId);
@@ -2995,6 +3068,13 @@ function ClientsPanel() {
                   <Fld label="Type">
                     <RG options={["Weighted","Bodyweight"]} value={newEx.is_bodyweight?"Bodyweight":"Weighted"} onChange={v=>setNewEx(p=>({...p,is_bodyweight:v==="Bodyweight"}))}/>
                   </Fld>
+                  <Fld label="Progress Type">
+                    <select value={newEx.exercise_type} onChange={e=>setNewEx(p=>({...p,exercise_type:e.target.value}))}
+                      style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
+                      <option value="">Auto-detect</option>
+                      {EX_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </Fld>
                 </div>
                 <Fld label="Notes / loading guidance"><Inp type="text" value={newEx.notes} onChange={e=>setNewEx(p=>({...p,notes:e.target.value}))} placeholder="e.g. @80% 1RM, RPE 8, 3s eccentric"/></Fld>
                 <div style={{display:"flex",gap:10,marginTop:8}}>
@@ -3026,6 +3106,7 @@ function ClientsPanel() {
                           <div style={{flex:1}}><label style={lbl}>Sets</label><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={eInp}/></div>
                           <div style={{flex:1}}><label style={lbl}>Reps</label><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={eInp}/></div>
                         </div>
+                        <div style={{marginBottom:10}}><label style={lbl}>Progress Type</label><select value={d.exercise_type} onChange={e=>setD("exercise_type",e.target.value)} style={eInp}><option value="">Auto-detect</option>{EX_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
                         <div style={{marginBottom:12}}><label style={lbl}>Notes</label><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></div>
                         <div style={{display:"flex",gap:8}}>
                           <Btn sm teal onClick={saveEditEx}>Save</Btn>
@@ -3037,6 +3118,7 @@ function ClientsPanel() {
                         <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,color:S.muted,marginBottom:ex.notes?8:12}}>
                           <span><span style={{opacity:.65}}>Sets </span>{ex.sets??"—"}</span>
                           <span><span style={{opacity:.65}}>Reps </span>{ex.reps||"—"}</span>
+                          {ex.exercise_type&&<span><span style={{opacity:.65}}>Type </span>{ex.exercise_type}</span>}
                         </div>
                         {ex.notes&&<div style={{fontSize:13,lineHeight:1.6,color:S.text,marginBottom:12}}>{ex.notes}</div>}
                         <div style={{display:"flex",gap:8}}>
@@ -3051,7 +3133,7 @@ function ClientsPanel() {
             </div>
             ) : (
             <table style={{width:"100%",borderCollapse:"collapse"}}>
-              <thead><tr>{["Exercise","Day","Sets","Reps","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
+              <thead><tr>{["Exercise","Day","Sets","Reps","Type","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
               <tbody>
                 {dayExs.map(ex=>{
                   const editing = editEx?.id===ex.id;
@@ -3067,6 +3149,7 @@ function ClientsPanel() {
                           <td style={cell}><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map((x,i)=><option key={x} value={x}>{"Day "+(i+1)}</option>)}</select></td>
                           <td style={cell}><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={{...eInp,width:60}}/></td>
                           <td style={cell}><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={{...eInp,width:80}}/></td>
+                          <td style={cell}><select value={d.exercise_type} onChange={e=>setD("exercise_type",e.target.value)} style={{...eInp,width:110}}><option value="">Auto</option>{EX_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></td>
                           <td style={cell}><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></td>
                           <td style={cell}>
                             <div style={{display:"flex",gap:6}}>
@@ -3080,6 +3163,7 @@ function ClientsPanel() {
                           <td style={{...cell,color:S.muted}}>{label}</td>
                           <td style={{...cell,color:S.muted}}>{ex.sets??"—"}</td>
                           <td style={{...cell,color:S.muted}}>{ex.reps||"—"}</td>
+                          <td style={{...cell,color:S.muted}}>{ex.exercise_type||<span style={{opacity:.55,fontStyle:"italic"}}>Auto</span>}</td>
                           <td style={{...cell,color:S.muted,maxWidth:240}}>{ex.notes||"—"}</td>
                           <td style={cell}>
                             <div style={{display:"flex",gap:6}}>
