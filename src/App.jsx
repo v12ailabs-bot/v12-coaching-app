@@ -1274,7 +1274,7 @@ function ClientHome({ profile, setPage }) {
 }
 
 function DailyCheckin({ profile, onDone }) {
-  const [form, setForm] = useState({weight:"",sleep:7,energy:7,mood:7,water:8,diet:"On track",workout:"completed"});
+  const [form, setForm] = useState({weight:"",sleep:7,energy:7,mood:7,water:8,diet:"On track",workout:"completed",calories:"",protein_g:"",carbs_g:"",fats_g:""});
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [existing, setExisting] = useState(null);
@@ -1282,12 +1282,14 @@ function DailyCheckin({ profile, onDone }) {
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).eq("date",todayStr()).maybeSingle()
-      .then(({data})=>{if(data){setExisting(data);setForm({weight:data.weight||"",sleep:data.sleep,energy:data.energy,mood:data.mood,water:data.water,diet:data.diet,workout:data.workout});}});
+      .then(({data})=>{if(data){setExisting(data);setForm({weight:data.weight||"",sleep:data.sleep,energy:data.energy,mood:data.mood,water:data.water,diet:data.diet,workout:data.workout,calories:data.calories??"",protein_g:data.protein_g??"",carbs_g:data.carbs_g??"",fats_g:data.fats_g??""});}});
   },[profile.id]);
 
   const submit = async () => {
     setLoading(true);
-    const entry = {client_id:profile.id,date:todayStr(),...form,weight:parseFloat(form.weight)||null};
+    const num = (v)=>{const n=parseFloat(v);return Number.isNaN(n)?null:n;};
+    const entry = {client_id:profile.id,date:todayStr(),...form,weight:parseFloat(form.weight)||null,
+      calories:num(form.calories),protein_g:num(form.protein_g),carbs_g:num(form.carbs_g),fats_g:num(form.fats_g)};
     if(existing) await supabase.from("daily_checkins").update(entry).eq("id",existing.id);
     else await supabase.from("daily_checkins").insert(entry);
     setSaved(true);setLoading(false);setTimeout(onDone,1400);
@@ -1308,6 +1310,10 @@ function DailyCheckin({ profile, onDone }) {
           <Sld label="Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
           <Fld label="Nutrition Today"><RG options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Fld>
           <Fld label="Training Today"><RG options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} cap/></Fld>
+          <Fld label="Calories"><Inp type="number" value={form.calories} onChange={e=>set("calories",e.target.value)} placeholder="e.g. 2200"/></Fld>
+          <Fld label="Protein (g)"><Inp type="number" value={form.protein_g} onChange={e=>set("protein_g",e.target.value)} placeholder="e.g. 180"/></Fld>
+          <Fld label="Carbs (g)"><Inp type="number" value={form.carbs_g} onChange={e=>set("carbs_g",e.target.value)} placeholder="e.g. 220"/></Fld>
+          <Fld label="Fats (g)"><Inp type="number" value={form.fats_g} onChange={e=>set("fats_g",e.target.value)} placeholder="e.g. 70"/></Fld>
         </div>
         <div style={{marginTop:20}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Log Check-In"}</Btn></div>
       </Card>
@@ -1421,7 +1427,7 @@ function WeeklyCheckin({ profile, onDone }) {
   );
 }
 
-function Progress({ profile }) {
+function Progress({ profile, coachView }) {
   const [tab, setTab] = useState("weight");
   const [daily, setDaily] = useState([]);
   const [weekly, setWeekly] = useState([]);
@@ -1442,7 +1448,16 @@ function Progress({ profile }) {
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
   const adh = adherenceFrom(daily,30);
   const nut = nutritionScoreFrom(daily,30);
-  const lastWeight = daily.length?daily[daily.length-1].weight:null;
+  // Bodyweight comes from either the daily check-in (weight) or the weekly
+  // check-in (bodyweight); merge both into one series by date so neither source
+  // is lost. Daily wins when both exist on the same date.
+  const weightSeries = (()=>{
+    const byDate = {};
+    daily.forEach(d=>{ if(d.weight!=null) byDate[d.date]={date:d.date,weight:d.weight}; });
+    weekly.forEach(w=>{ if(w.bodyweight!=null && byDate[w.date]==null) byDate[w.date]={date:w.date,weight:w.bodyweight}; });
+    return Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
+  })();
+  const lastWeight = weightSeries.length?weightSeries[weightSeries.length-1].weight:null;
 
   return (
     <div>
@@ -1454,16 +1469,16 @@ function Progress({ profile }) {
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
-        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],["notes","Check-in Notes"],["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
+        {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],...(coachView?[["notes","Check-in Notes"]]:[]),["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
         ))}
       </div>
 
-      {tab==="weight" && (daily.length===0?empty:(
+      {tab==="weight" && (daily.length===0&&weightSeries.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Bodyweight Trend" sub="Last 30 days">
+          <CC title="Bodyweight Trend" sub="Daily + weekly check-ins">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={daily.slice(-30)}>
+              <LineChart data={weightSeries.slice(-30)}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                 <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={6}/>
                 <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
@@ -1501,6 +1516,34 @@ function Progress({ profile }) {
               </ResponsiveContainer>
             </CC>
           ))}
+          {daily.some(d=>d.calories!=null) && (
+            <CC title="Calories" sub="14-day trend">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={daily.slice(-14)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey="calories" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          )}
+          {daily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
+            <CC title="Macros (g)" sub="14-day trend · protein / carbs / fats">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={daily.slice(-14)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey="protein_g" name="Protein" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
+                  <Line type="monotone" dataKey="carbs_g" name="Carbs" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                  <Line type="monotone" dataKey="fats_g" name="Fats" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          )}
         </div>
       ))}
 
@@ -1526,7 +1569,7 @@ function Progress({ profile }) {
 
       {tab==="habits" && <HabitsProgress habits={habits} logs={habitLogs}/>}
 
-      {tab==="notes" && <CheckinNotes weekly={weekly}/>}
+      {tab==="notes" && coachView && <CheckinNotes weekly={weekly}/>}
 
       {tab==="photos" && <ProgressPhotos profile={profile}/>}
 
@@ -3450,7 +3493,7 @@ function CoachProgress() {
           </button>
         ))}
       </div>
-      {selected&&<Progress profile={selected}/>}
+      {selected&&<Progress profile={selected} coachView/>}
       {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet.</div>}
     </div>
   );
