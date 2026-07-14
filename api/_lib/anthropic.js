@@ -182,6 +182,7 @@ Requirements for the output:
 - Each day's "focus" must name its primary V12 pillar(s), e.g. "Powerlifting — Lower" or "Hypertrophy + Conditioning".
 - Each exercise "category" must be one of: "Powerlifting", "Bodybuilding", "Power", or "Conditioning".
 - Each exercise "section" must name its session slot (e.g. "Primary", "Secondary", "Accessory", "Core", "Conditioning").
+- Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup).
 - Within a day, order exercises by the template's session-slot order.
 - Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
 - Across the week, ALL THREE pillars must appear.
@@ -203,6 +204,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
           "name": "string",
           "category": "Powerlifting | Bodybuilding | Power | Conditioning",
           "section": "string (session slot, e.g. Primary, Accessory, Conditioning)",
+          "exercise_type": "Compound | Accessory | Circuit | Warmup",
           "sets": number,
           "reps": "string",
           "is_bodyweight": boolean,

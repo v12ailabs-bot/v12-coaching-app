@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 
 
 
@@ -1433,11 +1433,14 @@ function Progress({ profile, coachView }) {
   const [weekly, setWeekly] = useState([]);
   const [habits, setHabits] = useState([]);
   const [habitLogs, setHabitLogs] = useState([]);
+  const [target, setTarget] = useState(null);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
     supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setWeekly((data||[]).map((w,i)=>({...w,week:"Wk"+(i+1)}))));
     supabase.from("habits").select("*").eq("client_id",profile.id).eq("active",true).order("order_index").then(({data})=>setHabits(data||[]));
+    // Active nutrition-plan macro targets, for the calorie/macro reference lines.
+    supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).eq("active",true).order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setTarget(data||null));
     // Last 30 days of habit completions, for the coach-visible adherence grid.
     const cut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
     supabase.from("habit_logs").select("*").eq("client_id",profile.id).gte("date",cut).then(({data})=>setHabitLogs(data||[]));
@@ -1517,20 +1520,21 @@ function Progress({ profile, coachView }) {
             </CC>
           ))}
           {daily.some(d=>d.calories!=null) && (
-            <CC title="Calories" sub="14-day trend">
+            <CC title="Calories" sub={target?.calories!=null?`14-day trend · target ${target.calories} kcal`:"14-day trend"}>
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={daily.slice(-14)}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                   <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
+                  {target?.calories!=null && <ReferenceLine y={target.calories} stroke={S.muted} strokeDasharray="4 4" label={{value:"Target",fontSize:9,fill:S.muted,position:"insideTopRight"}}/>}
                   <Line type="monotone" dataKey="calories" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
                 </LineChart>
               </ResponsiveContainer>
             </CC>
           )}
           {daily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
-            <CC title="Macros (g)" sub="14-day trend · protein / carbs / fats">
+            <CC title="Macros (g)" sub="14-day trend · dashed = target">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={daily.slice(-14)}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
@@ -1538,6 +1542,9 @@ function Progress({ profile, coachView }) {
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Legend wrapperStyle={{fontSize:11}}/>
+                  {target?.protein_g!=null && <ReferenceLine y={target.protein_g} stroke={S.accent2} strokeDasharray="4 4"/>}
+                  {target?.carbs_g!=null && <ReferenceLine y={target.carbs_g} stroke="#3B82F6" strokeDasharray="4 4"/>}
+                  {target?.fats_g!=null && <ReferenceLine y={target.fats_g} stroke="#8B5CF6" strokeDasharray="4 4"/>}
                   <Line type="monotone" dataKey="protein_g" name="Protein" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
                   <Line type="monotone" dataKey="carbs_g" name="Carbs" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
                   <Line type="monotone" dataKey="fats_g" name="Fats" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
@@ -1595,6 +1602,22 @@ function Progress({ profile, coachView }) {
                 <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
                 <Tooltip {...TT}/>
                 <Line type="monotone" dataKey="feeling" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+              </LineChart>
+            </ResponsiveContainer>
+          </CC>
+          <CC title="Weekly Self-Ratings" sub="1–10 · discipline / confidence / sleep / nutrition / hydration">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weekly}>
+                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
+                <Tooltip {...TT}/>
+                <Legend wrapperStyle={{fontSize:11}}/>
+                <Line type="monotone" dataKey="discipline_level" name="Discipline" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
+                <Line type="monotone" dataKey="confidence_level" name="Confidence" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
+                <Line type="monotone" dataKey="sleep_quality" name="Sleep" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                <Line type="monotone" dataKey="nutrition_compliance" name="Nutrition" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                <Line type="monotone" dataKey="hydration_quality" name="Hydration" stroke="#F59E0B" strokeWidth={2} dot={{r:2}} connectNulls/>
               </LineChart>
             </ResponsiveContainer>
           </CC>
