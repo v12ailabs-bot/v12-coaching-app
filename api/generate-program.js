@@ -154,6 +154,7 @@ export default async function handler(req, res) {
             name: ex.name,
             category: ex.category || day.focus || null,
             section: ex.section || null,
+            exercise_type: ex.exercise_type || null,
             day_of_week: day.day,
             sets: ex.sets ?? null,
             reps: ex.reps != null ? String(ex.reps) : null,
