@@ -1203,11 +1203,18 @@ function ClientWelcome({ profile, onEnter }) {
 
 function ClientHome({ profile, setPage }) {
   const [checkins, setCheckins] = useState([]);
+  const [weeklyDone, setWeeklyDone] = useState(true);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
-    supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date")
-      .then(({data})=>{setCheckins(data||[]);setLoading(false);});
+    (async()=>{
+      const {data:ci} = await supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date");
+      setCheckins(ci||[]);
+      const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
+      const {data:wc} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",ws).maybeSingle();
+      setWeeklyDone(!!wc);
+      setLoading(false);
+    })();
   },[profile.id]);
 
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
@@ -1224,9 +1231,15 @@ function ClientHome({ profile, setPage }) {
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
       {!doneToday && (
-        <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12,flexWrap:"wrap"}}>
           <span style={{fontSize:13}}>Reminder: Daily check-in not done yet.</span>
           <Btn sm onClick={()=>setPage("daily")}>Do it now</Btn>
+        </div>
+      )}
+      {!weeklyDone && (
+        <div style={{background:"rgba(0,201,167,.10)",border:"1px solid rgba(0,201,167,.28)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:20,flexWrap:"wrap"}}>
+          <span style={{fontSize:13}}>Your weekly check-in is due this week — it's how your coach adjusts your plan.</span>
+          <Btn sm teal onClick={()=>setPage("weekly")}>Start weekly</Btn>
         </div>
       )}
       <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:22}}>
@@ -1342,8 +1355,15 @@ function WeeklyCheckin({ profile, onDone }) {
   const NUMERIC = ["bodyweight","waist","chest","hips","arms","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level","goal_progress","feeling"];
 
   useEffect(()=>{
-    supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle()
-      .then(({data})=>{if(data){setExisting(data);setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;});}});
+    (async()=>{
+      const {data} = await supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle();
+      if(data){ setExisting(data); setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;}); return; }
+      // No entry yet this week — prefill the stable measurements from the most
+      // recent prior check-in (and bump the week number) so the client only
+      // updates what changed instead of re-typing everything.
+      const {data:prev} = await supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).lt("date",weekStart).order("date",{ascending:false}).limit(1).maybeSingle();
+      if(prev){ setForm(f=>({...f, bodyweight:prev.bodyweight??"", waist:prev.waist??"", chest:prev.chest??"", hips:prev.hips??"", arms:prev.arms??"", week_number:prev.week_number!=null?String(Number(prev.week_number)+1):""})); }
+    })();
   },[profile.id]);
 
   const submit = async () => {
@@ -1363,6 +1383,9 @@ function WeeklyCheckin({ profile, onDone }) {
   return (
     <div>
       <PageTitle title="Weekly Check-In" sub={"Week of "+weekStart}/>
+      <Card style={{borderLeft:"3px solid "+S.accent2,paddingTop:16,paddingBottom:16}}>
+        <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>Only the ratings are required — everything else is optional. Your measurements are pre-filled from last week, so just update what changed.</div>
+      </Card>
       <Card>
         <CardTitle>Body Stats</CardTitle>
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
@@ -1409,13 +1432,12 @@ function WeeklyCheckin({ profile, onDone }) {
           <Sld label="How this week felt overall" val={form.feeling??5} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
         </div>
       </Card>
-      <Card>
-        <CardTitle>Wins & Challenges</CardTitle>
+      <DayFolder title="Wins & Challenges" meta="Optional">
         <Fld label="What went well this week?"><textarea rows={2} value={form.what_went_well||""} onChange={e=>set("what_went_well",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <Fld label="Physical or lifestyle wins?"><textarea rows={2} value={form.lifestyle_wins||""} onChange={e=>set("lifestyle_wins",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <Fld label="Biggest challenge this week?"><textarea rows={2} value={form.biggest_challenge||""} onChange={e=>set("biggest_challenge",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
         <Fld label="Anything holding back progress?"><textarea rows={2} value={form.holding_back||""} onChange={e=>set("holding_back",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
-      </Card>
+      </DayFolder>
       <Card>
         <CardTitle>For Your Coach</CardTitle>
         <Fld label="Anything you want adjusted?"><textarea rows={2} value={form.adjustments||""} onChange={e=>set("adjustments",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
@@ -2279,6 +2301,7 @@ function Workouts({ profile, readOnly, embedded }) {
 function CoachHome({ setPage }) {
   const [clients, setClients] = useState([]);
   const [byClient, setByClient] = useState({});
+  const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
@@ -2287,14 +2310,23 @@ function CoachHome({ setPage }) {
       const list = cl||[];
       const ids = list.map(c=>c.id);
       const grouped = {};
+      let weeklies = [];
       if(ids.length){
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
         const cut = cutoff.toISOString().split("T")[0];
         const {data:ch} = await supabase.from("daily_checkins")
           .select("client_id,date,weight,workout,diet").in("client_id",ids).gte("date",cut).order("date");
         (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
+        // Recent weekly check-ins carrying questions or red-flag answers the coach
+        // should respond to (last 14 days).
+        const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-13);
+        const wcut = wcutoff.toISOString().split("T")[0];
+        const {data:wc} = await supabase.from("weekly_checkins")
+          .select("client_id,date,coach_questions,adjustments,confidence_level,felt_weaker,biggest_challenge,mental_blocks")
+          .in("client_id",ids).gte("date",wcut).order("date");
+        weeklies = wc||[];
       }
-      setClients(list); setByClient(grouped); setLoading(false);
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setLoading(false);
     })();
   },[]);
 
@@ -2330,6 +2362,17 @@ function CoachHome({ setPage }) {
 
   const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
   const avgAdh = clients.length ? Math.round(assessed.reduce((s,a)=>s+a.adh.score,0)/clients.length) : 0;
+
+  // Weekly check-in messages/flags the coach should respond to, newest first.
+  const nameOf = (id)=>{ const c=clients.find(x=>x.id===id); return c?(c.name||c.email):"Client"; };
+  const messages = weeklyRecent.map(w=>{
+    const items=[];
+    if((w.coach_questions||"").trim()) items.push({label:"Question",tone:"red",text:w.coach_questions});
+    if((w.adjustments||"").trim()) items.push({label:"Wants adjusted",tone:"amber",text:w.adjustments});
+    if(w.confidence_level!=null && w.confidence_level<=4) items.push({label:`Low confidence ${w.confidence_level}/10`,tone:"amber",text:w.biggest_challenge||w.mental_blocks||""});
+    if((w.felt_weaker||"").trim()) items.push({label:"Felt weaker",tone:"amber",text:w.felt_weaker});
+    return items.length?{id:w.client_id,date:w.date,items}:null;
+  }).filter(Boolean).sort((a,b)=>a.date<b.date?1:-1);
 
   const Chip = ({f}) => (
     <span style={{padding:"3px 9px",fontSize:10,fontWeight:600,
@@ -2370,6 +2413,28 @@ function CoachHome({ setPage }) {
           </div>
         ))}
       </Card>
+
+      {messages.length>0 && (
+        <Card>
+          <CardTitle>💬 Client Messages & Flags</CardTitle>
+          <div style={{fontSize:11,color:S.muted,marginTop:-8,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
+          {messages.map((m,i)=>(
+            <div key={i} onClick={()=>setPage("clients")}
+              style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
+                <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
+                <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
+              </div>
+              {m.items.map((it,j)=>(
+                <div key={j} style={{marginBottom:6}}>
+                  <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
+                  {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
+                </div>
+              ))}
+            </div>
+          ))}
+        </Card>
+      )}
 
       <Card>
         <CardTitle>All Clients</CardTitle>
