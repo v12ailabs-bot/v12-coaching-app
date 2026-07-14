@@ -167,7 +167,11 @@ function GlobalStyles() {
           justify-content: center; gap: 3px !important; font-size: 9px !important;
           padding: 7px 3px !important; margin-bottom: 0 !important; text-align: center;
           white-space: nowrap; border-radius: 0 !important; overflow: hidden; }
-        .sidebar-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+        /* display:block is required — an inline <span> ignores max-width/overflow,
+           so without it the label text spills past its column and overlaps the
+           neighbouring tabs. */
+        .sidebar-label { display: block; width: 100%; max-width: 100%; overflow: hidden;
+          text-overflow: ellipsis; line-height: 1.1; }
         .main-content { padding: 18px 16px 84px !important; }
         .topbar { padding: 0 14px !important; }
         .card { padding: 16px !important; }
@@ -870,8 +874,8 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
   // `short` labels are used in the cramped mobile bottom bar (clients have 9 tabs;
   // the full labels overlap at that width).
   const clientNav = programOnly
-    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"workouts",icon:"🏋",label:"Workout Log",short:"Log"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"workouts",icon:"🏋",label:"Workout Log",short:"Log"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
+    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
     : clientNav;
@@ -1029,17 +1033,25 @@ function fmtSec(sec) {
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the
 // training-completion rate among those check-ins. Shared by client + coach views.
+// The denominator scales to how long the client has actually been active (from
+// their first check-in), capped at the window — so a client one day in who
+// checked in reads 100%, not 1/30 (≈3%).
 function adherenceFrom(checkins, days = 30) {
+  const all = checkins || [];
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - (days - 1));
   const cut = cutoff.toISOString().split("T")[0];
-  const recent = (checkins || []).filter((c) => c.date >= cut);
+  const recent = all.filter((c) => c.date >= cut);
   const checkinDays = new Set(recent.map((c) => c.date)).size;
   const completed = recent.filter((c) => c.workout === "completed").length;
+  const today = todayStr();
+  const firstEver = all.length ? all.reduce((m, c) => (c.date < m ? c.date : m), today) : today;
+  const elapsed = Math.floor((new Date(today) - new Date(firstEver)) / 86400000) + 1;
+  const denom = Math.max(1, Math.min(days, elapsed));
   return {
-    score: Math.min(100, Math.round((checkinDays / days) * 100)),
+    score: Math.min(100, Math.round((checkinDays / denom) * 100)),
     checkinDays,
-    days,
+    days: denom,
     trainingRate: recent.length ? Math.round((completed / recent.length) * 100) : 0,
   };
 }
@@ -1447,7 +1459,7 @@ function Progress({ profile }) {
         ))}
       </div>
 
-      {tab==="weight" && (daily.length<2?empty:(
+      {tab==="weight" && (daily.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           <CC title="Bodyweight Trend" sub="Last 30 days">
             <ResponsiveContainer width="100%" height="100%">
@@ -1474,7 +1486,7 @@ function Progress({ profile }) {
         </div>
       ))}
 
-      {tab==="wellness" && (daily.length<2?empty:(
+      {tab==="wellness" && (daily.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["energy",S.accent,"Energy"],["sleep",S.accent2,"Sleep Quality"],["mood","#8B5CF6","Mood"],["water","#3B82F6","Water (glasses)"]].map(([key,color,label])=>(
             <CC key={key} title={label} sub="14-day trend">
@@ -1484,7 +1496,7 @@ function Progress({ profile }) {
                   <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
                   <YAxis domain={[0,key==="water"?16:10]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
-                  <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={false}/>
+                  <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{r:2}}/>
                 </LineChart>
               </ResponsiveContainer>
             </CC>
@@ -2017,7 +2029,7 @@ function Resources({ readOnly = true }) {
   );
 }
 
-function Workouts({ profile, readOnly }) {
+function Workouts({ profile, readOnly, embedded }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -2066,7 +2078,9 @@ function Workouts({ profile, readOnly }) {
 
   return (
     <div>
-      <PageTitle title="Workout Log" sub={readOnly?"Client's logged sessions":"Track your strength progression"}/>
+      {embedded
+        ? <div style={{fontSize:13,color:S.muted,marginBottom:18,lineHeight:1.6}}>Log the sets you complete for each day's exercises. Your progression graphs live under Progress → Strength.</div>
+        : <PageTitle title="Workout Log" sub={readOnly?"Client's logged sessions":"Track your strength progression"}/>}
       {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>Session logged!</div>}
       {exercises.length===0?(
         <Card style={{textAlign:"center",padding:48}}>
@@ -3437,7 +3451,6 @@ function CoachProgress() {
         ))}
       </div>
       {selected&&<Progress profile={selected}/>}
-      {selected&&<div style={{marginTop:8}}><Workouts profile={selected} readOnly/></div>}
       {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet.</div>}
     </div>
   );
@@ -3846,6 +3859,14 @@ function ClientProgram({ profile }) {
             </div>
           </DayFolder>
         ))
+      )}
+      {exercises.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, margin: "0 2px 12px" }}>Workout Logging</div>
+          <DayFolder title="Log Your Workouts" meta="Record your sets">
+            <Workouts profile={profile} embedded />
+          </DayFolder>
+        </div>
       )}
     </div>
   );
