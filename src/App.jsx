@@ -1516,6 +1516,34 @@ function Progress({ profile, coachView }) {
               </ResponsiveContainer>
             </CC>
           ))}
+          {daily.some(d=>d.calories!=null) && (
+            <CC title="Calories" sub="14-day trend">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={daily.slice(-14)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey="calories" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          )}
+          {daily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
+            <CC title="Macros (g)" sub="14-day trend · protein / carbs / fats">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={daily.slice(-14)}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey="protein_g" name="Protein" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
+                  <Line type="monotone" dataKey="carbs_g" name="Carbs" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                  <Line type="monotone" dataKey="fats_g" name="Fats" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          )}
         </div>
       ))}
 
