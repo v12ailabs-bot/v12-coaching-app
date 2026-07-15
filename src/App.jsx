@@ -1073,6 +1073,9 @@ function nutritionScoreFrom(checkins, days = 30) {
 const CHANNELS = ["call", "text", "email", "in-person", "other"];
 const TEMPLATE_CATEGORIES = ["Hybrid", "Fat Loss", "Muscle", "Strength", "Athletic", "Beginner", "Home", "General"];
 const RESOURCE_KINDS = ["recipe", "article", "video", "pdf"];
+// Library is organized into these fixed collapsible folders. The coach files each
+// resource into one (resources.category); the client browses them as dropdowns.
+const LIBRARY_FOLDERS = ["Getting Started", "Nutrition", "Training", "Progress", "FAQ"];
 
 // ---------------------------------------------------------------------------
 // CLIENT — WELCOME (shown until the client is onboarded / has a program)
@@ -1169,6 +1172,19 @@ function ClientWelcome({ profile, onEnter }) {
               <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.6 }}>{body}</div>
             </div>
           ))}
+        </div>
+      </Card>
+
+      {/* New-here directions → Library / Getting Started */}
+      <Card style={{ borderLeft: "3px solid " + S.neon }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22 }}>New here? Start with Getting Started</div>
+            <div style={{ fontSize: 13, color: S.muted, marginTop: 4, lineHeight: 1.6, maxWidth: 560 }}>
+              Head to the Library and open the <span style={{ color: S.neon, fontWeight: 700 }}>Getting Started</span> folder — it walks you through how to use the app, log your training, and track progress.
+            </div>
+          </div>
+          <Btn teal onClick={() => onEnter("resources")}>Open the Library →</Btn>
         </div>
       </Card>
 
@@ -2304,13 +2320,68 @@ function ProgramProgress({ profile }) {
   );
 }
 
+// Program-only clients can ask to move to full coaching. Files one pending
+// upgrade_requests row (client-writable); the coach sees it on their dashboard.
+// Reflects an existing pending request so it can't be sent twice.
+function UpgradeCTA({ profile }) {
+  const [state, setState] = useState("loading"); // loading | idle | sending | pending
+  useEffect(() => {
+    supabase.from("upgrade_requests").select("id").eq("client_id", profile.id).eq("status", "pending").limit(1).maybeSingle()
+      .then(({ data }) => setState(data ? "pending" : "idle"));
+  }, [profile.id]);
+
+  const request = async () => {
+    setState("sending");
+    const { error } = await supabase.from("upgrade_requests").insert({ client_id: profile.id, status: "pending" });
+    setState(error ? "idle" : "pending");
+  };
+
+  if (state === "loading") return null;
+  const pending = state === "pending";
+  return (
+    <div style={{ background: "rgba(198,255,0,.08)", border: "1px solid rgba(198,255,0,.3)", padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 16, flexWrap: "wrap" }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>Want 1-on-1 coaching?</div>
+        <div style={{ fontSize: 12, color: S.muted }}>{pending ? "Request received — your coach will reach out soon." : "Add check-ins, feedback, and a coach in your corner."}</div>
+      </div>
+      <Btn onClick={request} disabled={pending || state === "sending"}>{pending ? "Requested ✓" : state === "sending" ? "Sending..." : "Upgrade to Coaching"}</Btn>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // CLIENT — RESOURCE / RECIPE LIBRARY (read-only browse)
 // ---------------------------------------------------------------------------
-function Resources({ readOnly = true }) {
+// Library resource card — shared by every folder in the client Library.
+function ResourceCard({ r }) {
+  return (
+    <Card style={{ marginBottom: 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
+        <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 19, lineHeight: 1.1 }}>{r.title}</div>
+        <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.neon, flexShrink: 0 }}>{r.kind}</span>
+      </div>
+      {r.kind === "recipe" && (r.calories != null || r.protein_g != null) && (
+        <div style={{ display: "flex", gap: 12, fontSize: 11, color: S.muted, marginBottom: 8, flexWrap: "wrap" }}>
+          {r.calories != null && <span>{r.calories} kcal</span>}
+          {r.protein_g != null && <span>P {r.protein_g}g</span>}
+          {r.carbs_g != null && <span>C {r.carbs_g}g</span>}
+          {r.fats_g != null && <span>F {r.fats_g}g</span>}
+        </div>
+      )}
+      {r.body && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.body}</div>}
+      {r.url && (
+        <a href={r.url} target="_blank" rel="noreferrer"
+          style={{ display: "inline-block", marginTop: 10, fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: S.accent2, textDecoration: "none" }}>
+          Open {r.kind === "video" ? "video" : "link"} →
+        </a>
+      )}
+    </Card>
+  );
+}
+
+function Resources() {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [kind, setKind] = useState("all");
 
   useEffect(() => {
     supabase.from("resources").select("*").eq("published", true).order("created_at", { ascending: false })
@@ -2318,49 +2389,29 @@ function Resources({ readOnly = true }) {
   }, []);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
-  const shown = kind === "all" ? items : items.filter((r) => r.kind === kind);
-  const tabs = ["all", ...RESOURCE_KINDS];
+
+  // Always show the fixed folders (so structure — and Getting Started — is
+  // visible even when empty); append an "Other" folder for anything filed under
+  // a legacy/unknown category so nothing is hidden. All closed until clicked.
+  const known = new Set(LIBRARY_FOLDERS);
+  const inFolder = (folder) => items.filter((r) => (r.category || "").trim() === folder);
+  const other = items.filter((r) => !known.has((r.category || "").trim()));
+  const folders = [...LIBRARY_FOLDERS.map((f) => [f, inFolder(f)]), ...(other.length ? [["Other", other]] : [])];
 
   return (
     <div>
-      <PageTitle title="Library" sub="Recipes, guides, and resources from your coach" />
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 22 }}>
-        {tabs.map((k) => (
-          <button key={k} onClick={() => setKind(k)}
-            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", textTransform: "capitalize", border: "1px solid " + (kind === k ? S.accent : S.border), background: kind === k ? "rgba(255,77,0,.08)" : "transparent", color: kind === k ? S.accent : S.muted }}>
-            {k === "all" ? "All" : k}
-          </button>
-        ))}
-      </div>
-      {shown.length === 0 ? (
-        <Card style={{ textAlign: "center", padding: 40, color: S.muted }}>Nothing here yet. Your coach will add resources soon.</Card>
-      ) : (
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
-          {shown.map((r) => (
-            <Card key={r.id} style={{ marginBottom: 0 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8, marginBottom: 6 }}>
-                <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 19, lineHeight: 1.1 }}>{r.title}</div>
-                <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.neon, flexShrink: 0 }}>{r.category || r.kind}</span>
-              </div>
-              {r.kind === "recipe" && (r.calories != null || r.protein_g != null) && (
-                <div style={{ display: "flex", gap: 12, fontSize: 11, color: S.muted, marginBottom: 8, flexWrap: "wrap" }}>
-                  {r.calories != null && <span>{r.calories} kcal</span>}
-                  {r.protein_g != null && <span>P {r.protein_g}g</span>}
-                  {r.carbs_g != null && <span>C {r.carbs_g}g</span>}
-                  {r.fats_g != null && <span>F {r.fats_g}g</span>}
-                </div>
-              )}
-              {r.body && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{r.body}</div>}
-              {r.url && (
-                <a href={r.url} target="_blank" rel="noreferrer"
-                  style={{ display: "inline-block", marginTop: 10, fontSize: 11, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", color: S.accent2, textDecoration: "none" }}>
-                  Open {r.kind === "video" ? "video" : "link"} →
-                </a>
-              )}
-            </Card>
-          ))}
-        </div>
-      )}
+      <PageTitle title="Library" sub="Guides, recipes, and resources — organized into folders. New here? Open Getting Started." />
+      {folders.map(([folder, list]) => (
+        <DayFolder key={folder} title={folder} meta={`${list.length} item${list.length === 1 ? "" : "s"}`}>
+          {list.length === 0 ? (
+            <div style={{ color: S.muted, fontSize: 13 }}>Nothing here yet.</div>
+          ) : (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(280px,1fr))", gap: 16 }}>
+              {list.map((r) => <ResourceCard key={r.id} r={r} />)}
+            </div>
+          )}
+        </DayFolder>
+      ))}
     </div>
   );
 }
@@ -2549,6 +2600,7 @@ function CoachHome({ setPage }) {
   const [clients, setClients] = useState([]);
   const [byClient, setByClient] = useState({});
   const [weeklyRecent, setWeeklyRecent] = useState([]);
+  const [upgrades, setUpgrades] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
@@ -2558,6 +2610,9 @@ function CoachHome({ setPage }) {
       const ids = list.map(c=>c.id);
       const grouped = {};
       let weeklies = [];
+      // Pending upgrade requests from program-only clients.
+      const {data:ur} = await supabase.from("upgrade_requests").select("*").eq("status","pending").order("created_at",{ascending:false});
+      setUpgrades(ur||[]);
       if(ids.length){
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
         const cut = cutoff.toISOString().split("T")[0];
@@ -2616,6 +2671,10 @@ function CoachHome({ setPage }) {
 
   // Weekly check-in messages/flags the coach should respond to, newest first.
   const nameOf = (id)=>{ const c=clients.find(x=>x.id===id); return c?(c.name||c.email):"Client"; };
+  const markHandled = async(id)=>{
+    setUpgrades(prev=>prev.filter(u=>u.id!==id));
+    await supabase.from("upgrade_requests").update({status:"handled"}).eq("id",id);
+  };
   const messages = weeklyRecent.map(w=>{
     const items=[];
     if((w.coach_questions||"").trim()) items.push({label:"Question",tone:"red",text:w.coach_questions});
@@ -2640,6 +2699,28 @@ function CoachHome({ setPage }) {
         <Stat label="On Track" value={clients.length-needs.length} unit=""/>
         <Stat label="Avg Adherence" value={avgAdh} unit="%"/>
       </div>
+
+      {upgrades.length>0 && (
+        <Card style={{borderLeft:"3px solid "+S.neon}}>
+          <CardTitle>💎 Upgrade Requests</CardTitle>
+          <div style={{fontSize:11,color:S.muted,marginTop:-8,marginBottom:14}}>Program-only clients who want to move to full coaching. Reach out, then mark handled.</div>
+          {upgrades.map(u=>(
+            <div key={u.id} style={{background:S.surface,border:"1px solid "+S.border,padding:"14px 18px",display:"flex",alignItems:"center",gap:16,marginBottom:10,flexWrap:"wrap"}}>
+              <div style={{width:44,height:44,borderRadius:"50%",background:S.neon,color:"#0A0A0B",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+                {avatarFrom(nameOf(u.client_id))}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontWeight:600,fontSize:14}}>{nameOf(u.client_id)}</div>
+                <div style={{fontSize:12,color:S.muted}}>Wants to upgrade to coaching · {(u.created_at||"").slice(0,10)}</div>
+              </div>
+              <div style={{display:"flex",gap:8,flexShrink:0}}>
+                <Btn sm teal onClick={()=>setPage("clients")}>Open Client</Btn>
+                <Btn sm onClick={()=>markHandled(u.id)}>Mark handled</Btn>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
 
       <Card>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -3998,7 +4079,7 @@ function TemplatesPanel() {
 // COACH — RESOURCE / RECIPE LIBRARY MANAGEMENT
 // ---------------------------------------------------------------------------
 
-const BLANK_RESOURCE = { title:"", category:"", kind:"article", url:"", body:"", calories:"", protein_g:"", carbs_g:"", fats_g:"", published:true };
+const BLANK_RESOURCE = { title:"", category:LIBRARY_FOLDERS[0], kind:"article", url:"", body:"", calories:"", protein_g:"", carbs_g:"", fats_g:"", published:true };
 
 function ResourcesPanel() {
   const [items, setItems] = useState([]);
@@ -4018,7 +4099,7 @@ function ResourcesPanel() {
   const startNew = ()=>{ setEditing("new"); setForm(BLANK_RESOURCE); setMsg(null); };
   const startEdit = (r)=>{
     setEditing(r.id);
-    setForm({title:r.title||"",category:r.category||"",kind:r.kind||"article",url:r.url||"",body:r.body||"",
+    setForm({title:r.title||"",category:r.category||LIBRARY_FOLDERS[0],kind:r.kind||"article",url:r.url||"",body:r.body||"",
       calories:r.calories??"",protein_g:r.protein_g??"",carbs_g:r.carbs_g??"",fats_g:r.fats_g??"",published:r.published});
     setMsg(null);
   };
@@ -4066,10 +4147,8 @@ function ResourcesPanel() {
       {editing && (
         <Card>
           <CardTitle>{editing==="new"?"New Resource":"Edit Resource"}</CardTitle>
-          <div className="g3" style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:16}}>
-            <Fld label="Title"><Inp type="text" value={form.title} onChange={e=>set("title",e.target.value)} placeholder="e.g. High-Protein Overnight Oats"/></Fld>
-            <Fld label="Category"><Inp type="text" value={form.category} onChange={e=>set("category",e.target.value)} placeholder="e.g. Recipe, Guide"/></Fld>
-          </div>
+          <Fld label="Title"><Inp type="text" value={form.title} onChange={e=>set("title",e.target.value)} placeholder="e.g. High-Protein Overnight Oats"/></Fld>
+          <Fld label="Folder"><RG options={LIBRARY_FOLDERS} value={form.category} onChange={v=>set("category",v)}/></Fld>
           <Fld label="Type"><RG options={RESOURCE_KINDS} value={form.kind} onChange={v=>set("kind",v)} cap/></Fld>
           <Fld label="Link / URL (optional)"><Inp type="url" value={form.url} onChange={e=>set("url",e.target.value)} placeholder="https://..."/></Fld>
           {isRecipe && (
@@ -4096,33 +4175,44 @@ function ResourcesPanel() {
       {items.length===0 && !editing && (
         <Card style={{textAlign:"center",padding:40,color:S.muted}}>No resources yet. Create your first one.</Card>
       )}
-      {items.map(r=>(
-        <Card key={r.id}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{r.title}</div>
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{r.category||r.kind}</span>
-                {!r.published && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted}}>· Draft</span>}
-              </div>
-              {r.kind==="recipe" && (r.calories!=null||r.protein_g!=null) && (
-                <div style={{display:"flex",gap:12,fontSize:11,color:S.muted,margin:"6px 0"}}>
-                  {r.calories!=null&&<span>{r.calories} kcal</span>}
-                  {r.protein_g!=null&&<span>P {r.protein_g}g</span>}
-                  {r.carbs_g!=null&&<span>C {r.carbs_g}g</span>}
-                  {r.fats_g!=null&&<span>F {r.fats_g}g</span>}
+      {(() => {
+        // Group by folder so the coach sees the same structure clients browse.
+        const known = new Set(LIBRARY_FOLDERS);
+        const bucket = (folder) => items.filter(r=>(r.category||"").trim()===folder);
+        const other = items.filter(r=>!known.has((r.category||"").trim()));
+        const folders = [...LIBRARY_FOLDERS.map(f=>[f,bucket(f)]), ...(other.length?[["Other",other]]:[])];
+        return folders.map(([folder,list])=>(
+          <DayFolder key={folder} title={folder} meta={`${list.length} item${list.length===1?"":"s"}`}>
+            {list.length===0 ? <div style={{color:S.muted,fontSize:13}}>Nothing filed here yet.</div> : list.map(r=>(
+              <Card key={r.id}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{r.title}</div>
+                      <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{r.kind}</span>
+                      {!r.published && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted}}>· Draft</span>}
+                    </div>
+                    {r.kind==="recipe" && (r.calories!=null||r.protein_g!=null) && (
+                      <div style={{display:"flex",gap:12,fontSize:11,color:S.muted,margin:"6px 0"}}>
+                        {r.calories!=null&&<span>{r.calories} kcal</span>}
+                        {r.protein_g!=null&&<span>P {r.protein_g}g</span>}
+                        {r.carbs_g!=null&&<span>C {r.carbs_g}g</span>}
+                        {r.fats_g!=null&&<span>F {r.fats_g}g</span>}
+                      </div>
+                    )}
+                    {r.body && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap",marginTop:6}}>{r.body}</div>}
+                    {r.url && <div style={{fontSize:11,color:S.accent2,marginTop:6}}>{r.url}</div>}
+                  </div>
+                  <div style={{display:"flex",gap:8,flexShrink:0}}>
+                    <Btn sm teal onClick={()=>startEdit(r)}>Edit</Btn>
+                    <Btn sm danger onClick={()=>remove(r)}>Delete</Btn>
+                  </div>
                 </div>
-              )}
-              {r.body && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap",marginTop:6}}>{r.body}</div>}
-              {r.url && <div style={{fontSize:11,color:S.accent2,marginTop:6}}>{r.url}</div>}
-            </div>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
-              <Btn sm teal onClick={()=>startEdit(r)}>Edit</Btn>
-              <Btn sm danger onClick={()=>remove(r)}>Delete</Btn>
-            </div>
-          </div>
-        </Card>
-      ))}
+              </Card>
+            ))}
+          </DayFolder>
+        ));
+      })()}
     </div>
   );
 }
@@ -4195,7 +4285,9 @@ function ClientProgram({ profile }) {
   return (
     <div>
       <PageTitle title="Training Plan" sub="Your current weekly program" />
-      {profile.client_type !== "program_only" && <CoachMessage profile={profile} />}
+      {profile.client_type === "program_only"
+        ? <UpgradeCTA profile={profile} />
+        : <CoachMessage profile={profile} />}
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -4357,8 +4449,12 @@ function ClientDashboard({ profile, logout }) {
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
 
   // One-time welcome gate on first login; marks the profile so it never reappears.
-  const enterPortal = async () => {
+  // An optional target page lets the welcome drop the user straight into the
+  // Library (Getting Started). Guard the type — the plain "Enter" Btn passes a
+  // click event, which must not be treated as a page id.
+  const enterPortal = async (target) => {
     setWelcomed(true);
+    if (typeof target === "string") setPage(target);
     await supabase.from("profiles").update({ welcome_seen: true }).eq("id", profile.id);
   };
 
