@@ -164,6 +164,10 @@ ${clientProfileBlock(client)}
 
 ${constraintBlock(client)}
 ${
+  client.coach_assessment
+    ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
+    : ""
+}${
   client.program_template
     ? `${client.program_template}\n\n` +
       `Use this template as the framework. Replicate its WEEKLY SPLIT exactly — the ` +
@@ -287,4 +291,41 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   });
 
   return parseJson(message.content[0].text);
+}
+
+// A short, encouraging plain-text recap of the client's last ~30 days, built from
+// their daily log, body metrics, and logged workouts. Returns prose (not JSON).
+export async function generateCheckinSummary({ profile = {}, daily = [], logs = [] }) {
+  const weights = daily.filter((d) => d.weight != null);
+  const workoutDays = new Set(logs.map((l) => l.date)).size;
+  const habitDays = daily.filter((d) => d.habit_flags).length;
+  const data = {
+    goal: profile.goal || "general fitness",
+    days_logged: daily.length,
+    workouts_completed: workoutDays,
+    weight_start: weights[0]?.weight ?? null,
+    weight_latest: weights[weights.length - 1]?.weight ?? null,
+    habit_days_tracked: habitDays,
+    sets_logged: logs.length,
+  };
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 700,
+    messages: [
+      {
+        role: "user",
+        content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
+Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging.
+
+DATA (last 30 days): ${JSON.stringify(data)}
+
+Write 3 short paragraphs, ~120-160 words total, second person ("you"):
+1. What the data shows (weight trend, workouts completed, consistency).
+2. One clear win to celebrate.
+3. One specific focus for the next 30 days.
+Plain text only — no markdown headers, no bullet lists.`,
+      },
+    ],
+  });
+  return message.content[0].text.trim();
 }

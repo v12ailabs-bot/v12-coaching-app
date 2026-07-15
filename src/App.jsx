@@ -878,7 +878,7 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
     ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"habits",icon:"🎯",label:"Daily Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
     : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
@@ -1076,6 +1076,14 @@ const RESOURCE_KINDS = ["recipe", "article", "video", "pdf"];
 // Library is organized into these fixed collapsible folders. The coach files each
 // resource into one (resources.category); the client browses them as dropdowns.
 const LIBRARY_FOLDERS = ["Getting Started", "Nutrition", "Training", "Progress", "FAQ"];
+// What's coming to the app — shown as a teaser section at the bottom of the Library.
+const ROADMAP_ITEMS = [
+  ["🏅", "Achievement Badges", "Earn badges for streaks, PRs, and milestones."],
+  ["📅", "Monthly Challenges", "Fresh community challenges to keep you pushing."],
+  ["🥗", "More Nutrition Resources", "Expanded recipes, meal plans, and guides."],
+  ["🏋", "Expanded Exercise Library", "Demo videos and a deeper movement catalog."],
+  ["👥", "Community Features", "Connect, compare, and train alongside others."],
+];
 
 // ---------------------------------------------------------------------------
 // CLIENT — WELCOME (shown until the client is onboarded / has a program)
@@ -1510,6 +1518,7 @@ function Progress({ profile, coachView }) {
         <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
+      {!coachView && <AISummary profile={profile}/>}
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],...(coachView?[["notes","Check-in Notes"]]:[]),["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
@@ -1862,6 +1871,10 @@ function ProgressPhotos({ profile }) {
   const [uploading, setUploading] = useState(false);
   const [err, setErr] = useState(null);
   const [activeWeek, setActiveWeek] = useState(null);
+  const [comparing, setComparing] = useState(false);
+  const [beforeId, setBeforeId] = useState(null);
+  const [afterId, setAfterId] = useState(null);
+  const [pos, setPos] = useState(50);   // slider position, 0-100
 
   const load = useCallback(async()=>{
     const [{data:rows}, {data:checkins}] = await Promise.all([
@@ -1922,13 +1935,56 @@ function ProgressPhotos({ profile }) {
             <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>Progress Photos</div>
             <div style={{fontSize:11,color:S.muted}}>Private to you and your coach. Grouped by check-in week — shoot in consistent lighting and angle for the best comparison.</div>
           </div>
-          <label style={{...bS({}),background:S.neon,color:"#0A0A0B",display:"inline-block",cursor:uploading?"default":"pointer",opacity:uploading?0.6:1}}>
-            {uploading?"Uploading...":"+ Upload Photo"}
-            <input type="file" accept="image/*" onChange={onUpload} disabled={uploading} style={{display:"none"}}/>
-          </label>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {photos.filter(p=>p.url).length>=2 && (
+              <button onClick={()=>{
+                const withUrl=photos.filter(p=>p.url);
+                if(!comparing){ setAfterId(withUrl[0].id); setBeforeId(withUrl[withUrl.length-1].id); setPos(50); }
+                setComparing(c=>!c);
+              }} style={{...bS({}),background:comparing?S.accent:"transparent",color:comparing?"white":S.text,border:"1px solid "+(comparing?S.accent:S.border)}}>
+                {comparing?"Close compare":"⇆ Compare"}
+              </button>
+            )}
+            <label style={{...bS({}),background:S.neon,color:"#0A0A0B",display:"inline-block",cursor:uploading?"default":"pointer",opacity:uploading?0.6:1}}>
+              {uploading?"Uploading...":"+ Upload Photo"}
+              <input type="file" accept="image/*" onChange={onUpload} disabled={uploading} style={{display:"none"}}/>
+            </label>
+          </div>
         </div>
         {err && <div style={{color:"#ff6b5b",fontSize:12,marginTop:10}}>{err}</div>}
       </Card>
+      {comparing && (()=>{
+        const withUrl = photos.filter(p=>p.url);
+        const before = withUrl.find(p=>p.id===beforeId) || withUrl[withUrl.length-1];
+        const after  = withUrl.find(p=>p.id===afterId)  || withUrl[0];
+        const dateOf = (p)=> p ? (p.taken_on||(p.created_at||"").slice(0,10)) : "";
+        const sel = { background:S.surface2, border:"1px solid "+S.border, color:S.text, padding:"8px 10px", fontSize:12, outline:"none" };
+        return (
+          <Card>
+            <div style={{display:"flex",gap:16,flexWrap:"wrap",marginBottom:14}}>
+              <div><div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Before</div>
+                <select value={before?.id||""} onChange={e=>setBeforeId(e.target.value)} style={sel}>
+                  {withUrl.map(p=><option key={p.id} value={p.id}>{dateOf(p)}</option>)}
+                </select></div>
+              <div><div style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted,marginBottom:4}}>After</div>
+                <select value={after?.id||""} onChange={e=>setAfterId(e.target.value)} style={sel}>
+                  {withUrl.map(p=><option key={p.id} value={p.id}>{dateOf(p)}</option>)}
+                </select></div>
+            </div>
+            <div style={{position:"relative",width:"100%",maxWidth:460,height:520,margin:"0 auto",overflow:"hidden",border:"1px solid "+S.border,background:S.bg}}>
+              <img src={after?.url} alt="after" style={{position:"absolute",inset:0,width:"100%",height:"100%",objectFit:"cover"}}/>
+              <div style={{position:"absolute",inset:0,clipPath:`inset(0 ${100-pos}% 0 0)`}}>
+                <img src={before?.url} alt="before" style={{width:"100%",height:"100%",objectFit:"cover"}}/>
+              </div>
+              <div style={{position:"absolute",top:0,bottom:0,left:pos+"%",width:2,background:S.neon,pointerEvents:"none"}}/>
+              <span style={{position:"absolute",top:8,left:8,fontSize:10,fontWeight:700,letterSpacing:1,textTransform:"uppercase",background:"rgba(0,0,0,.6)",color:"#fff",padding:"3px 7px"}}>Before · {dateOf(before)}</span>
+              <span style={{position:"absolute",top:8,right:8,fontSize:10,fontWeight:700,letterSpacing:1,textTransform:"uppercase",background:"rgba(0,0,0,.6)",color:"#fff",padding:"3px 7px"}}>After · {dateOf(after)}</span>
+            </div>
+            <input type="range" min={0} max={100} value={pos} onChange={e=>setPos(Number(e.target.value))}
+              style={{width:"100%",maxWidth:460,display:"block",margin:"14px auto 0",accentColor:S.accent,cursor:"ew-resize"}}/>
+          </Card>
+        );
+      })()}
       {loading ? <div className="spinner" style={{margin:"40px auto"}}/> :
         photos.length===0 ? <Card style={{textAlign:"center",padding:40,color:S.muted}}>No photos yet. Upload your first to start your visual timeline.</Card> :
         <>
@@ -2223,6 +2279,42 @@ function ProgramHabits({ profile }) {
   );
 }
 
+// On-demand AI recap of the last 30 days. Calls /api/summary with the user's
+// JWT; the endpoint verifies the caller and generates from their logs. Shared by
+// the coaching Progress page and the program-only ProgramProgress page.
+function AISummary({ profile }) {
+  const [state, setState] = useState("idle");   // idle | loading | done | error
+  const [text, setText] = useState("");
+  const [err, setErr] = useState("");
+  const run = async () => {
+    setState("loading"); setErr("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/summary", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ client_id: profile.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not generate a summary.");
+      setText(json.summary); setState("done");
+    } catch (e) { setErr(e.message); setState("error"); }
+  };
+  return (
+    <Card>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: text ? 12 : 0 }}>
+        <div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>AI 30-Day Recap</div>
+          <div style={{ fontSize: 11, color: S.muted }}>A quick read on your last month, generated from your logs.</div>
+        </div>
+        <Btn onClick={run} disabled={state === "loading"}>{state === "loading" ? "Generating..." : text ? "Regenerate" : "Generate recap"}</Btn>
+      </div>
+      {err && <div style={{ color: "#ff6b5b", fontSize: 12 }}>{err}</div>}
+      {text && <div style={{ fontSize: 13.5, color: S.text, opacity: 0.92, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{text}</div>}
+    </Card>
+  );
+}
+
 function ProgramProgress({ profile }) {
   const [tab, setTab] = useState("body");
   const [daily, setDaily] = useState([]);
@@ -2272,6 +2364,7 @@ function ProgramProgress({ profile }) {
           <Stat label="Habit Streak" value={habitStreak} unit="days" />
         </div>
       </Card>
+      <AISummary profile={profile} />
       <div style={{ display: "flex", borderBottom: "1px solid " + S.border, margin: "8px 0 24px", flexWrap: "wrap" }}>
         {[["body", "Body"], ["strength", "Strength"], ["habits", "Habits"], ["photos", "Photos"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} style={ts(id)}>{label}</button>
@@ -2412,6 +2505,22 @@ function Resources() {
           )}
         </DayFolder>
       ))}
+
+      <div style={{ marginTop: 28 }}>
+        <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, margin: "0 2px 12px" }}>🚀 On the Roadmap · Coming Soon</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
+          {ROADMAP_ITEMS.map(([icon, title, body]) => (
+            <Card key={title} style={{ marginBottom: 0, opacity: 0.92 }}>
+              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+                <div style={{ fontSize: 22 }}>{icon}</div>
+                <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted }}>Coming soon</span>
+              </div>
+              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+              <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.6 }}>{body}</div>
+            </Card>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -3337,7 +3446,7 @@ function ClientsPanel() {
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -3401,6 +3510,7 @@ function ClientsPanel() {
       client_type: c.client_type || "coaching",
       dashboard_url: c.dashboard_url || "",
       goal: c.goal || "",
+      access_until: c.access_until || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     if(c) setCoachMsg(c.coach_message || "");
@@ -3416,6 +3526,7 @@ function ClientsPanel() {
       client_type: settings.client_type,
       dashboard_url: settings.dashboard_url.trim() || null,
       goal: settings.goal.trim() || null,
+      access_until: settings.access_until || null,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -3667,6 +3778,10 @@ function ClientsPanel() {
                   style={{marginTop:8,padding:"6px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:S.muted}}>
                   {resettingGoal?"Resetting...":"↺ Reset to Notion"}
                 </button>
+              </Fld>
+              <Fld label="Access Until">
+                <Inp type="date" value={settings.access_until} onChange={e=>setSettings(p=>({...p,access_until:e.target.value}))}/>
+                <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Date this client's access ends — set it when you sell a fixed term. After this date they see an "access ended" screen. Leave blank for unlimited.</div>
               </Fld>
             </div>
             <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
@@ -4076,6 +4191,125 @@ function TemplatesPanel() {
 }
 
 // ---------------------------------------------------------------------------
+// COACH — ONBOARDING ASSESSMENTS (pre-assess a client before building a program)
+// ---------------------------------------------------------------------------
+// Coach-only, keyed by email so it can be filled before the client signs up. On
+// signup the coach matches it by email; the program generator folds it into the
+// prompt. Never visible to the client.
+const ASSESSMENT_TEXT = [
+  ["strengths", "Strengths", "What they already do well — movement quality, work ethic, strong lifts, consistency."],
+  ["weaknesses", "Weaknesses / Limitations", "Weak points, imbalances, mobility gaps, conditioning gaps."],
+  ["injuries", "Injuries & Health Notes", "Current or past injuries, pain, medical flags to program around."],
+  ["training_history", "Training History", "Experience, past programs, what's worked and what hasn't."],
+  ["recovery_lifestyle", "Recovery & Lifestyle", "Sleep, stress, job demands, nutrition habits, schedule."],
+  ["goal_focus", "Goal & Focus", "Primary goal, timeline, what success looks like for them."],
+  ["notes", "Coach Notes", "Anything else worth capturing at onboarding."],
+];
+const BLANK_ASSESSMENT = { email:"", nervous_system_recruitment:5, muscular_density_to_size:5, metabolic_work_capacity:5, strengths:"", weaknesses:"", injuries:"", training_history:"", recovery_lifestyle:"", goal_focus:"", notes:"" };
+
+function AssessmentsPanel() {
+  const [items, setItems] = useState([]);
+  const [profiles, setProfiles] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(null);   // null | "new" | email
+  const [form, setForm] = useState(BLANK_ASSESSMENT);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState(null);
+  const set = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const load = async()=>{
+    const [{data:a},{data:p}] = await Promise.all([
+      supabase.from("client_assessments").select("*").order("updated_at",{ascending:false}),
+      supabase.from("profiles").select("email,name").neq("role","coach"),
+    ]);
+    setItems(a||[]); setProfiles(p||[]); setLoading(false);
+  };
+  useEffect(()=>{load();},[]);
+
+  const startNew = ()=>{ setEditing("new"); setForm(BLANK_ASSESSMENT); setMsg(null); };
+  const startEdit = (a)=>{ setEditing(a.email); setForm({...BLANK_ASSESSMENT,...a}); setMsg(null); };
+  const cancel = ()=>{ setEditing(null); setForm(BLANK_ASSESSMENT); };
+
+  const save = async()=>{
+    const email = form.email.trim().toLowerCase();
+    if(!email){ setMsg({ok:false,text:"Client email is required."}); return; }
+    setSaving(true); setMsg(null);
+    const payload = {
+      email,
+      nervous_system_recruitment: form.nervous_system_recruitment,
+      muscular_density_to_size: form.muscular_density_to_size,
+      metabolic_work_capacity: form.metabolic_work_capacity,
+      updated_at: new Date().toISOString(),
+    };
+    ASSESSMENT_TEXT.forEach(([k])=>{ payload[k] = (form[k]||"").trim() || null; });
+    const {error} = await supabase.from("client_assessments").upsert(payload,{onConflict:"email"});
+    setSaving(false);
+    if(error){ setMsg({ok:false,text:error.message}); return; }
+    setMsg({ok:true,text:"Assessment saved."}); setEditing(null); setForm(BLANK_ASSESSMENT); await load();
+  };
+  const remove = async(a)=>{
+    if(!window.confirm(`Delete assessment for ${a.email}?`)) return;
+    await supabase.from("client_assessments").delete().eq("email",a.email);
+    if(editing===a.email) cancel();
+    await load();
+  };
+
+  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
+  const nameFor = (email)=> profiles.find(p=>(p.email||"").toLowerCase()===(email||"").toLowerCase())?.name;
+  const signedUp = (email)=> profiles.some(p=>(p.email||"").toLowerCase()===(email||"").toLowerCase());
+  const taStyle = {width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 12px",fontSize:14,outline:"none",resize:"vertical"};
+
+  return (
+    <div>
+      <PageTitle title="Assessments" sub="Pre-assess a client before you build their program — coach-only, saved by email"/>
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
+        <Btn teal onClick={startNew}>+ New Assessment</Btn>
+      </div>
+      {msg && <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:"#ff6b5b"}}>{msg.text}</div>}
+      {editing && (
+        <Card>
+          <CardTitle>{editing==="new"?"New Assessment":"Edit Assessment"}</CardTitle>
+          <Fld label="Client Email"><Inp type="email" value={form.email} disabled={editing!=="new"} onChange={e=>set("email",e.target.value)} placeholder="client@email.com"/></Fld>
+          <div style={{fontSize:11,color:S.muted,marginBottom:16}}>Use the email they'll sign up with. Once they join, this shows on their client page and feeds the AI program generator.</div>
+          <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,margin:"6px 2px 10px"}}>V12 Three-System Scores</div>
+          <Sld label="Nervous System Recruitment" val={form.nervous_system_recruitment} min={1} max={10} onChange={v=>set("nervous_system_recruitment",v)}/>
+          <Sld label="Muscular Density-to-Size" val={form.muscular_density_to_size} min={1} max={10} onChange={v=>set("muscular_density_to_size",v)}/>
+          <Sld label="Metabolic Work Capacity" val={form.metabolic_work_capacity} min={1} max={10} onChange={v=>set("metabolic_work_capacity",v)}/>
+          <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,margin:"16px 2px 10px"}}>Onboarding Notes</div>
+          {ASSESSMENT_TEXT.map(([k,label,ph])=>(
+            <Fld key={k} label={label}><textarea rows={2} value={form[k]||""} onChange={e=>set(k,e.target.value)} placeholder={ph} style={taStyle}/></Fld>
+          ))}
+          <div style={{display:"flex",gap:10,marginTop:8}}>
+            <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save Assessment"}</Btn>
+            <button onClick={cancel} style={{padding:"10px 20px",fontSize:12,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
+          </div>
+        </Card>
+      )}
+      {items.length===0 && !editing && <Card style={{textAlign:"center",padding:40,color:S.muted}}>No assessments yet. Create one before you generate a program.</Card>}
+      {items.map(a=>(
+        <Card key={a.email}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
+                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{nameFor(a.email)||a.email}</div>
+                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:signedUp(a.email)?S.accent2:S.muted}}>{signedUp(a.email)?"Signed up":"Awaiting signup"}</span>
+              </div>
+              <div style={{fontSize:12,color:S.muted,marginTop:4}}>NS {a.nervous_system_recruitment??"—"} · MD {a.muscular_density_to_size??"—"} · MC {a.metabolic_work_capacity??"—"}{signedUp(a.email)?"":` · ${a.email}`}</div>
+              {a.strengths && <div style={{fontSize:12,color:S.muted,marginTop:6,lineHeight:1.6}}><b style={{color:S.text}}>Strengths:</b> {a.strengths}</div>}
+              {a.weaknesses && <div style={{fontSize:12,color:S.muted,marginTop:4,lineHeight:1.6}}><b style={{color:S.text}}>Weaknesses:</b> {a.weaknesses}</div>}
+            </div>
+            <div style={{display:"flex",gap:8,flexShrink:0}}>
+              <Btn sm teal onClick={()=>startEdit(a)}>Edit</Btn>
+              <Btn sm danger onClick={()=>remove(a)}>Delete</Btn>
+            </div>
+          </div>
+        </Card>
+      ))}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // COACH — RESOURCE / RECIPE LIBRARY MANAGEMENT
 // ---------------------------------------------------------------------------
 
@@ -4448,6 +4682,24 @@ function ClientDashboard({ profile, logout }) {
   const [page, setPage] = useState(programOnly ? "program" : "dashboard");
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
 
+  // Sold-access enforcement: once access_until has passed, the client is locked
+  // out of the portal (their data is preserved) until the coach extends it.
+  if (profile.access_until && profile.access_until < todayStr()) {
+    return (
+      <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
+        <TopBar profile={profile} isCoach={false} onLogout={logout} />
+        <main className="main-content" style={{ padding: "28px 32px", maxWidth: 680, margin: "0 auto" }}>
+          <Card style={{ textAlign: "center", padding: 48, marginTop: 40 }}>
+            <div style={{ fontSize: 36, marginBottom: 14 }}>🔒</div>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, marginBottom: 10 }}>Your access has ended</div>
+            <div style={{ color: S.muted, fontSize: 14, lineHeight: 1.7, maxWidth: 440, margin: "0 auto 22px" }}>Your access ended on {profile.access_until}. Reach out to renew and pick up right where you left off — all your history is saved.</div>
+            <Btn onClick={logout}>Log out</Btn>
+          </Card>
+        </main>
+      </div>
+    );
+  }
+
   // One-time welcome gate on first login; marks the profile so it never reappears.
   // An optional target page lets the welcome drop the user straight into the
   // Library (Getting Started). Guard the type — the plain "Enter" Btn passes a
@@ -4491,6 +4743,7 @@ function CoachDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
       {page === "dashboard" && <CoachHome setPage={setPage} />}
       {page === "clients" && <ClientsPanel />}
+      {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}
       {page === "library" && <ResourcesPanel />}
       {page === "progress" && <CoachProgress />}
