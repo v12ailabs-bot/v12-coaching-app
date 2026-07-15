@@ -870,11 +870,12 @@ function TopBar({ profile, isCoach, onLogout }) {
 function Sidebar({ isCoach, programOnly, page, setPage }) {
   const isMobile = useIsMobile();
   // Program-only clients get the self-guided portal: their plan, nutrition,
-  // workout logging, and the resource hub — no check-in prompts or habit tracking.
+  // workout logging, a solo habit tracker + progress view, and the resource hub —
+  // no coach touchpoints and no check-in prompts.
   // `short` labels are used in the cramped mobile bottom bar (clients have 9 tabs;
   // the full labels overlap at that width).
   const clientNav = programOnly
-    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
+    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"habits",icon:"🎯",label:"Daily Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
@@ -1119,9 +1120,9 @@ function ClientWelcome({ profile, onEnter }) {
   const programOnly = profile.client_type === "program_only";
   const next = programOnly
     ? [
-        ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
+        ["📋", "Program incoming", "A hybrid program tailored to your V12 assessment is on its way."],
         ["🥗", "Nutrition plan", "Macro targets and meal guidance to fuel the work."],
-        ["🏋", "Log your training", "Track your sets and lifts as you work through the program, plus a full resource library."],
+        ["🎯", "Track it yourself", "Log workouts, tick off daily habits, and watch your own progress — plus a full resource library."],
       ]
     : [
         ["📋", "Program incoming", "Your coach is building a hybrid program tailored to your V12 assessment."],
@@ -2058,6 +2059,252 @@ function Habits({ profile }) {
 }
 
 // ---------------------------------------------------------------------------
+// PROGRAM-ONLY — SELF-GUIDED HABITS + PROGRESS (no coach, client-only)
+// ---------------------------------------------------------------------------
+// Program-only clients have no coach and no check-ins. Their daily habits and
+// body metrics are stored on their own daily_checkins row (habit_flags jsonb +
+// weight/waist), which they can read/write under existing RLS. Strength PRs and
+// photos reuse the shared StrengthTab / ProgressPhotos components.
+const PROGRAM_HABITS = [
+  { key: "water",   label: "Water",   hint: "Hit your water goal" },
+  { key: "protein", label: "Protein", hint: "Hit your protein target" },
+  { key: "sleep",   label: "Sleep",   hint: "7+ hours" },
+  { key: "workout", label: "Workout", hint: "Trained today" },
+  { key: "steps",   label: "Steps",   hint: "Hit your step goal" },
+];
+
+// Consecutive days (back from today, or yesterday if today is blank) for which
+// `ok(date)` holds. Shared by the workout and habit streaks.
+function streakBack(ok) {
+  const d = new Date();
+  if (!ok(d.toISOString().split("T")[0])) d.setDate(d.getDate() - 1);
+  let s = 0;
+  while (ok(d.toISOString().split("T")[0])) { s++; d.setDate(d.getDate() - 1); }
+  return s;
+}
+
+function ProgramHabits({ profile }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [weight, setWeight] = useState("");
+  const [waist, setWaist] = useState("");
+  const [savingBody, setSavingBody] = useState(false);
+  const [savedBody, setSavedBody] = useState(false);
+  const today = todayStr();
+
+  const load = useCallback(async () => {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 29);
+    const cut = cutoff.toISOString().split("T")[0];
+    const { data } = await supabase.from("daily_checkins")
+      .select("date,habit_flags,weight,waist").eq("client_id", profile.id).gte("date", cut).order("date");
+    const list = data || [];
+    setRows(list);
+    const t = list.find((r) => r.date === today);
+    setWeight(t?.weight ?? "");
+    setWaist(t?.waist ?? "");
+    setLoading(false);
+  }, [profile.id, today]);
+  useEffect(() => { load(); }, [load]);
+
+  const flagsFor = (date) => rows.find((r) => r.date === date)?.habit_flags || {};
+  const todayFlags = flagsFor(today);
+
+  const toggle = async (key) => {
+    const next = { ...flagsFor(today), [key]: !flagsFor(today)[key] };
+    setRows((prev) => {
+      const i = prev.findIndex((r) => r.date === today);
+      if (i === -1) return [...prev, { date: today, habit_flags: next }];
+      const copy = [...prev]; copy[i] = { ...copy[i], habit_flags: next }; return copy;
+    });
+    await supabase.from("daily_checkins").upsert(
+      { client_id: profile.id, date: today, habit_flags: next },
+      { onConflict: "client_id,date" }
+    );
+  };
+
+  const saveBody = async () => {
+    setSavingBody(true);
+    await supabase.from("daily_checkins").upsert(
+      { client_id: profile.id, date: today,
+        weight: weight === "" ? null : parseFloat(weight),
+        waist: waist === "" ? null : parseFloat(waist) },
+      { onConflict: "client_id,date" }
+    );
+    setSavingBody(false); setSavedBody(true); setTimeout(() => setSavedBody(false), 2000);
+    load();
+  };
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const inS = { background: S.bg, border: "1px solid " + S.border, color: S.text, padding: "10px 12px", fontSize: 13, width: 120, outline: "none" };
+  const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return d.toISOString().split("T")[0]; });
+  const doneOn = (key, date) => !!flagsFor(date)[key];
+  const doneToday = PROGRAM_HABITS.filter((h) => todayFlags[h.key]).length;
+  const pct = Math.round((doneToday / PROGRAM_HABITS.length) * 100);
+  const streak = streakBack((date) => PROGRAM_HABITS.every((h) => doneOn(h.key, date)));
+
+  return (
+    <div>
+      <PageTitle title="Daily Habits" sub="Small wins, stacked daily — just for you" />
+      <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 22 }}>
+        <Stat label="Done Today" value={doneToday} unit={"/" + PROGRAM_HABITS.length} />
+        <Stat label="Today's Completion" value={pct} unit="%" />
+        <Stat label="Perfect-Day Streak" value={streak} unit="days" />
+      </div>
+      <Card>
+        <CardTitle>Today · {today}</CardTitle>
+        {PROGRAM_HABITS.map((h) => {
+          const done = !!todayFlags[h.key];
+          return (
+            <div key={h.key} onClick={() => toggle(h.key)}
+              style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 4px", borderBottom: "1px solid " + S.border, cursor: "pointer" }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, background: done ? S.neon : "transparent", color: done ? "#0A0A0B" : S.muted, border: done ? "none" : "1px solid " + S.border }}>
+                {done ? "✓" : ""}
+              </div>
+              <span style={{ fontSize: 14, color: done ? S.text : S.muted }}>{h.label}</span>
+              <span style={{ marginLeft: "auto", fontSize: 11, color: S.muted }}>{h.hint}</span>
+            </div>
+          );
+        })}
+      </Card>
+      <Card>
+        <CardTitle>Body Metrics · Today</CardTitle>
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <Fld label="Bodyweight (lb)"><input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} style={inS} /></Fld>
+          <Fld label="Waist (in)"><input type="number" value={waist} onChange={(e) => setWaist(e.target.value)} style={inS} /></Fld>
+          <div style={{ marginBottom: 16, display: "flex", alignItems: "center", gap: 12 }}>
+            <Btn onClick={saveBody} disabled={savingBody}>{savingBody ? "Saving..." : "Save"}</Btn>
+            {savedBody && <span style={{ color: S.accent2, fontSize: 12, fontWeight: 600 }}>Saved!</span>}
+          </div>
+        </div>
+      </Card>
+      <Card>
+        <CardTitle>Last 14 days</CardTitle>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", minWidth: 540 }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: S.muted }}></th>
+                {days14.map((d) => (<th key={d} style={{ padding: "6px 4px", fontSize: 9, color: S.muted, fontWeight: 600 }}>{d.slice(5)}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {PROGRAM_HABITS.map((h) => (
+                <tr key={h.key}>
+                  <td style={{ padding: "6px 10px", fontSize: 12, whiteSpace: "nowrap", color: S.text }}>{h.label}</td>
+                  {days14.map((d) => (
+                    <td key={d} style={{ padding: "5px 4px", textAlign: "center" }}>
+                      <div style={{ width: 16, height: 16, borderRadius: 3, margin: "0 auto", background: doneOn(h.key, d) ? S.neon : S.surface2, border: "1px solid " + S.border }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function ProgramProgress({ profile }) {
+  const [tab, setTab] = useState("body");
+  const [daily, setDaily] = useState([]);
+  const [workoutDates, setWorkoutDates] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const { data: d } = await supabase.from("daily_checkins")
+        .select("date,weight,waist,habit_flags").eq("client_id", profile.id).order("date");
+      const { data: logs } = await supabase.from("workout_logs")
+        .select("date").eq("client_id", profile.id);
+      setDaily(d || []);
+      setWorkoutDates([...new Set((logs || []).map((l) => l.date))].sort());
+      setLoading(false);
+    })();
+  }, [profile.id]);
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const weightSeries = daily.filter((d) => d.weight != null).map((d) => ({ date: d.date, weight: d.weight }));
+  const waistSeries = daily.filter((d) => d.waist != null).map((d) => ({ date: d.date, waist: d.waist }));
+  const lastWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].weight : null;
+  const workoutsCompleted = workoutDates.length;
+
+  const workoutSet = new Set(workoutDates);
+  const workoutStreak = streakBack((date) => workoutSet.has(date));
+
+  const flagsByDate = {}; daily.forEach((r) => { if (r.habit_flags) flagsByDate[r.date] = r.habit_flags; });
+  const habitStreak = streakBack((date) => { const f = flagsByDate[date]; return !!f && PROGRAM_HABITS.every((h) => f[h.key]); });
+
+  const flaggedDays = daily.filter((r) => r.habit_flags);
+  const habitRate = (key) => (flaggedDays.length ? Math.round((flaggedDays.filter((r) => r.habit_flags[key]).length / 30) * 100) : 0);
+
+  const ts = (id) => ({ padding: "10px 20px", fontSize: 11, letterSpacing: "1.5px", textTransform: "uppercase", fontWeight: 600, cursor: "pointer", color: tab === id ? S.accent : S.muted, background: "none", border: "none", borderBottom: tab === id ? "2px solid " + S.accent : "2px solid transparent" });
+  const empty = <Card style={{ textAlign: "center", padding: 40, color: S.muted }}>No data yet. Log it on your Daily Habits page.</Card>;
+
+  return (
+    <div>
+      <PageTitle title="Progress" sub="Your data over time" />
+      <Card style={{ borderLeft: "3px solid " + S.neon }}>
+        <CardTitle>Progress Summary</CardTitle>
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+          <Stat label="Recent Weight" value={lastWeight ?? "—"} unit={lastWeight ? "lb" : ""} />
+          <Stat label="Workouts Completed" value={workoutsCompleted} unit="" />
+          <Stat label="Workout Streak" value={workoutStreak} unit="days" />
+          <Stat label="Habit Streak" value={habitStreak} unit="days" />
+        </div>
+      </Card>
+      <div style={{ display: "flex", borderBottom: "1px solid " + S.border, margin: "8px 0 24px", flexWrap: "wrap" }}>
+        {[["body", "Body"], ["strength", "Strength"], ["habits", "Habits"], ["photos", "Photos"]].map(([id, label]) => (
+          <button key={id} onClick={() => setTab(id)} style={ts(id)}>{label}</button>
+        ))}
+      </div>
+
+      {tab === "body" && (weightSeries.length === 0 && waistSeries.length === 0 ? empty : (
+        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          <CC title="Bodyweight Trend" sub="From your daily log">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={weightSeries.slice(-30)}>
+                <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={6} />
+                <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} />
+                <Tooltip {...TT} />
+                <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{ r: 2 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </CC>
+          <CC title="Waist Trend" sub="From your daily log">
+            {waistSeries.length === 0
+              ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: S.muted, fontSize: 13 }}>Log your waist to see this chart</div>
+              : <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={waistSeries.slice(-30)}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={6} />
+                    <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} />
+                    <Tooltip {...TT} />
+                    <Line type="monotone" dataKey="waist" stroke={S.accent2} strokeWidth={2} dot={{ r: 2 }} />
+                  </LineChart>
+                </ResponsiveContainer>}
+          </CC>
+        </div>
+      ))}
+
+      {tab === "strength" && <StrengthTab profile={profile} />}
+
+      {tab === "habits" && (flaggedDays.length === 0 ? empty : (
+        <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))", gap: 16 }}>
+          {PROGRAM_HABITS.map((h) => (<Stat key={h.key} label={h.label + " (30d)"} value={habitRate(h.key)} unit="%" />))}
+        </div>
+      ))}
+
+      {tab === "photos" && <ProgressPhotos profile={profile} />}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // CLIENT — RESOURCE / RECIPE LIBRARY (read-only browse)
 // ---------------------------------------------------------------------------
 function Resources({ readOnly = true }) {
@@ -2336,6 +2583,9 @@ function CoachHome({ setPage }) {
   const daysSinceDate = (d)=> Math.round((new Date(today) - new Date(d)) / 86400000);
 
   const assessed = clients.map(c=>{
+    // Program-only clients have no coach and no check-ins, so the check-in-based
+    // attention flags don't apply — never surface them here.
+    if(c.client_type==="program_only") return {client:c, adh:{score:0}, last:null, since:null, flags:[], severity:0, programOnly:true};
     const ch = byClient[c.id] || [];
     const adh = adherenceFrom(ch, 30);
     const last = ch.length ? ch[ch.length-1].date : null;
@@ -2361,7 +2611,8 @@ function CoachHome({ setPage }) {
   });
 
   const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
-  const avgAdh = clients.length ? Math.round(assessed.reduce((s,a)=>s+a.adh.score,0)/clients.length) : 0;
+  const coached = assessed.filter(a=>!a.programOnly);
+  const avgAdh = coached.length ? Math.round(coached.reduce((s,a)=>s+a.adh.score,0)/coached.length) : 0;
 
   // Weekly check-in messages/flags the coach should respond to, newest first.
   const nameOf = (id)=>{ const c=clients.find(x=>x.id===id); return c?(c.name||c.email):"Client"; };
@@ -3944,7 +4195,7 @@ function ClientProgram({ profile }) {
   return (
     <div>
       <PageTitle title="Training Plan" sub="Your current weekly program" />
-      <CoachMessage profile={profile} />
+      {profile.client_type !== "program_only" && <CoachMessage profile={profile} />}
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -3959,7 +4210,7 @@ function ClientProgram({ profile }) {
         <Card style={{ textAlign: "center", padding: 48 }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>🏋</div>
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No program yet</div>
-          <div style={{ color: S.muted, fontSize: 13 }}>Your coach will generate your program soon.</div>
+          <div style={{ color: S.muted, fontSize: 13 }}>{profile.client_type === "program_only" ? "Your program will appear here once it's ready." : "Your coach will generate your program soon."}</div>
         </Card>
       ) : (
         dayGroups.map(({ day, exercises: dayExs, label }) => (
@@ -4128,10 +4379,10 @@ function ClientDashboard({ profile, logout }) {
       {page === "program" && <ClientProgram profile={profile} />}
       {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
-      {page === "progress" && !programOnly && <Progress profile={profile} />}
+      {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
-      {page === "habits" && !programOnly && <Habits profile={profile} />}
+      {page === "habits" && (programOnly ? <ProgramHabits profile={profile} /> : <Habits profile={profile} />)}
       {page === "resources" && <Resources />}
     </Shell>
   );
