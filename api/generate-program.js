@@ -45,16 +45,43 @@ export default async function handler(req, res) {
     // history stay keyed to this client's OWN id (profile.id) — always separate.
     const trainingOwnerId = profile.shared_program_owner_id || profile.id;
 
-    // Resolve the V12 assessment: a coach-set profile score wins over Notion.
+    // Coach's in-app onboarding assessment (keyed by email), if one exists. This
+    // is the coach's own evaluation and takes priority over inference.
+    const { data: coachAssessment } = await supabaseAdmin
+      .from("client_assessments")
+      .select("*")
+      .eq("email", client_email.toLowerCase())
+      .maybeSingle();
+
+    // Resolve the V12 assessment: a coach-set profile score wins, then the
+    // in-app coach assessment, then Notion.
     const assessment = {
       nervous_system_recruitment:
-        profile.nervous_system_recruitment ?? client.nervous_system_recruitment,
+        profile.nervous_system_recruitment ?? coachAssessment?.nervous_system_recruitment ?? client.nervous_system_recruitment,
       muscular_density_to_size:
-        profile.muscular_density_to_size ?? client.muscular_density_to_size,
+        profile.muscular_density_to_size ?? coachAssessment?.muscular_density_to_size ?? client.muscular_density_to_size,
       metabolic_work_capacity:
-        profile.metabolic_work_capacity ?? client.metabolic_work_capacity,
+        profile.metabolic_work_capacity ?? coachAssessment?.metabolic_work_capacity ?? client.metabolic_work_capacity,
     };
-    const assessed = { ...client, ...assessment };
+
+    // Free-text coach assessment, condensed into a prompt block the generator
+    // treats as authoritative (see clientProfileBlock/generateTrainingPlan).
+    const coachAssessmentText = coachAssessment
+      ? [
+          ["Strengths", coachAssessment.strengths],
+          ["Weaknesses/limitations", coachAssessment.weaknesses],
+          ["Injuries/health", coachAssessment.injuries],
+          ["Training history", coachAssessment.training_history],
+          ["Recovery/lifestyle", coachAssessment.recovery_lifestyle],
+          ["Goal/focus", coachAssessment.goal_focus],
+          ["Coach notes", coachAssessment.notes],
+        ]
+          .filter(([, v]) => (v || "").trim())
+          .map(([k, v]) => `- ${k}: ${v}`)
+          .join("\n")
+      : null;
+
+    const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null };
 
     // 3. Load the coach-selected template from the Notion program library and
     //    read its session structure as the AI framework. Falls back to the
