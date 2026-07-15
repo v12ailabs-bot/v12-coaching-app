@@ -1518,7 +1518,7 @@ function Progress({ profile, coachView }) {
         <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
-      {!coachView && <AISummary profile={profile}/>}
+      <AISummary profile={profile}/>
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],...(coachView?[["notes","Check-in Notes"]]:[]),["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
@@ -1745,14 +1745,14 @@ const CHECKIN_QA = [
 ];
 function CheckinNotes({ weekly }) {
   if(!weekly.length) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins yet.</Card>;
-  // Most recent first, and open the latest by default.
+  // Most recent first; every week stays collapsed until the coach clicks it.
   const ordered = [...weekly].reverse();
   return (
     <div>
-      {ordered.map((w,idx)=>{
+      {ordered.map((w)=>{
         const answered = CHECKIN_QA.filter(([k])=>String(w[k]||"").trim());
         return (
-          <DayFolder key={w.id||w.week} title={w.week} meta={w.date} defaultOpen={idx===0}>
+          <DayFolder key={w.id||w.week} title={w.week} meta={w.date} defaultOpen={false}>
             {answered.length===0
               ? <div style={{color:S.muted,fontSize:13}}>No written notes for this week (numbers only).</div>
               : answered.map(([k,label])=>(
@@ -2506,20 +2506,28 @@ function Resources() {
         </DayFolder>
       ))}
 
-      <div style={{ marginTop: 28 }}>
-        <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, margin: "0 2px 12px" }}>🚀 On the Roadmap · Coming Soon</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
-          {ROADMAP_ITEMS.map(([icon, title, body]) => (
-            <Card key={title} style={{ marginBottom: 0, opacity: 0.92 }}>
-              <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
-                <div style={{ fontSize: 22 }}>{icon}</div>
-                <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted }}>Coming soon</span>
-              </div>
-              <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
-              <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.6 }}>{body}</div>
-            </Card>
-          ))}
-        </div>
+      <RoadmapSection />
+    </div>
+  );
+}
+
+// "Coming soon" teaser shown at the bottom of both the client Library and the
+// coach Library so the coach previews exactly what clients see.
+function RoadmapSection() {
+  return (
+    <div style={{ marginTop: 28 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, margin: "0 2px 12px" }}>🚀 On the Roadmap · Coming Soon</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(240px,1fr))", gap: 14 }}>
+        {ROADMAP_ITEMS.map(([icon, title, body]) => (
+          <Card key={title} style={{ marginBottom: 0, opacity: 0.92 }}>
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 22 }}>{icon}</div>
+              <span style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted }}>Coming soon</span>
+            </div>
+            <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>{title}</div>
+            <div style={{ fontSize: 12.5, color: S.muted, lineHeight: 1.6 }}>{body}</div>
+          </Card>
+        ))}
       </div>
     </div>
   );
@@ -4447,6 +4455,7 @@ function ResourcesPanel() {
           </DayFolder>
         ));
       })()}
+      <RoadmapSection />
     </div>
   );
 }
