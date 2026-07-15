@@ -297,7 +297,11 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 // their daily log, body metrics, and logged workouts. Returns prose (not JSON).
 export async function generateCheckinSummary({ profile = {}, daily = [], logs = [] }) {
   const weights = daily.filter((d) => d.weight != null);
-  const workoutDays = new Set(logs.map((l) => l.date)).size;
+  // Workouts = distinct days with a logged session OR a daily check-in marked
+  // "completed" (the client's "Training Today" self-report).
+  const workoutDates = new Set(logs.map((l) => l.date));
+  daily.forEach((d) => { if (d.workout === "completed") workoutDates.add(d.date); });
+  const workoutDays = workoutDates.size;
   const habitDays = daily.filter((d) => d.habit_flags).length;
   const data = {
     goal: profile.goal || "general fitness",

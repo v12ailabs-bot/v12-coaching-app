@@ -1518,7 +1518,7 @@ function Progress({ profile, coachView }) {
         <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
       </div>
-      <AISummary profile={profile}/>
+      {coachView && <ClientSummaries profile={profile}/>}
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],...(coachView?[["notes","Check-in Notes"]]:[]),["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
@@ -2279,15 +2279,29 @@ function ProgramHabits({ profile }) {
   );
 }
 
-// On-demand AI recap of the last 30 days. Calls /api/summary with the user's
-// JWT; the endpoint verifies the caller and generates from their logs. Shared by
-// the coaching Progress page and the program-only ProgramProgress page.
-function AISummary({ profile }) {
-  const [state, setState] = useState("idle");   // idle | loading | done | error
-  const [text, setText] = useState("");
+// "YYYY-MM" -> "July 2026"
+const MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const monthLabel = (period) => { const [y,m] = (period||"").split("-"); return m ? `${MONTH_NAMES[+m-1]} ${y}` : period; };
+
+// Coach-only AI monthly recaps for one client. The coach generates a recap from
+// the client's last 30 days; /api/summary saves it per client per month, so this
+// is an individual, persisted month-to-month history (never shared across
+// clients). Reset on profile.id change so switching clients never shows stale text.
+function ClientSummaries({ profile }) {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [gen, setGen] = useState("idle");   // idle | loading | error
   const [err, setErr] = useState("");
-  const run = async () => {
-    setState("loading"); setErr("");
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    const { data } = await supabase.from("client_summaries").select("*").eq("client_id", profile.id).order("period", { ascending: false });
+    setRows(data || []); setLoading(false);
+  }, [profile.id]);
+  useEffect(() => { setErr(""); setGen("idle"); load(); }, [load]);
+
+  const generate = async () => {
+    setGen("loading"); setErr("");
     try {
       const { data: { session } } = await supabase.auth.getSession();
       const res = await fetch("/api/summary", {
@@ -2297,20 +2311,28 @@ function AISummary({ profile }) {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error || "Could not generate a summary.");
-      setText(json.summary); setState("done");
-    } catch (e) { setErr(e.message); setState("error"); }
+      setGen("idle"); await load();
+    } catch (e) { setErr(e.message); setGen("error"); }
   };
+
   return (
     <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: text ? 12 : 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
         <div>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>AI 30-Day Recap</div>
-          <div style={{ fontSize: 11, color: S.muted }}>A quick read on your last month, generated from your logs.</div>
+          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>AI Monthly Recaps</div>
+          <div style={{ fontSize: 11, color: S.muted }}>Generated from this client's last 30 days of logs. Saved by month — one recap per month.</div>
         </div>
-        <Btn onClick={run} disabled={state === "loading"}>{state === "loading" ? "Generating..." : text ? "Regenerate" : "Generate recap"}</Btn>
+        <Btn onClick={generate} disabled={gen === "loading"}>{gen === "loading" ? "Generating..." : "Generate this month"}</Btn>
       </div>
-      {err && <div style={{ color: "#ff6b5b", fontSize: 12 }}>{err}</div>}
-      {text && <div style={{ fontSize: 13.5, color: S.text, opacity: 0.92, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{text}</div>}
+      {err && <div style={{ color: "#ff6b5b", fontSize: 12, marginBottom: 10 }}>{err}</div>}
+      {loading ? <div className="spinner" style={{ margin: "20px auto" }} /> :
+        rows.length === 0 ? <div style={{ color: S.muted, fontSize: 13 }}>No recaps yet. Generate this month's to start the history.</div> :
+        rows.map((r, idx) => (
+          <DayFolder key={r.id} title={monthLabel(r.period)} meta={(r.created_at || "").slice(0, 10)} defaultOpen={idx === 0}>
+            <div style={{ fontSize: 13.5, color: S.text, opacity: 0.92, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{r.content}</div>
+          </DayFolder>
+        ))
+      }
     </Card>
   );
 }
@@ -2364,7 +2386,6 @@ function ProgramProgress({ profile }) {
           <Stat label="Habit Streak" value={habitStreak} unit="days" />
         </div>
       </Card>
-      <AISummary profile={profile} />
       <div style={{ display: "flex", borderBottom: "1px solid " + S.border, margin: "8px 0 24px", flexWrap: "wrap" }}>
         {[["body", "Body"], ["strength", "Strength"], ["habits", "Habits"], ["photos", "Photos"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} style={ts(id)}>{label}</button>
