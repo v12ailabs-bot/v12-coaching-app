@@ -732,6 +732,7 @@ const INTAKE_FIELDS = [
   { key: "homeEquipment", label: "If you train at home, what equipment do you have?", type: "text" },
   { key: "sessionLength", label: "Time available per session", type: "text" },
   { key: "age", label: "Age", type: "number" },
+  { key: "gender", label: "Gender", type: "select", options: ["Male", "Female", "Prefer not to say"] },
   { key: "currentWeight", label: "Current Weight (lb)", type: "number" },
   { key: "targetChange", label: "Target Change (lb)", type: "number" },
   { key: "activityLevel", label: "Daily Activity Level", type: "text" },
