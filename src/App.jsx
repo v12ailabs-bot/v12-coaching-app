@@ -887,12 +887,23 @@ function LoginScreen() {
         return;
       }
     }
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email, password,
       options: { data: { name, role: email === COACH_EMAIL ? "coach" : "client" } }
     });
     if (error) setError(error.message);
-    else { setSuccess("Account created! Please sign in."); setTab("signin"); }
+    else {
+      if (data?.user?.id) {
+        try {
+          await fetch("/api/link-lead", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, client_id: data.user.id }),
+          });
+        } catch { /* non-fatal — account creation already succeeded */ }
+      }
+      setSuccess("Account created! Please sign in."); setTab("signin");
+    }
     setLoading(false);
   };
 
@@ -5340,9 +5351,9 @@ function CRMPanel() {
               )}
               {(lead.status === "new" || lead.status === "applied") && (
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                  <Btn onClick={() => accept(lead)}>Accept</Btn>
+                  <Btn onClick={() => { if (window.confirm(`Accept ${lead.name || lead.email}?`)) accept(lead); }}>Accept</Btn>
                   {REJECT_STATUSES.map((s) => (
-                    <button key={s} onClick={() => reject(lead, s)}
+                    <button key={s} onClick={() => { if (window.confirm(`Mark ${lead.name || lead.email} as "${LEAD_STATUS_LABEL[s]}"?`)) reject(lead, s); }}
                       style={{ padding: "9px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}>
                       {LEAD_STATUS_LABEL[s]}
                     </button>
