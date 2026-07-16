@@ -1,4 +1,5 @@
 import { getClientFromNotion } from "./_lib/notion.js";
+import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
@@ -19,10 +20,12 @@ export default async function handler(req, res) {
   const nutritionOnly = scope === "nutrition";
 
   try {
-    // 1. Read client data from Notion.
-    const client = await getClientFromNotion(client_email);
+    // 1. Read client data from Notion, falling back to the in-app leads
+    //    table for clients who applied through the new intake form instead.
+    let client = await getClientFromNotion(client_email);
+    if (!client) client = await getClientFromLead(client_email);
     if (!client) {
-      return res.status(404).json({ error: `No client found in Notion for ${client_email}` });
+      return res.status(404).json({ error: `No intake found for ${client_email} (checked Notion and in-app leads)` });
     }
 
     // 2. Make sure the client has an app profile to attach the program to.
