@@ -192,6 +192,7 @@ Requirements for the output:
 - Across the week, ALL THREE pillars must appear.
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
+- Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
 
 OUTPUT FORMAT — respond with valid JSON only, no other text:
 {
@@ -209,6 +210,8 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
           "category": "Powerlifting | Bodybuilding | Power | Conditioning",
           "section": "string (session slot, e.g. Primary, Accessory, Conditioning)",
           "exercise_type": "Compound | Accessory | Circuit | Warmup",
+          "block_type": "straight_set | superset | circuit_for_time | timed_circuit | weighted_circuit",
+          "group_id": "string (exercises performed together as one block share this value)",
           "sets": number,
           "reps": "string",
           "is_bodyweight": boolean,
