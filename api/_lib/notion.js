@@ -144,6 +144,52 @@ async function findClientPage(databaseId, email) {
   return null;
 }
 
+// Writes a new page into the Notion Applications Database from an in-app
+// intake-form submission (IntakeForm in src/App.jsx), so applicants who apply
+// through the app also show up in the coach's existing Notion views.
+// Best-effort per field: fetches the live schema and only writes values for
+// columns Notion actually has (skips app-only fields like height/package
+// rather than failing the whole write). Returns null (not an error) if Notion
+// isn't configured or nothing ends up mappable.
+function wrapNotionValue(type, value) {
+  if (value == null || value === "") return null;
+  switch (type) {
+    case "title": return { title: [{ text: { content: String(value) } }] };
+    case "rich_text": return { rich_text: [{ text: { content: String(value) } }] };
+    case "email": return { email: String(value) };
+    case "number": { const n = Number(value); return Number.isFinite(n) ? { number: n } : null; }
+    case "select": return { select: { name: String(value) } };
+    case "multi_select": {
+      const names = Array.isArray(value) ? value : String(value).split(",").map((s) => s.trim()).filter(Boolean);
+      return names.length ? { multi_select: names.map((name) => ({ name })) } : null;
+    }
+    case "checkbox": return { checkbox: !!value };
+    case "url": return { url: String(value) };
+    case "date": return { date: { start: String(value) } };
+    default: return null; // formula/relation/status etc. -- not writable this way, skip
+  }
+}
+
+export async function createNotionApplication(fields) {
+  const databaseId = process.env.NOTION_DATABASE_ID;
+  if (!process.env.NOTION_API_KEY || !databaseId) return null;
+
+  const db = await notion.databases.retrieve({ database_id: databaseId });
+  const schemaProps = db.properties;
+
+  const properties = {};
+  for (const [key, columnName] of Object.entries(PROP)) {
+    const def = schemaProps[columnName];
+    if (!def || fields[key] == null) continue;
+    const wrapped = wrapNotionValue(def.type, fields[key]);
+    if (wrapped) properties[columnName] = wrapped;
+  }
+  if (!properties[PROP.email]) return null; // email is required to create a usable page
+
+  const page = await notion.pages.create({ parent: { database_id: databaseId }, properties });
+  return page.id;
+}
+
 // Fetches a client's intake data from Notion, normalized to a flat object.
 // Returns null if no matching page exists.
 export async function getClientFromNotion(email) {
