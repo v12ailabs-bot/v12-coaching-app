@@ -718,8 +718,13 @@ const INTAKE_FIELDS = [
   { key: "name", label: "Full Name", type: "text" },
   { key: "email", label: "Email", type: "email" },
   { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
-  { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: ["1-on-1 Coaching", "Program Only (self-guided)", "Not sure yet"] },
-  { key: "budget", label: "What's your monthly budget range?", type: "select", options: ["Under $100", "$100-$250", "$250-$500", "$500+", "Not sure yet"] },
+  { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: [
+    "Program Only — $97/month, includes app access",
+    "Standard Coaching — $250/month, 12-Week Transformation: $600 in full or $250/month x3 ($750 total)",
+    "1:1 Elite Performance — 12 Weeks: $1500 in full or $600/month x3 ($1800 total)",
+    "Local — Group PT Training (max 3 people): $300/month each",
+    "Local — 1-on-1 Premium: $400/month, 12 Weeks",
+  ] },
   { key: "goal", label: "Primary Goal", type: "text" },
   { key: "daysAvailable", label: "Days Available / Week", type: "text" },
   { key: "experienceLevel", label: "Training Experience", type: "text" },
@@ -5333,7 +5338,6 @@ function CRMPanel() {
             <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               {lead.height && <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Height: {lead.height}</div>}
               {lead.intake_data?.packageInterest && <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Package: <strong>{lead.intake_data.packageInterest}</strong></div>}
-              {lead.intake_data?.budget && <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Budget: <strong>{lead.intake_data.budget}</strong></div>}
               {lead.intake_data && (
                 <details style={{ marginBottom: 12 }}>
                   <summary style={{ fontSize: 12, color: S.muted, cursor: "pointer" }}>Full intake data</summary>
