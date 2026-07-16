@@ -720,7 +720,7 @@ const INTAKE_FIELDS = [
   { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
   { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: [
     "Program Only — $97/month, includes app access",
-    "Standard Coaching — $250/month, 12-Week Transformation: $600 in full or $250/month x3 ($750 total)",
+    "Standard Coaching — 12 Weeks: $750 in full or $250/month x3 ($750 total)",
     "1:1 Elite Performance — 12 Weeks: $1500 in full or $600/month x3 ($1800 total)",
     "Local — Group PT Training (max 3 people): $300/month each",
     "Local — 1-on-1 Premium: $400/month, 12 Weeks",
@@ -802,7 +802,21 @@ function IntakeForm({ onDone }) {
       intake_data: { ...form, currentInjuries, previousInjuries, painTriggers },
     });
     setSaving(false);
-    if (error) setError(error.message); else setDone(true);
+    if (error) { setError(error.message); return; }
+    setDone(true);
+    // Fire-and-forget: also create a page in the Notion Applications Database
+    // so applicants who apply through the app show up there too. Failure
+    // here doesn't affect the applicant -- their submission already saved.
+    const injuries = [
+      ...currentInjuries.map((v) => `Current: ${v}`),
+      ...previousInjuries.map((v) => `Previous: ${v}`),
+      ...painTriggers.map((v) => `Trigger: ${v}`),
+    ].join("; ");
+    fetch("/api/create-notion-application", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ...form, injuries }),
+    }).catch(() => {});
   };
 
   if (done) return (
