@@ -188,6 +188,8 @@ export default async function handler(req, res) {
             is_bodyweight: !!ex.is_bodyweight,
             notes: ex.notes || null,
             order_index: i,
+            block_type: ex.block_type || "straight_set",
+            group_id: ex.group_id != null ? String(ex.group_id) : null,
             source: "ai",
           });
         });

@@ -711,6 +711,127 @@ export default function App() {
 }
 
 
+// Field list mirrors the Notion Applications Database (api/_lib/notion.js PROP
+// map) plus the new required height field. Config-driven so adding/removing a
+// field doesn't require new JSX per field.
+const INTAKE_FIELDS = [
+  { key: "name", label: "Full Name", type: "text" },
+  { key: "email", label: "Email", type: "email" },
+  { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
+  { key: "goal", label: "Primary Goal", type: "text" },
+  { key: "daysAvailable", label: "Days Available / Week", type: "text" },
+  { key: "experienceLevel", label: "Training Experience", type: "text" },
+  { key: "equipment", label: "Where will you primarily train?", type: "text" },
+  { key: "homeEquipment", label: "If you train at home, what equipment do you have?", type: "text" },
+  { key: "sessionLength", label: "Time available per session", type: "text" },
+  { key: "age", label: "Age", type: "number" },
+  { key: "currentWeight", label: "Current Weight (lb)", type: "number" },
+  { key: "targetChange", label: "Target Change (lb)", type: "number" },
+  { key: "activityLevel", label: "Daily Activity Level", type: "text" },
+  { key: "sleepHours", label: "Average Sleep (hrs/night)", type: "number" },
+  { key: "trainingTenure", label: "How long have you trained consistently?", type: "text" },
+  { key: "nutritionConsistency", label: "Nutrition Consistency", type: "text" },
+  { key: "coachingStyle", label: "Coaching Style Preference", type: "text" },
+  { key: "commitmentLevel", label: "Commitment Level (1-10)", type: "number" },
+  { key: "confidence", label: "Confidence in following a 12-week program (1-10)", type: "number" },
+  { key: "pastBarriers", label: "What has prevented you from reaching your goal before?", type: "textarea" },
+  { key: "pastStruggles", label: "Past Struggles", type: "textarea" },
+  { key: "whyNow", label: "Why Now?", type: "textarea" },
+  { key: "dietaryPreference", label: "Dietary Preference", type: "text" },
+  { key: "allergies", label: "Allergies", type: "text" },
+  { key: "calorieTarget", label: "Calorie Target (optional)", type: "number" },
+  { key: "injuryFlags", label: "Injuries / Limitations (comma-separated)", type: "text" },
+  { key: "healthFlags", label: "Health Conditions (comma-separated)", type: "text" },
+];
+
+// Seeded from the Task-1 audit of the Assessment Form Database (sparse: None /
+// Knee / Deep squats) plus common categories — adjustable later, low-risk.
+const INJURY_MULTISELECT_OPTIONS = {
+  currentInjuries: ["None", "Knee", "Shoulder", "Back/Spine", "Hip", "Ankle", "Wrist/Elbow", "Other"],
+  previousInjuries: ["None", "Knee", "Shoulder", "Back/Spine", "Hip", "Ankle", "Wrist/Elbow", "Other"],
+  painTriggers: ["None", "Deep squats", "Overhead movements", "Running/Impact", "Prolonged sitting", "Heavy loading", "Other"],
+};
+
+function MultiSelectChips({ label, options, values, onChange }) {
+  const toggle = (opt) => onChange(values.includes(opt) ? values.filter((v) => v !== opt) : [...values, opt]);
+  return (
+    <div style={{ marginBottom: 16 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{label}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {options.map((opt) => (
+          <button key={opt} type="button" onClick={() => toggle(opt)}
+            style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid " + (values.includes(opt) ? S.accent : S.border), background: values.includes(opt) ? "rgba(255,77,0,.1)" : "transparent", color: values.includes(opt) ? S.accent : S.muted }}>
+            {opt}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Public intake application — reachable from LoginScreen without an account.
+// Writes to the `leads` table (shared with the in-app CRM + accept/reject flow)
+// with source="intake_form", status="applied".
+function IntakeForm({ onDone }) {
+  const [form, setForm] = useState({});
+  const [currentInjuries, setCurrentInjuries] = useState([]);
+  const [previousInjuries, setPreviousInjuries] = useState([]);
+  const [painTriggers, setPainTriggers] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+  const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const submit = async () => {
+    setError("");
+    if (!form.name || !form.email || !form.height) { setError("Name, email, and height are required."); return; }
+    setSaving(true);
+    const { error } = await supabase.from("leads").insert({
+      email: form.email.toLowerCase(),
+      name: form.name,
+      height: form.height,
+      source: "intake_form",
+      status: "applied",
+      intake_data: { ...form, currentInjuries, previousInjuries, painTriggers },
+    });
+    setSaving(false);
+    if (error) setError(error.message); else setDone(true);
+  };
+
+  if (done) return (
+    <div style={{ textAlign: "center", padding: "20px 0" }}>
+      <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, marginBottom: 8 }}>Application received</div>
+      <div style={{ color: S.muted, fontSize: 13, marginBottom: 16 }}>We'll review it and follow up soon.</div>
+      <button onClick={onDone} style={{ ...bS({ padding: "10px 20px" }), background: "transparent", border: "1px solid " + S.border, color: S.text }}>Back to sign in</button>
+    </div>
+  );
+
+  return (
+    <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+      {INTAKE_FIELDS.map((f) => (
+        <div key={f.key} style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{f.label}{f.required ? " *" : ""}</div>
+          {f.type === "textarea" ? (
+            <textarea value={form[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} rows={2}
+              style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+          ) : (
+            <input type={f.type} value={form[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.ph || ""}
+              style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }} />
+          )}
+        </div>
+      ))}
+      <MultiSelectChips label="Current Injuries" options={INJURY_MULTISELECT_OPTIONS.currentInjuries} values={currentInjuries} onChange={setCurrentInjuries} />
+      <MultiSelectChips label="Previous Injuries" options={INJURY_MULTISELECT_OPTIONS.previousInjuries} values={previousInjuries} onChange={setPreviousInjuries} />
+      <MultiSelectChips label="Pain Triggers" options={INJURY_MULTISELECT_OPTIONS.painTriggers} values={painTriggers} onChange={setPainTriggers} />
+      {error && <div style={{ color: S.accent, fontSize: 12, marginBottom: 12 }}>{error}</div>}
+      <button onClick={submit} disabled={saving}
+        style={{ ...bS({ width: "100%", padding: 14 }), background: S.accent, color: "white", opacity: saving ? 0.5 : 1 }}>
+        {saving ? "Submitting..." : "Submit Application"}
+      </button>
+    </div>
+  );
+}
+
 function LoginScreen() {
   const [tab, setTab] = useState("signin");
   const [email, setEmail] = useState("");
@@ -764,31 +885,37 @@ function LoginScreen() {
         <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:56,color:S.accent,lineHeight:1}}>V12</div>
         <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:2}}>System · Client Portal</div>
         <div style={{display:"flex",border:"1px solid "+S.border,marginBottom:28}}>
-          {["signin","signup"].map(t=>(
+          {["signin","signup","apply"].map(t=>(
             <button key={t} onClick={()=>{setTab(t);setError("");setSuccess("");}}
               style={{flex:1,padding:10,fontSize:12,fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase",cursor:"pointer",border:"none",background:tab===t?S.accent:"transparent",color:tab===t?"white":S.muted}}>
-              {t==="signin"?"Sign In":"Create Account"}
+              {t==="signin"?"Sign In":t==="signup"?"Create Account":"Apply"}
             </button>
           ))}
         </div>
-        {tab==="signup" && F("Full Name","text",name,setName,"Your full name")}
-        {F("Email","email",email,setEmail,"you@gmail.com")}
-        {F("Password","password",password,setPassword,"••••••••")}
-        {error && <div style={{color:S.accent,fontSize:12,marginBottom:12}}>{error}</div>}
-        {success && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 16px",fontSize:12,fontWeight:600,marginBottom:12}}>{success}</div>}
-        {tab==="signin" && (
-          <div style={{textAlign:"right",marginBottom:12}}>
-            <span onClick={resetPassword}
-              style={{color:S.accent,fontSize:12,cursor:"pointer"}}>Forgot password?</span>
-          </div>
+        {tab==="apply" ? (
+          <IntakeForm onDone={()=>setTab("signin")} />
+        ) : (
+          <>
+            {tab==="signup" && F("Full Name","text",name,setName,"Your full name")}
+            {F("Email","email",email,setEmail,"you@gmail.com")}
+            {F("Password","password",password,setPassword,"••••••••")}
+            {error && <div style={{color:S.accent,fontSize:12,marginBottom:12}}>{error}</div>}
+            {success && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 16px",fontSize:12,fontWeight:600,marginBottom:12}}>{success}</div>}
+            {tab==="signin" && (
+              <div style={{textAlign:"right",marginBottom:12}}>
+                <span onClick={resetPassword}
+                  style={{color:S.accent,fontSize:12,cursor:"pointer"}}>Forgot password?</span>
+              </div>
+            )}
+            <button onClick={tab==="signin"?signIn:signUp} disabled={loading}
+              style={{...bS({width:"100%",padding:14}),background:S.accent,color:"white",opacity:loading?0.5:1}}>
+              {loading?"Please wait...":tab==="signin"?"Sign In":"Create Account"}
+            </button>
+            <p style={{marginTop:16,fontSize:11,color:S.muted,textAlign:"center",lineHeight:1.7}}>
+              Works with any email — Gmail, Yahoo, Hotmail, etc.<br/>Coach login: coach@v12system.com
+            </p>
+          </>
         )}
-        <button onClick={tab==="signin"?signIn:signUp} disabled={loading}
-          style={{...bS({width:"100%",padding:14}),background:S.accent,color:"white",opacity:loading?0.5:1}}>
-          {loading?"Please wait...":tab==="signin"?"Sign In":"Create Account"}
-        </button>
-        <p style={{marginTop:16,fontSize:11,color:S.muted,textAlign:"center",lineHeight:1.7}}>
-          Works with any email — Gmail, Yahoo, Hotmail, etc.<br/>Coach login: coach@v12system.com
-        </p>
       </div>
     </div>
   );
@@ -878,7 +1005,7 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
     ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"habits",icon:"🎯",label:"Daily Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"}]
     : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
@@ -2337,10 +2464,13 @@ function ClientSummaries({ profile }) {
   );
 }
 
+const WD_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
 function ProgramProgress({ profile }) {
   const [tab, setTab] = useState("body");
   const [daily, setDaily] = useState([]);
   const [workoutDates, setWorkoutDates] = useState([]);
+  const [scheduledDays, setScheduledDays] = useState(new Set());
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2349,8 +2479,11 @@ function ProgramProgress({ profile }) {
         .select("date,weight,waist,habit_flags").eq("client_id", profile.id).order("date");
       const { data: logs } = await supabase.from("workout_logs")
         .select("date").eq("client_id", profile.id);
+      const { data: exs } = await supabase.from("exercises")
+        .select("day_of_week").eq("client_id", profile.id);
       setDaily(d || []);
       setWorkoutDates([...new Set((logs || []).map((l) => l.date))].sort());
+      setScheduledDays(new Set((exs || []).map((e) => e.day_of_week).filter(Boolean)));
       setLoading(false);
     })();
   }, [profile.id]);
@@ -2364,6 +2497,15 @@ function ProgramProgress({ profile }) {
 
   const workoutSet = new Set(workoutDates);
   const workoutStreak = streakBack((date) => workoutSet.has(date));
+
+  // Missed sessions: scheduled program days (by weekday) in the last 14 days
+  // that have already passed with no matching workout_logs entry.
+  const missedSessions = [];
+  for (let i = 1; i <= 13; i++) {
+    const dt = new Date(); dt.setUTCDate(dt.getUTCDate() - i);
+    const dateStr = dt.toISOString().split("T")[0];
+    if (scheduledDays.has(WD_NAMES[dt.getUTCDay()]) && !workoutSet.has(dateStr)) missedSessions.push(dateStr);
+  }
 
   const flagsByDate = {}; daily.forEach((r) => { if (r.habit_flags) flagsByDate[r.date] = r.habit_flags; });
   const habitStreak = streakBack((date) => { const f = flagsByDate[date]; return !!f && PROGRAM_HABITS.every((h) => f[h.key]); });
@@ -2386,6 +2528,17 @@ function ProgramProgress({ profile }) {
           <Stat label="Habit Streak" value={habitStreak} unit="days" />
         </div>
       </Card>
+      {missedSessions.length > 0 && (
+        <Card style={{ borderLeft: "3px solid #ff6b5b" }}>
+          <CardTitle>Missed Sessions</CardTitle>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Scheduled program days in the last 14 with no logged workout:</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {missedSessions.map((d) => (
+              <span key={d} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: "rgba(255,107,91,.1)", border: "1px solid rgba(255,107,91,.3)", color: "#ff6b5b" }}>{d}</span>
+            ))}
+          </div>
+        </Card>
+      )}
       <div style={{ display: "flex", borderBottom: "1px solid " + S.border, margin: "8px 0 24px", flexWrap: "wrap" }}>
         {[["body", "Body"], ["strength", "Strength"], ["habits", "Habits"], ["photos", "Photos"]].map(([id, label]) => (
           <button key={id} onClick={() => setTab(id)} style={ts(id)}>{label}</button>
@@ -2554,6 +2707,9 @@ function RoadmapSection() {
   );
 }
 
+const BLOCK_TYPE_LABEL = { straight_set: "Straight Set", superset: "Superset / Giant Set", circuit_for_time: "Circuit — For Time", timed_circuit: "Timed Circuit", weighted_circuit: "Weighted Circuit" };
+const BLOCK_TYPE_SHORT = { superset: "SS", circuit_for_time: "CFT", timed_circuit: "TC", weighted_circuit: "WC" };
+
 function Workouts({ profile, readOnly, embedded }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
@@ -2562,6 +2718,17 @@ function Workouts({ profile, readOnly, embedded }) {
   const blankRow = () => ({weight:"",reps:"",time:""});
   const freshSets = (n) => Array.from({length: Math.min(8, Math.max(1, parseInt(n)||4))}, blankRow);
   const [sets, setSets] = useState(freshSets(4));
+  // Grouped-block logging (superset/circuit variants): one entry per member
+  // exercise per round, plus one rest value per round (per Task 10 — rest is
+  // logged once per completed group, not per exercise; circuit_for_time has
+  // no rest concept at all).
+  const blankRound = (members) => {
+    const perExercise = {};
+    members.forEach((m) => { perExercise[m.id] = { weight: "", reps: "", time: "" }; });
+    return { perExercise, time: "", rest: "" };
+  };
+  const freshRounds = (n, members) => Array.from({ length: Math.min(8, Math.max(1, parseInt(n) || 4)) }, () => blankRound(members));
+  const [rounds, setRounds] = useState([]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
@@ -2594,6 +2761,37 @@ function Workouts({ profile, readOnly, embedded }) {
   };
 
   const selectedEx = exercises.find(e=>e.id===selected);
+  const blockType = selectedEx?.block_type || "straight_set";
+  const groupMembers = selectedEx
+    ? exercises.filter((e) => e.day_of_week === selectedEx.day_of_week && e.group_id === selectedEx.group_id)
+    : [];
+
+  const handleLogGroup = async () => {
+    setSaving(true);
+    const date = todayStr();
+    const entries = [];
+    rounds.forEach((round, i) => {
+      if (blockType === "circuit_for_time") {
+        if (!round.time) return;
+        groupMembers.forEach((m) => entries.push({ client_id: profile.id, exercise_id: m.id, date, sets: i + 1, time: round.time }));
+        return;
+      }
+      groupMembers.forEach((m) => {
+        const v = round.perExercise[m.id] || {};
+        if (!v.reps && !v.weight && !v.time) return;
+        entries.push({
+          client_id: profile.id, exercise_id: m.id, date, sets: i + 1,
+          reps: v.reps ? parseInt(v.reps) : null,
+          weight: (blockType === "timed_circuit" || m.is_bodyweight) ? null : (parseFloat(v.weight) || null),
+          time: v.time || null,
+          rest: round.rest || null,
+        });
+      });
+    });
+    if (entries.length > 0) await supabase.from("workout_logs").insert(entries);
+    setSaving(false); setSaved(true); setLogMode(false);
+    setTimeout(() => setSaved(false), 2000);
+  };
   const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
 
   // Group the program's exercises into sequential "Day 1..N" for the selector.
@@ -2622,7 +2820,7 @@ function Workouts({ profile, readOnly, embedded }) {
                   {dayExs.map(ex=>(
                     <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
                       style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,77,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
-                      {ex.name}
+                      {ex.name}{BLOCK_TYPE_SHORT[ex.block_type]&&<span style={{marginLeft:6,fontSize:9,color:S.accent2}}>{BLOCK_TYPE_SHORT[ex.block_type]}</span>}
                     </button>
                   ))}
                 </div>
@@ -2683,9 +2881,15 @@ function Workouts({ profile, readOnly, embedded }) {
               <Card>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
                   <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted}}>Session History</div>
-                  {!readOnly&&<Btn sm teal onClick={()=>{const open=!logMode; setLogMode(open); if(open) setSets(freshSets(selectedEx.sets));}}>{logMode?"Cancel":"+ Log Session"}</Btn>}
+                  {!readOnly&&<Btn sm teal onClick={()=>{
+                    const open=!logMode; setLogMode(open);
+                    if(open){
+                      if(blockType==="straight_set") setSets(freshSets(selectedEx.sets));
+                      else setRounds(freshRounds(selectedEx.sets, groupMembers));
+                    }
+                  }}>{logMode?"Cancel":"+ Log Session"}</Btn>}
                 </div>
-                {!readOnly&&logMode&&(
+                {!readOnly&&logMode&&blockType==="straight_set"&&(
                   <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
                       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {selectedEx.name}</div>
@@ -2706,9 +2910,61 @@ function Workouts({ profile, readOnly, embedded }) {
                     </div>
                   </div>
                 )}
+                {!readOnly&&logMode&&blockType!=="straight_set"&&(
+                  <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {groupMembers.map(m=>m.name).join(" + ")}</div>
+                      <div style={{fontSize:11,color:S.muted}}>{BLOCK_TYPE_LABEL[blockType]}</div>
+                    </div>
+                    {rounds.map((round,i)=>(
+                      <div key={i} style={{marginBottom:14,paddingBottom:14,borderBottom:i<rounds.length-1?"1px solid "+S.border:"none"}}>
+                        <div style={{fontSize:11,color:S.muted,marginBottom:8}}>Round {i+1}</div>
+                        {blockType==="circuit_for_time" ? (
+                          <input type="text" placeholder="total time (e.g. 8:45)" value={round.time}
+                            onChange={e=>{const n=[...rounds];n[i]={...n[i],time:e.target.value};setRounds(n);}}
+                            style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:180,outline:"none"}}/>
+                        ) : (
+                          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                            {groupMembers.map(m=>(
+                              <div key={m.id} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                                <span style={{fontSize:12,color:S.text,width:140}}>{m.name}</span>
+                                {blockType!=="timed_circuit"&&!m.is_bodyweight&&(
+                                  <input type="number" placeholder="lbs" value={round.perExercise[m.id]?.weight||""}
+                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],weight:e.target.value}}};setRounds(n);}}
+                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
+                                )}
+                                {blockType==="superset"&&(
+                                  <input type="number" placeholder="reps" value={round.perExercise[m.id]?.reps||""}
+                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],reps:e.target.value}}};setRounds(n);}}
+                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
+                                )}
+                                {(blockType==="timed_circuit"||blockType==="weighted_circuit")&&(
+                                  <input type="text" placeholder="time" value={round.perExercise[m.id]?.time||""}
+                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],time:e.target.value}}};setRounds(n);}}
+                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:90,outline:"none"}}/>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {blockType!=="circuit_for_time"&&(
+                          <div style={{marginTop:8}}>
+                            <input type="text" placeholder="rest after this round (e.g. 90s)" value={round.rest}
+                              onChange={e=>{const n=[...rounds];n[i]={...n[i],rest:e.target.value};setRounds(n);}}
+                              style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:240,outline:"none"}}/>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
+                      <Btn onClick={handleLogGroup} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
+                      <button onClick={()=>setRounds([...rounds,blankRound(groupMembers)])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Round</button>
+                    </div>
+                  </div>
+                )}
                 <div style={{overflowX:"auto"}}>
                 <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
-                  <thead><tr>{["Date","Weight","Reps","Set","Time"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
+                  <thead><tr>{["Date","Weight","Reps","Round","Time","Rest"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
                   <tbody>
                     {[...logs].reverse().map((row,i)=>(
                       <tr key={i}>
@@ -2717,9 +2973,10 @@ function Workouts({ profile, readOnly, embedded }) {
                         <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.reps||"—"}</td>
                         <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.sets}</td>
                         <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.time||"—"}</td>
+                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.rest||"—"}</td>
                       </tr>
                     ))}
-                    {logs.length===0&&<tr><td colSpan={5} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
+                    {logs.length===0&&<tr><td colSpan={6} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
                   </tbody>
                 </table>
                 </div>
@@ -4058,8 +4315,141 @@ function CoachProgress() {
           </button>
         ))}
       </div>
-      {selected&&<Progress profile={selected} coachView/>}
+      {selected&&(selected.client_type==="program_only" ? <ProgramProgress profile={selected}/> : <Progress profile={selected} coachView/>)}
       {clients.length===0&&<div style={{color:S.muted,fontSize:13}}>No clients yet.</div>}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// COACH — BUSINESS + CONTENT METRICS DASHBOARD (daily entry -> weekly rollup)
+// In-app only, no live Notion pull (matches the CRM's one-time-backfill
+// approach) -- excludes Fitness/Discipline by design (Business+Content only).
+// ---------------------------------------------------------------------------
+// Placeholder weekly targets -- the coach can adjust these; not sourced from
+// the Notion Weekly Outreach Metrics thresholds (not inspected here).
+const WEEKLY_TARGETS = { dms_sent: 350, sales_conversations: 20, calls_booked: 10, clients_closed: 2, revenue_today: 3000 };
+function weekStatus(total, target) {
+  if (!target) return null;
+  const pct = total / target;
+  return pct >= 1.1 ? "Ahead" : pct >= 0.9 ? "On Track" : "Behind";
+}
+function isoWeekStart(dateStr) {
+  const d = new Date(dateStr + "T00:00:00Z");
+  const day = d.getUTCDay();
+  d.setUTCDate(d.getUTCDate() + ((day === 0 ? -6 : 1) - day));
+  return d.toISOString().split("T")[0];
+}
+
+function MetricsDashboard() {
+  const [rows, setRows] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [today, setToday] = useState({ dms_sent: "", sales_conversations: "", calls_booked: "", clients_closed: "", active_clients: "", revenue_today: "", content_posted: false, content_created: false, content_recorded: false });
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const dateStr = todayStr();
+
+  const load = useCallback(async () => {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
+    const { data } = await supabase.from("daily_metrics").select("*").gte("date", cutoff.toISOString().split("T")[0]).order("date");
+    setRows(data || []);
+    const t = (data || []).find((r) => r.date === dateStr);
+    if (t) setToday({ ...t });
+    setLoading(false);
+  }, [dateStr]);
+  useEffect(() => { load(); }, [load]);
+
+  const setF = (k, v) => setToday((p) => ({ ...p, [k]: v }));
+
+  const saveToday = async () => {
+    setSaving(true);
+    await supabase.from("daily_metrics").upsert({
+      date: dateStr,
+      dms_sent: parseInt(today.dms_sent) || 0,
+      sales_conversations: parseInt(today.sales_conversations) || 0,
+      calls_booked: parseInt(today.calls_booked) || 0,
+      clients_closed: parseInt(today.clients_closed) || 0,
+      active_clients: today.active_clients === "" ? null : parseInt(today.active_clients),
+      revenue_today: parseFloat(today.revenue_today) || 0,
+      content_posted: !!today.content_posted,
+      content_created: !!today.content_created,
+      content_recorded: !!today.content_recorded,
+    }, { onConflict: "date" });
+    setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
+    load();
+  };
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const byWeek = {};
+  rows.forEach((r) => { const wk = isoWeekStart(r.date); (byWeek[wk] = byWeek[wk] || []).push(r); });
+  const weeks = Object.keys(byWeek).sort().reverse().slice(0, 8);
+  const sum = (list, key) => list.reduce((a, r) => a + (Number(r[key]) || 0), 0);
+  const METRIC_KEYS = ["dms_sent", "sales_conversations", "calls_booked", "clients_closed", "revenue_today"];
+  const METRIC_LABEL = { dms_sent: "DMs Sent", sales_conversations: "Sales Conversations", calls_booked: "Calls Booked", clients_closed: "Clients Closed", revenue_today: "Revenue" };
+  const badge = (status) => !status ? null : (
+    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "3px 8px", marginLeft: 6,
+      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : "rgba(255,107,91,.14)",
+      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : "#ff6b5b" }}>{status}</span>
+  );
+
+  return (
+    <div>
+      <PageTitle title="Business + Content" sub="Daily outreach and content metrics, rolled up weekly" />
+      <Card>
+        <CardTitle>Today · {dateStr}</CardTitle>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14, marginBottom: 16 }}>
+          <Fld label="DMs Sent"><Inp type="number" value={today.dms_sent} onChange={(e) => setF("dms_sent", e.target.value)} /></Fld>
+          <Fld label="Sales Conversations"><Inp type="number" value={today.sales_conversations} onChange={(e) => setF("sales_conversations", e.target.value)} /></Fld>
+          <Fld label="Calls Booked"><Inp type="number" value={today.calls_booked} onChange={(e) => setF("calls_booked", e.target.value)} /></Fld>
+          <Fld label="Clients Closed"><Inp type="number" value={today.clients_closed} onChange={(e) => setF("clients_closed", e.target.value)} /></Fld>
+          <Fld label="Active Clients"><Inp type="number" value={today.active_clients} onChange={(e) => setF("active_clients", e.target.value)} /></Fld>
+          <Fld label="Revenue Today ($)"><Inp type="number" value={today.revenue_today} onChange={(e) => setF("revenue_today", e.target.value)} /></Fld>
+        </div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
+          {[["content_posted", "Content Posted"], ["content_created", "Content Created"], ["content_recorded", "Content Recorded"]].map(([k, label]) => (
+            <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!today[k]} onChange={(e) => setF(k, e.target.checked)} /> {label}
+            </label>
+          ))}
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <Btn onClick={saveToday} disabled={saving}>{saving ? "Saving..." : "Save Today"}</Btn>
+          {saved && <span style={{ color: S.accent2, fontSize: 12, fontWeight: 600 }}>Saved!</span>}
+        </div>
+      </Card>
+      <Card>
+        <CardTitle>Weekly Rollup</CardTitle>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 12 }}>On Track / Behind / Ahead, same scale as Weekly Outreach Metrics — that schema has no "Red Flag" tier yet, so none is shown here either.</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", minWidth: 640, width: "100%" }}>
+            <thead>
+              <tr>
+                <th style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: S.muted }}>Week Of</th>
+                {METRIC_KEYS.map((k) => (<th key={k} style={{ padding: "6px 10px", fontSize: 10, color: S.muted }}>{METRIC_LABEL[k]}</th>))}
+              </tr>
+            </thead>
+            <tbody>
+              {weeks.map((wk) => {
+                const list = byWeek[wk];
+                return (
+                  <tr key={wk}>
+                    <td style={{ padding: "8px 10px", fontSize: 12, color: S.text }}>{wk}</td>
+                    {METRIC_KEYS.map((k) => {
+                      const total = sum(list, k);
+                      return (
+                        <td key={k} style={{ padding: "8px 10px", fontSize: 12, color: S.text, whiteSpace: "nowrap" }}>
+                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}{badge(weekStatus(total, WEEKLY_TARGETS[k]))}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
     </div>
   );
 }
@@ -4615,11 +5005,48 @@ function ClientProgram({ profile }) {
 // CLIENT — NUTRITION PLAN
 // ---------------------------------------------------------------------------
 
+// Generic goal-based nutrition guide for program-only clients (no coach, no
+// personalized AI plan) — including clients who downgraded from coaching.
+// Gated purely on client_type, so a downgrade (coach flips the dropdown)
+// reverts them to this automatically instead of their old personalized plan.
+const GENERIC_NUTRITION_GUIDES = {
+  fat_loss: {
+    title: "Fat Loss Nutrition Guide",
+    body: "Eat in a moderate calorie deficit — roughly 300-500 kcal below maintenance. Prioritize protein at every meal (0.8-1g per lb of bodyweight) to protect muscle while you cut. Fill the rest of your plate with vegetables and whole-food carbs; keep added sugar and liquid calories low. Consistency beats precision here — stay disciplined, and the scale will move.",
+  },
+  muscle_gain: {
+    title: "Muscle Gain Nutrition Guide",
+    body: "Eat in a slight calorie surplus — roughly 200-300 kcal above maintenance. Hit 0.8-1g of protein per lb of bodyweight daily, spread across meals. Carbs fuel your training — don't cut them short. Weight gain should be slow and steady; a pound or two a month is the target, not a sprint. Stay disciplined with your intake and the size will follow.",
+  },
+  general: {
+    title: "General Nutrition Guide",
+    body: "Eat at roughly your maintenance calories, built around a protein source, a vegetable, and a whole-food carb at each meal. Hit 0.7-0.8g of protein per lb of bodyweight daily. Hydrate consistently and keep processed food to a minimum. This isn't about being perfect — it's about staying disciplined day after day.",
+  },
+};
+function genericGuideFor(goal) {
+  const g = (goal || "").toLowerCase();
+  if (g.includes("fat") || g.includes("loss") || g.includes("lean") || g.includes("cut")) return GENERIC_NUTRITION_GUIDES.fat_loss;
+  if (g.includes("muscle") || g.includes("hypertrophy") || g.includes("gain") || g.includes("bulk")) return GENERIC_NUTRITION_GUIDES.muscle_gain;
+  return GENERIC_NUTRITION_GUIDES.general;
+}
+function GenericNutritionGuide({ profile }) {
+  const guide = genericGuideFor(profile.goal);
+  return (
+    <div>
+      <PageTitle title={guide.title} sub="A general guide matched to your goal" />
+      <Card>
+        <div style={{ fontSize: 13.5, lineHeight: 1.8 }}>{guide.body}</div>
+      </Card>
+    </div>
+  );
+}
+
 function Nutrition({ profile }) {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (profile.client_type === "program_only") { setLoading(false); return; }
     supabase
       .from("nutrition_plans")
       .select("*")
@@ -4632,7 +5059,9 @@ function Nutrition({ profile }) {
         setPlan(data);
         setLoading(false);
       });
-  }, [profile.id]);
+  }, [profile.id, profile.client_type]);
+
+  if (profile.client_type === "program_only") return <GenericNutritionGuide profile={profile} />;
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
@@ -4766,6 +5195,117 @@ function ClientDashboard({ profile, logout }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// COACH — LEADS / CRM (in-app system of record; replaces Notion Lead Pipeline
+// CRM, one-time backfill only, no live sync) + accept/reject on applications.
+// ---------------------------------------------------------------------------
+const LEAD_STATUSES = ["new", "applied", "accepted", "closed_lost", "follow_up_later", "price_objection", "not_ready"];
+const LEAD_STATUS_LABEL = { new: "New", applied: "Applied", accepted: "Accepted", closed_lost: "Closed Lost", follow_up_later: "Follow-up Later", price_objection: "Price Objection", not_ready: "Not Ready" };
+const REJECT_STATUSES = ["closed_lost", "follow_up_later", "price_objection", "not_ready"];
+
+function CRMPanel() {
+  const [leads, setLeads] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [expanded, setExpanded] = useState(null);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+    setLeads(data || []);
+    setLoading(false);
+  }, []);
+  useEffect(() => { load(); }, [load]);
+
+  const updateLead = async (id, patch) => {
+    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
+    await supabase.from("leads").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+  };
+
+  // Accept: mark accepted and auto-link to an existing profile by email if one
+  // already exists (they may have signed up before or after applying). If not,
+  // leave client_id null — the coach sees "awaiting signup".
+  const accept = async (lead) => {
+    const { data: match } = await supabase.from("profiles").select("id").ilike("email", lead.email).maybeSingle();
+    await updateLead(lead.id, { status: "accepted", client_id: match?.id || null });
+  };
+  const reject = async (lead, status) => updateLead(lead.id, { status });
+
+  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const filtered = filter === "all" ? leads : leads.filter((l) => l.status === filter);
+
+  return (
+    <div>
+      <PageTitle title="Leads / CRM" sub="Applications and prospects — migrated one-time from Notion, no live sync" />
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
+        {["all", ...LEAD_STATUSES].map((s) => (
+          <button key={s} onClick={() => setFilter(s)}
+            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (filter === s ? S.accent : S.border), background: filter === s ? "rgba(255,77,0,.08)" : "transparent", color: filter === s ? S.accent : S.muted }}>
+            {s === "all" ? "All" : LEAD_STATUS_LABEL[s]} {s !== "all" && `(${leads.filter((l) => l.status === s).length})`}
+          </button>
+        ))}
+      </div>
+      {filtered.length === 0 ? <div style={{ color: S.muted, fontSize: 13 }}>No leads in this view.</div> : filtered.map((lead) => (
+        <Card key={lead.id}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", cursor: "pointer" }} onClick={() => setExpanded(expanded === lead.id ? null : lead.id)}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 15 }}>{lead.name || lead.email}</div>
+              <div style={{ fontSize: 12, color: S.muted }}>{lead.email} · {lead.source} · {(lead.created_at || "").slice(0, 10)}</div>
+            </div>
+            <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, padding: "4px 10px", background: S.surface2, color: S.accent }}>{LEAD_STATUS_LABEL[lead.status] || lead.status}</span>
+          </div>
+          {expanded === lead.id && (
+            <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
+              {lead.height && <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Height: {lead.height}</div>}
+              {lead.intake_data && (
+                <details style={{ marginBottom: 12 }}>
+                  <summary style={{ fontSize: 11, color: S.muted, cursor: "pointer" }}>Full intake data</summary>
+                  <pre style={{ fontSize: 11, color: S.text, whiteSpace: "pre-wrap", marginTop: 8 }}>{JSON.stringify(lead.intake_data, null, 2)}</pre>
+                </details>
+              )}
+              {(lead.status === "new" || lead.status === "applied") && (
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+                  <Btn onClick={() => accept(lead)}>Accept</Btn>
+                  {REJECT_STATUSES.map((s) => (
+                    <button key={s} onClick={() => reject(lead, s)}
+                      style={{ padding: "9px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}>
+                      {LEAD_STATUS_LABEL[s]}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {lead.status === "accepted" && (
+                <div style={{ marginBottom: 12 }}>
+                  <div style={{ fontSize: 12, color: lead.client_id ? S.accent2 : S.muted, marginBottom: 12 }}>
+                    {lead.client_id ? "Linked to client record" : "Awaiting signup — links automatically once they sign up with this email"}
+                  </div>
+                  <Fld label="Manual PayPal invoice link">
+                    <Inp defaultValue={lead.invoice_link || ""} placeholder="https://paypal.me/..."
+                      onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, invoice_link: e.target.value } : l)))}
+                      onBlur={(e) => supabase.from("leads").update({ invoice_link: e.target.value, updated_at: new Date().toISOString() }).eq("id", lead.id)} />
+                  </Fld>
+                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
+                    <Btn onClick={() => updateLead(lead.id, { invoice_sent_at: new Date().toISOString() })}>{lead.invoice_sent_at ? "Invoice marked sent ✓" : "Mark invoice sent"}</Btn>
+                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!lead.paid} onChange={(e) => updateLead(lead.id, { paid: e.target.checked })} /> Paid
+                    </label>
+                  </div>
+                </div>
+              )}
+              <Fld label="Notes">
+                <textarea defaultValue={lead.notes || ""} rows={2}
+                  onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, notes: e.target.value } : l)))}
+                  onBlur={(e) => supabase.from("leads").update({ notes: e.target.value, updated_at: new Date().toISOString() }).eq("id", lead.id)}
+                  style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+              </Fld>
+            </div>
+          )}
+        </Card>
+      ))}
+    </div>
+  );
+}
+
 function CoachDashboard({ profile, logout }) {
   const [page, setPage] = useState("dashboard");
 
@@ -4773,6 +5313,8 @@ function CoachDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
       {page === "dashboard" && <CoachHome setPage={setPage} />}
       {page === "clients" && <ClientsPanel />}
+      {page === "crm" && <CRMPanel />}
+      {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}
       {page === "library" && <ResourcesPanel />}
