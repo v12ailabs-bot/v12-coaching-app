@@ -718,6 +718,8 @@ const INTAKE_FIELDS = [
   { key: "name", label: "Full Name", type: "text" },
   { key: "email", label: "Email", type: "email" },
   { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
+  { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: ["1-on-1 Coaching", "Program Only (self-guided)", "Not sure yet"] },
+  { key: "budget", label: "What's your monthly budget range?", type: "select", options: ["Under $100", "$100-$250", "$250-$500", "$500+", "Not sure yet"] },
   { key: "goal", label: "Primary Goal", type: "text" },
   { key: "daysAvailable", label: "Days Available / Week", type: "text" },
   { key: "experienceLevel", label: "Training Experience", type: "text" },
@@ -814,6 +816,12 @@ function IntakeForm({ onDone }) {
           {f.type === "textarea" ? (
             <textarea value={form[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} rows={2}
               style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
+          ) : f.type === "select" ? (
+            <select value={form[f.key] || ""} onChange={(e) => set(f.key, e.target.value)}
+              style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }}>
+              <option value="">— Select —</option>
+              {f.options.map((o) => <option key={o} value={o}>{o}</option>)}
+            </select>
           ) : (
             <input type={f.type} value={form[f.key] || ""} onChange={(e) => set(f.key, e.target.value)} placeholder={f.ph || ""}
               style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -860,6 +868,25 @@ function LoginScreen() {
 
   const signUp = async () => {
     setError(""); setLoading(true);
+    if (email !== COACH_EMAIL) {
+      try {
+        const res = await fetch("/api/check-accepted", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+        const json = await res.json();
+        if (!json.accepted) {
+          setError("This email hasn't been accepted yet. Apply first — you'll be able to create an account once approved.");
+          setLoading(false);
+          return;
+        }
+      } catch {
+        setError("Couldn't verify your application status. Please try again.");
+        setLoading(false);
+        return;
+      }
+    }
     const { error } = await supabase.auth.signUp({
       email, password,
       options: { data: { name, role: email === COACH_EMAIL ? "coach" : "client" } }
@@ -1057,6 +1084,27 @@ function CoachMessage({ profile }) {
   );
 }
 const Inp = (props) => <input {...props} style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",...props.style}}/>;
+
+// Client-side surface for the manual PayPal invoice link the coach pastes in
+// after Accept (CRMPanel) -- shown until the coach marks the lead paid.
+function InvoiceCard({ profile }) {
+  const [lead, setLead] = useState(null);
+  useEffect(() => {
+    supabase.from("leads").select("invoice_link,paid").eq("client_id", profile.id)
+      .order("created_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => setLead(data));
+  }, [profile.id]);
+  if (!lead?.invoice_link || lead.paid) return null;
+  return (
+    <Card style={{ borderLeft: "3px solid " + S.accent }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent, marginBottom: 10 }}>Complete Your Enrollment</div>
+      <div style={{ fontSize: 13, color: S.text, marginBottom: 12, lineHeight: 1.6 }}>Finish signing up by completing payment below.</div>
+      <a href={lead.invoice_link} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
+        <button style={{ ...bS({ padding: "10px 22px" }), background: S.accent, color: "white" }}>Pay Now →</button>
+      </a>
+    </Card>
+  );
+}
 const Sld = ({label,val,min,max,sfx,onChange}) => (
   <div>
     <div style={{display:"flex",justifyContent:"space-between",fontSize:12,color:S.muted,marginBottom:6}}>
@@ -1382,6 +1430,7 @@ function ClientHome({ profile, setPage }) {
     <div>
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
+      <InvoiceCard profile={profile} />
       {!doneToday && (
         <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12,flexWrap:"wrap"}}>
           <span style={{fontSize:13}}>Reminder: Daily check-in not done yet.</span>
@@ -4942,6 +4991,7 @@ function ClientProgram({ profile }) {
       {profile.client_type === "program_only"
         ? <UpgradeCTA profile={profile} />
         : <CoachMessage profile={profile} />}
+      <InvoiceCard profile={profile} />
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
@@ -5207,6 +5257,7 @@ function CRMPanel() {
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  const [dueOnly, setDueOnly] = useState(false);
   const [expanded, setExpanded] = useState(null);
 
   const load = useCallback(async () => {
@@ -5232,7 +5283,11 @@ function CRMPanel() {
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
-  const filtered = filter === "all" ? leads : leads.filter((l) => l.status === filter);
+  const today = todayStr();
+  const dueCount = leads.filter((l) => l.follow_up_date && l.follow_up_date <= today).length;
+  let filtered = filter === "all" ? leads : leads.filter((l) => l.status === filter);
+  if (dueOnly) filtered = filtered.filter((l) => l.follow_up_date && l.follow_up_date <= today);
+  filtered = [...filtered].sort((a, b) => (a.follow_up_date || "9999") < (b.follow_up_date || "9999") ? -1 : 1);
 
   return (
     <div>
@@ -5244,6 +5299,10 @@ function CRMPanel() {
             {s === "all" ? "All" : LEAD_STATUS_LABEL[s]} {s !== "all" && `(${leads.filter((l) => l.status === s).length})`}
           </button>
         ))}
+        <button onClick={() => setDueOnly((v) => !v)}
+          style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (dueOnly ? "#ff6b5b" : S.border), background: dueOnly ? "rgba(255,107,91,.1)" : "transparent", color: dueOnly ? "#ff6b5b" : S.muted }}>
+          📅 Due for follow-up ({dueCount})
+        </button>
       </div>
       {filtered.length === 0 ? <div style={{ color: S.muted, fontSize: 13 }}>No leads in this view.</div> : filtered.map((lead) => (
         <Card key={lead.id}>
@@ -5251,16 +5310,32 @@ function CRMPanel() {
             <div>
               <div style={{ fontWeight: 700, fontSize: 15 }}>{lead.name || lead.email}</div>
               <div style={{ fontSize: 12, color: S.muted }}>{lead.email} · {lead.source} · {(lead.created_at || "").slice(0, 10)}</div>
+              {lead.follow_up_date && (
+                <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, color: lead.follow_up_date <= today ? "#ff6b5b" : S.neon }}>
+                  📅 Follow up {lead.follow_up_date}{lead.follow_up_date <= today ? " · Due" : ""}
+                </div>
+              )}
             </div>
             <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, padding: "4px 10px", background: S.surface2, color: S.accent }}>{LEAD_STATUS_LABEL[lead.status] || lead.status}</span>
           </div>
           {expanded === lead.id && (
             <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               {lead.height && <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Height: {lead.height}</div>}
+              {lead.intake_data?.packageInterest && <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Package: <strong>{lead.intake_data.packageInterest}</strong></div>}
+              {lead.intake_data?.budget && <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Budget: <strong>{lead.intake_data.budget}</strong></div>}
               {lead.intake_data && (
                 <details style={{ marginBottom: 12 }}>
-                  <summary style={{ fontSize: 11, color: S.muted, cursor: "pointer" }}>Full intake data</summary>
-                  <pre style={{ fontSize: 11, color: S.text, whiteSpace: "pre-wrap", marginTop: 8 }}>{JSON.stringify(lead.intake_data, null, 2)}</pre>
+                  <summary style={{ fontSize: 12, color: S.muted, cursor: "pointer" }}>Full intake data</summary>
+                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
+                    {Object.entries(lead.intake_data)
+                      .filter(([, v]) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0))
+                      .map(([k, v]) => (
+                        <div key={k} style={{ fontSize: 13, color: S.text, display: "flex", gap: 10, flexWrap: "wrap" }}>
+                          <span style={{ color: S.muted, minWidth: 180 }}>{INTAKE_FIELDS.find((f) => f.key === k)?.label || k}</span>
+                          <span>{Array.isArray(v) ? v.join(", ") : String(v)}</span>
+                        </div>
+                      ))}
+                  </div>
                 </details>
               )}
               {(lead.status === "new" || lead.status === "applied") && (
@@ -5292,6 +5367,9 @@ function CRMPanel() {
                   </div>
                 </div>
               )}
+              <Fld label="Follow-up reminder">
+                <Inp type="date" value={lead.follow_up_date || ""} onChange={(e) => updateLead(lead.id, { follow_up_date: e.target.value || null })} />
+              </Fld>
               <Fld label="Notes">
                 <textarea defaultValue={lead.notes || ""} rows={2}
                   onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, notes: e.target.value } : l)))}
