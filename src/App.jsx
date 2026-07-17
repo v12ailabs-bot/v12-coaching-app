@@ -3142,8 +3142,21 @@ function CRMPanel() {
   useEffect(() => { load(); }, [load]);
 
   const updateLead = async (id, patch) => {
+    const lead = leads.find((l) => l.id === id);
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     await supabase.from("leads").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
+    // Fire-and-forget push to the lead's existing Notion page — never blocks
+    // or fails the save on a Notion hiccup, same contract as the intake sync.
+    if (lead?.email) {
+      const notionPatch = "status" in patch ? { ...patch, status: LEAD_STATUS_LABEL[patch.status] || patch.status } : patch;
+      supabase.auth.getSession().then(({ data: { session } }) =>
+        fetch("/api/sync-lead-to-notion", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+          body: JSON.stringify({ email: lead.email, patch: notionPatch }),
+        })
+      ).catch(() => {});
+    }
   };
 
   // Accept: mark accepted and auto-link to an existing profile by email if one
@@ -3230,7 +3243,7 @@ function CRMPanel() {
                   <Fld label="Manual PayPal invoice link">
                     <Inp defaultValue={lead.invoice_link || ""} placeholder="https://paypal.me/..."
                       onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, invoice_link: e.target.value } : l)))}
-                      onBlur={(e) => supabase.from("leads").update({ invoice_link: e.target.value, updated_at: new Date().toISOString() }).eq("id", lead.id)} />
+                      onBlur={(e) => updateLead(lead.id, { invoice_link: e.target.value })} />
                   </Fld>
                   <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
                     <Btn onClick={() => updateLead(lead.id, { invoice_sent_at: new Date().toISOString() })}>{lead.invoice_sent_at ? "Invoice marked sent ✓" : "Mark invoice sent"}</Btn>
@@ -3246,7 +3259,7 @@ function CRMPanel() {
               <Fld label="Notes">
                 <textarea defaultValue={lead.notes || ""} rows={2}
                   onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, notes: e.target.value } : l)))}
-                  onBlur={(e) => supabase.from("leads").update({ notes: e.target.value, updated_at: new Date().toISOString() }).eq("id", lead.id)}
+                  onBlur={(e) => updateLead(lead.id, { notes: e.target.value })}
                   style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
               </Fld>
             </div>
