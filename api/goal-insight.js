@@ -61,17 +61,13 @@ export default async function handler(req, res) {
       : null;
 
     const scoreData = computeGoalScore(goal, series, { nutrition, training, recovery, habit });
-    const insightText = await generateGoalInsight({
-      profile: profile || {},
-      goal,
-      scoreData: { ...scoreData, components: { nutrition, training, recovery, habit } },
-    });
+    const insightText = await generateGoalInsight({ profile: profile || {}, goal, scoreData });
 
     const { data: saved, error: insertErr } = await supabaseAdmin.from("client_goal_insights").insert({
       client_id: goal.client_id,
       goal_id: goal.id,
       insight_text: insightText,
-      score_snapshot: { ...scoreData, components: { nutrition, training, recovery, habit } },
+      score_snapshot: scoreData,
     }).select().maybeSingle();
     if (insertErr) throw insertErr;
 
