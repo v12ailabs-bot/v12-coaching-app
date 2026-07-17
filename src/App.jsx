@@ -4,8 +4,9 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 
 
 import { supabase } from "./supabaseClient.js";
-import { S, COLORS, bS, TT, todayStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge } from "./components/ui/index.js";
+import { S, bS, TT, todayStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
+import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection } from "./components/ui/index.js";
+import { ClientSelector } from "./components/ClientSelector.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack } from "./lib/constants.js";
 import { adherenceFrom, nutritionScoreFrom } from "./lib/scoring.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
@@ -2042,6 +2043,15 @@ function CoachHome({ setPage }) {
   const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [upgrades, setUpgrades] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Session-only expand state — collapsed by default. Needs Attention itself
+  // always stays visible (per the dashboard's whole purpose); only the
+  // per-client rows inside it expand/collapse, tracked separately.
+  const [expandedNeeds, setExpandedNeeds] = useState(() => new Set());
+  const toggleNeeds = (id) => setExpandedNeeds(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
 
   useEffect(()=>{
     (async()=>{
@@ -2085,22 +2095,27 @@ function CoachHome({ setPage }) {
     const adh = adherenceFrom(ch, 30);
     const last = ch.length ? ch[ch.length-1].date : null;
     const since = last ? daysSinceDate(last) : null;
+    // Each flag carries a `detail` sentence — the expanded per-client view in
+    // Needs Attention shows these instead of the raw dataset, so it stays
+    // scoped to "where they're lacking" rather than a full stats dump.
     const flags = [];
-    if(since==null) flags.push({label:"No activity yet", tone:"red"});
-    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red"});
-    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber"});
-    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber"});
+    if(since==null) flags.push({label:"No activity yet", tone:"red", detail:"This client has never logged a daily check-in."});
+    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red", detail:`No daily check-in in ${since} days — worth reaching out to see what's going on.`});
+    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber", detail:`Last logged a daily check-in ${since} days ago.`});
+    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber", detail:`Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`});
     const nut = nutritionScoreFrom(ch, 30);
-    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber"});
+    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber", detail:`Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`});
     const weights = ch.filter(r=>r.weight!=null);
+    let weightFlag = null;
     if(weights.length>=2){
       const delta = weights[weights.length-1].weight - weights[0].weight;
       const goal = (c.goal||"").toLowerCase();
       const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goal);
       const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goal);
-      if(wantsLoss && delta>1) flags.push({label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red"});
-      else if(wantsGain && delta<-1) flags.push({label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red"});
+      if(wantsLoss && delta>1) weightFlag = {label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red", detail:`Weight is up ${delta.toFixed(1)}lb over the tracked period, working against a fat-loss goal.`};
+      else if(wantsGain && delta<-1) weightFlag = {label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red", detail:`Weight is down ${Math.abs(delta).toFixed(1)}lb over the tracked period, working against a muscle-gain goal.`};
     }
+    if(weightFlag) flags.push(weightFlag);
     const severity = flags.reduce((s,f)=>s+(f.tone==="red"?2:1),0);
     return {client:c, adh, last, since, flags, severity};
   });
@@ -2135,25 +2150,26 @@ function CoachHome({ setPage }) {
       </div>
 
       {upgrades.length>0 && (
-        <Card style={{borderLeft:"3px solid "+S.neon}}>
-          <CardTitle>💎 Upgrade Requests</CardTitle>
-          <div style={{fontSize:11,color:S.muted,marginTop:-8,marginBottom:14}}>Program-only clients who want to move to full coaching. Reach out, then mark handled.</div>
-          {upgrades.map(u=>(
-            <div key={u.id} style={{background:S.surface,border:"1px solid "+S.border,padding:"14px 18px",display:"flex",alignItems:"center",gap:16,marginBottom:10,flexWrap:"wrap"}}>
-              <div style={{width:44,height:44,borderRadius:"50%",background:S.neon,color:"#0A0A0B",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-                {avatarFrom(nameOf(u.client_id))}
+        <CollapsibleSection title="💎 Upgrade Requests" summary={`${upgrades.length} pending`}>
+          <Card style={{borderLeft:"3px solid "+S.neon}}>
+            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>Program-only clients who want to move to full coaching. Reach out, then mark handled.</div>
+            {upgrades.map(u=>(
+              <div key={u.id} style={{background:S.surface,border:"1px solid "+S.border,padding:"14px 18px",display:"flex",alignItems:"center",gap:16,marginBottom:10,flexWrap:"wrap"}}>
+                <div style={{width:44,height:44,borderRadius:"50%",background:S.neon,color:"#0A0A0B",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+                  {avatarFrom(nameOf(u.client_id))}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(u.client_id)}</div>
+                  <div style={{fontSize:12,color:S.muted}}>Wants to upgrade to coaching · {(u.created_at||"").slice(0,10)}</div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <Btn sm teal onClick={()=>setPage("clients")}>Open Client</Btn>
+                  <Btn sm onClick={()=>markHandled(u.id)}>Mark handled</Btn>
+                </div>
               </div>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{fontWeight:600,fontSize:14}}>{nameOf(u.client_id)}</div>
-                <div style={{fontSize:12,color:S.muted}}>Wants to upgrade to coaching · {(u.created_at||"").slice(0,10)}</div>
-              </div>
-              <div style={{display:"flex",gap:8,flexShrink:0}}>
-                <Btn sm teal onClick={()=>setPage("clients")}>Open Client</Btn>
-                <Btn sm onClick={()=>markHandled(u.id)}>Mark handled</Btn>
-              </div>
-            </div>
-          ))}
-        </Card>
+            ))}
+          </Card>
+        </CollapsibleSection>
       )}
 
       <Card>
@@ -2163,64 +2179,65 @@ function CoachHome({ setPage }) {
         </div>
         {clients.length===0 && <div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No clients yet. Share the app URL with your clients.</div>}
         {clients.length>0 && needs.length===0 && <div style={{color:S.accent2,fontSize:13,padding:"8px 0"}}>All clients are on track. Nice work.</div>}
-        {needs.map(a=>(
-          <div key={a.client.id} onClick={()=>setPage("clients")}
-            style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(a.severity>=2?"#c0392b":"#f5a623"),padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",marginBottom:10}}>
-            <div style={{width:44,height:44,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-              {avatarFrom(a.client.name||a.client.email)}
+        {needs.map(a=>{
+          const open = expandedNeeds.has(a.client.id);
+          return (
+            <div key={a.client.id} style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(a.severity>=2?"#c0392b":"#f5a623"),marginBottom:10,overflow:"hidden"}}>
+              <div onClick={()=>toggleNeeds(a.client.id)}
+                style={{padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer"}}>
+                <span style={{fontSize:11,color:S.accent,flexShrink:0,display:"inline-block",transition:"transform .15s",transform:open?"rotate(90deg)":"none"}}>▶</span>
+                <div style={{width:44,height:44,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
+                  {avatarFrom(a.client.name||a.client.email)}
+                </div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
+                  <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"} · {a.last?`last check-in ${a.last}`:"never checked in"}</div>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"50%"}}>
+                  {a.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
+                </div>
+              </div>
+              {open && (
+                <div style={{padding:"0 18px 16px 74px"}}>
+                  {a.flags.map((f,i)=>(
+                    <div key={i} style={{fontSize:12,color:S.text,padding:"6px 0",borderTop:i===0?"1px solid "+S.border:"none",paddingTop:i===0?12:6}}>
+                      <span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.detail}
+                    </div>
+                  ))}
+                  <div style={{marginTop:10}}><Btn sm teal onClick={()=>setPage("clients")}>Open in Clients →</Btn></div>
+                </div>
+              )}
             </div>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
-              <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"} · {a.last?`last check-in ${a.last}`:"never checked in"}</div>
-            </div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"50%"}}>
-              {a.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
-            </div>
-          </div>
-        ))}
+          );
+        })}
       </Card>
 
       {messages.length>0 && (
-        <Card>
-          <CardTitle>💬 Client Messages & Flags</CardTitle>
-          <div style={{fontSize:11,color:S.muted,marginTop:-8,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
-          {messages.map((m,i)=>(
-            <div key={i} onClick={()=>setPage("clients")}
-              style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
-                <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
-                <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
-              </div>
-              {m.items.map((it,j)=>(
-                <div key={j} style={{marginBottom:6}}>
-                  <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
-                  {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
+        <CollapsibleSection title="💬 Client Messages & Flags" summary={`${messages.length} this period`}>
+          <Card>
+            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
+            {messages.map((m,i)=>(
+              <div key={i} onClick={()=>setPage("clients")}
+                style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
+                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
+                  <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
                 </div>
-              ))}
-            </div>
-          ))}
-        </Card>
+                {m.items.map((it,j)=>(
+                  <div key={j} style={{marginBottom:6}}>
+                    <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
+                    {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
+        </CollapsibleSection>
       )}
 
-      <Card>
-        <CardTitle>All Clients</CardTitle>
-        {assessed.map((a,i)=>(
-          <div key={a.client.id} onClick={()=>setPage("clients")}
-            style={{background:S.surface,border:"1px solid "+S.border,padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer",marginBottom:10}}>
-            <div style={{width:44,height:44,borderRadius:"50%",background:COLORS[i%COLORS.length],color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-              {avatarFrom(a.client.name||a.client.email)}
-            </div>
-            <div style={{flex:1}}>
-              <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
-              <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"}</div>
-            </div>
-            <div style={{textAlign:"right",fontSize:12}}>
-              <div style={{color:a.adh.score<50?"#f5a623":S.accent2,fontWeight:600}}>{a.adh.score}% adherence</div>
-              <div style={{color:S.muted,marginTop:2}}>{a.last?`last ${a.last}`:"no check-ins"}</div>
-            </div>
-          </div>
-        ))}
-      </Card>
+      <CollapsibleSection title="All Clients" summary={`${clients.length} total`}>
+        <ClientSelector clients={clients} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
+      </CollapsibleSection>
     </div>
   );
 }
