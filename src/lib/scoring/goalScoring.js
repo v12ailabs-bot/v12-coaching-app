@@ -109,8 +109,18 @@ const WEIGHTS = { primary: 0.4, nutrition: 0.2, training: 0.15, recovery: 0.1, h
 
 export function computeGoalScore(goal, series, components = {}, today = new Date()) {
   const primary = computePrimaryProgress(goal, series, today);
+  // Echo the components back on every return path (including the early
+  // "no primary data" one) — callers (UI, snapshot pipeline, AI insight) read
+  // scoreData.components directly rather than having to thread the raw
+  // components object through separately alongside the result.
+  const normalizedComponents = {
+    nutrition: components.nutrition ?? null,
+    training: components.training ?? null,
+    recovery: components.recovery ?? null,
+    habit: components.habit ?? null,
+  };
   if (primary.score == null) {
-    return { ...primary, overallScore: null };
+    return { ...primary, overallScore: null, components: normalizedComponents };
   }
 
   const values = { primary: primary.score, ...components };
@@ -123,5 +133,5 @@ export function computeGoalScore(goal, series, components = {}, today = new Date
   }
   const overallScore = weightSum > 0 ? Math.round(weighted / weightSum) : null;
 
-  return { ...primary, overallScore };
+  return { ...primary, overallScore, components: normalizedComponents };
 }

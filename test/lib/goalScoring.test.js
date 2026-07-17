@@ -95,10 +95,13 @@ test("computeGoalScore: missing components renormalize instead of counting as 0"
   const onlyNutrition = computeGoalScore(goal, series, { nutrition: 80 }, today);
   // weightSum = 0.4 + 0.2 = 0.6; weighted = 0.4*100 + 0.2*80 = 56 -> 56/0.6 = 93.33 -> 93
   assert.equal(onlyNutrition.overallScore, 93);
+  assert.deepEqual(onlyNutrition.components, { nutrition: 80, training: null, recovery: null, habit: null },
+    "missing components are echoed back as null, not just dropped from the object");
 
   const allComponents = computeGoalScore(goal, series, { nutrition: 80, training: 70, recovery: 60, habit: 50 }, today);
   // weightSum = 1.0; weighted = 40+16+10.5+6+7.5 = 80
   assert.equal(allComponents.overallScore, 80);
+  assert.deepEqual(allComponents.components, { nutrition: 80, training: 70, recovery: 60, habit: 50 });
 });
 
 test("computeGoalScore: no primary data -> overallScore is null even with components present", () => {
@@ -106,4 +109,6 @@ test("computeGoalScore: no primary data -> overallScore is null even with compon
   const r = computeGoalScore(goal, [], { nutrition: 90, training: 90 }, asDate("2026-01-03"));
   assert.equal(r.overallScore, null);
   assert.equal(r.classification, "Gathering Data");
+  assert.deepEqual(r.components, { nutrition: 90, training: 90, recovery: null, habit: null },
+    "components are still echoed back even on the early-return no-data path");
 });

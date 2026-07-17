@@ -13,6 +13,29 @@ const CLASSIFICATION_TONE = { "On Track": "green", "Slightly Behind": "amber", "
 // their series is future work, not a schema change.
 const DEFAULT_METRIC_KEY = "bodyweight";
 
+// Opportunistic daily snapshot into client_goal_scores — the data pipeline
+// future predictive analytics (plateau detection, churn risk, trend
+// forecasting) will read from. One row per goal per calendar day, upserted
+// on every view rather than needing a cron job. Skips entirely while the
+// goal is still "Gathering Data" — a null score carries no trend signal.
+// Fire-and-forget: never surfaces an error to the coach over a background
+// row that has zero effect on anything they're looking at.
+function recordSnapshot(goal, computed) {
+  if (computed.overallScore == null) return;
+  const today = new Date().toISOString().split("T")[0];
+  supabase.from("client_goal_scores").upsert({
+    goal_id: goal.id,
+    client_id: goal.client_id,
+    date: today,
+    overall_score: computed.overallScore,
+    classification: computed.classification,
+    progress_ratio: computed.progressRatio,
+    velocity: computed.velocity,
+    eta_date: computed.etaDate ? computed.etaDate.toISOString().split("T")[0] : null,
+    components: computed.components,
+  }, { onConflict: "goal_id,date" }).then(() => {}, () => {});
+}
+
 export function GoalsSection({ client }) {
   const [loading, setLoading] = useState(true);
   const [goal, setGoal] = useState(null);
@@ -62,7 +85,9 @@ export function GoalsSection({ client }) {
       const habitCount = (habits || []).length;
       const habit = habitCount ? Math.round(((habitLogs || []).filter(l => l.done).length / (habitCount * 30)) * 100) : null;
 
-      setScoreData(computeGoalScore(g, series, { nutrition, training, recovery, habit }));
+      const computed = computeGoalScore(g, series, { nutrition, training, recovery, habit });
+      setScoreData(computed);
+      recordSnapshot(g, computed);
     } else {
       setScoreData(null);
     }
