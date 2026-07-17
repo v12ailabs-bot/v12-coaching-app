@@ -942,26 +942,65 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
   );
 }
 
-// Client-visible message from the coach (profiles.coach_message). Read-only for
-// the client; edited by the coach in ClientsPanel. Fetches the latest value so
-// a coach edit shows without the client re-logging in. Renders nothing when the
-// field is blank. Placed at the top of the Dashboard and the Training Plan.
+// Client-visible coach messages (coach_messages table) with real history and
+// read-state. The oldest unacknowledged message shows as a banner; clicking
+// "Got it" acknowledges it (permanently — it never reappears) and reveals the
+// next one, if any. Everything acknowledged lives in a collapsed history
+// list below. Placed at the top of the Dashboard and the Training Plan.
 function CoachMessage({ profile }) {
-  const [msg, setMsg] = useState(profile?.coach_message || "");
-  useEffect(() => {
-    let alive = true;
-    supabase.from("profiles").select("coach_message").eq("id", profile.id).maybeSingle()
-      .then(({ data }) => { if (alive) setMsg(data?.coach_message || ""); });
-    return () => { alive = false; };
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [showHistory, setShowHistory] = useState(false);
+  const [acking, setAcking] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("coach_messages").select("*").eq("client_id", profile.id).order("created_at", { ascending: false });
+    setMessages(data || []);
+    setLoading(false);
   }, [profile.id]);
-  if (!msg.trim()) return null;
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return null;
+
+  const unacknowledged = [...messages].filter(m => !m.acknowledged_at).sort((a, b) => (a.created_at < b.created_at ? -1 : 1))[0];
+  const history = messages.filter(m => m.id !== unacknowledged?.id);
+
+  const acknowledge = async () => {
+    if (!unacknowledged) return;
+    setAcking(true);
+    await supabase.from("coach_messages").update({ acknowledged_at: new Date().toISOString() }).eq("id", unacknowledged.id);
+    setAcking(false);
+    load();
+  };
+
+  if (!unacknowledged && history.length === 0) return null;
+
   return (
-    <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: 20 }}>
-      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <span>💬</span> Message from your coach
-      </div>
-      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap" }}>{msg}</div>
-    </Card>
+    <div style={{ marginBottom: 20 }}>
+      {unacknowledged && (
+        <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: history.length ? 10 : 0 }}>
+          <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>💬</span> Message from your coach
+          </div>
+          <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap", marginBottom: 14 }}>{unacknowledged.body}</div>
+          <Btn sm teal onClick={acknowledge} disabled={acking}>{acking ? "..." : "Got it"}</Btn>
+        </Card>
+      )}
+      {history.length > 0 && (
+        <>
+          <button onClick={() => setShowHistory(v => !v)}
+            style={{ background: "none", border: "none", color: S.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "4px 0" }}>
+            {showHistory ? "Hide" : "View"} message history ({history.length})
+          </button>
+          {showHistory && history.map(m => (
+            <div key={m.id} style={{ background: S.surface, border: "1px solid " + S.border, padding: "12px 14px", marginTop: 8 }}>
+              <div style={{ fontSize: 10, color: S.muted, marginBottom: 6 }}>{(m.created_at || "").slice(0, 10)}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.6, color: S.text, whiteSpace: "pre-wrap" }}>{m.body}</div>
+            </div>
+          ))}
+        </>
+      )}
+    </div>
   );
 }
 // Client-side surface for the manual PayPal invoice link the coach pastes in

@@ -7,7 +7,7 @@ import { ClientHeaderSection } from "./sections/ClientHeaderSection.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
 import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
-import { ClientMessageSection } from "./sections/ClientMessageSection.jsx";
+import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
 import { ProgramPhase, ProgramVersions, createProgramVersion } from "./sections/ProgramSection.jsx";
 import { CoachNutrition } from "./sections/NutritionSection.jsx";
@@ -54,9 +54,6 @@ export function ClientDetailPage() {
   const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerMsg, setPartnerMsg] = useState(null);
-  const [coachMsg, setCoachMsg] = useState("");            // client-visible message draft
-  const [savingCoachMsg, setSavingCoachMsg] = useState(false);
-  const [coachMsgStatus, setCoachMsgStatus] = useState(null);
   // Session-only expand state for the section accordion — collapsed by
   // default, resets on reload (no persistence, per spec).
   const [expanded, setExpanded] = useState(() => new Set());
@@ -121,8 +118,6 @@ export function ClientDetailPage() {
       access_until: c.access_until || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
-    if(c) setCoachMsg(c.coach_message || "");
-    setCoachMsgStatus(null);
     setAssessMsg(null);
     setSettingsMsg(null);
     setPartnerMsg(null);
@@ -183,18 +178,6 @@ export function ClientDetailPage() {
     if(error){ setPartnerMsg({ok:false,text:error.message}); return; }
     const ownerName = clients.find(c=>c.id===owner)?.name;
     setPartnerMsg({ok:true,text:owner?`Now sharing ${ownerName||"partner"}'s training program.`:"Training unlinked — this client has an independent program again."});
-    await loadClients();
-  };
-
-  // Save the client-visible coach message (profiles.coach_message). Shown to the
-  // client at the top of their Dashboard + Training Plan; blank clears it.
-  const saveCoachMessage = async()=>{
-    setSavingCoachMsg(true); setCoachMsgStatus(null);
-    const {error} = await supabase.from("profiles")
-      .update({coach_message: coachMsg.trim() || null}).eq("id",selected);
-    setSavingCoachMsg(false);
-    if(error){ setCoachMsgStatus({ok:false,text:error.message}); return; }
-    setCoachMsgStatus({ok:true,text:coachMsg.trim()?"Message saved — your client can see it now.":"Message cleared."});
     await loadClients();
   };
 
@@ -321,10 +304,7 @@ export function ClientDetailPage() {
           ? <ProgramProgress profile={client} />
           : <Progress profile={client} coachView />
     )},
-    { key: "message", title: "Client-Visible Message", node: (
-        <ClientMessageSection coachMsg={coachMsg} setCoachMsg={setCoachMsg}
-          saveCoachMessage={saveCoachMessage} savingCoachMsg={savingCoachMsg} coachMsgStatus={coachMsgStatus}/>
-    )},
+    { key: "message", title: "Coach Messages", node: <CoachMessagesSection clientId={client.id} /> },
     { key: "habits", title: "Daily Habits", node: <CoachHabits clientId={client.id} /> },
     { key: "insights", title: "Client Insights", node: <CoachClientInsights client={client} /> },
     { key: "notes", title: "Coach Notes", node: <CoachNotes clientId={client.id} /> },
