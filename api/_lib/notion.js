@@ -51,6 +51,14 @@ export const PROP = {
   nervousSystem: "Nervous System Recruitment",
   densityToSize: "Muscular Density-to-Size",
   workCapacity: "Metabolic Work Capacity",
+  // CRM pipeline fields (app -> Notion, one-way; see syncLeadToNotion below).
+  // These only exist in the app's `leads` table today — adjust the
+  // right-hand side to whatever columns you add to the Notion database.
+  status: "Stage",
+  notes: "Coach Notes",
+  followUpDate: "Follow-up Date",
+  invoiceLink: "Invoice Link",
+  paid: "Paid",
 };
 
 // Reads a single Notion property into a plain JS value, regardless of its type.
@@ -115,7 +123,7 @@ function emailOf(page) {
 
 // Finds the client's Notion page by email. Tries an indexed query first, then
 // falls back to scanning the database (handles email stored as rich_text/title).
-async function findClientPage(databaseId, email) {
+export async function findClientPage(databaseId, email) {
   const target = email.toLowerCase();
 
   try {
@@ -187,6 +195,55 @@ export async function createNotionApplication(fields) {
   if (!properties[PROP.email]) return null; // email is required to create a usable page
 
   const page = await notion.pages.create({ parent: { database_id: databaseId }, properties });
+  return page.id;
+}
+
+// Pushes CRM pipeline changes (status/notes/follow-up date/invoice info) to
+// the lead's existing Notion page — one-way, app stays the source of truth.
+// Never creates a page (that's createNotionApplication's job at apply-time);
+// returns null if no matching page exists yet, if Notion isn't configured,
+// or if none of the patch keys map to a column that exists in the live
+// Notion schema (so this never throws over a schema mismatch).
+//
+// `patch` uses the app's leads-table field names: status (pass the
+// human-readable label, not the internal key), notes, follow_up_date,
+// invoice_link, paid. follow_up_date lands in a real Notion Date property so
+// the coach can use Notion's own native reminder-subscription feature —
+// there's no generic "push notification" API to build against here.
+const LEAD_PATCH_TO_PROP = { status: "status", notes: "notes", follow_up_date: "followUpDate", invoice_link: "invoiceLink", paid: "paid" };
+
+export async function syncLeadToNotion(email, patch) {
+  const databaseId = process.env.NOTION_DATABASE_ID;
+  if (!process.env.NOTION_API_KEY || !databaseId) return null;
+
+  const page = await findClientPage(databaseId, email);
+  if (!page) return null;
+
+  const db = await notion.databases.retrieve({ database_id: databaseId });
+  const schemaProps = db.properties;
+
+  const properties = {};
+  for (const [patchKey, propKey] of Object.entries(LEAD_PATCH_TO_PROP)) {
+    if (!(patchKey in patch)) continue;
+    const columnName = PROP[propKey];
+    const def = schemaProps[columnName];
+    if (!def) continue;
+    const value = patch[patchKey];
+    const wrapped = wrapNotionValue(def.type, value);
+    if (wrapped) { properties[columnName] = wrapped; continue; }
+    // wrapNotionValue returns null for empty values, which would silently skip
+    // a real "clear this field" intent (e.g. clearing the follow-up date).
+    // Notion requires an explicit empty payload per type to actually clear it.
+    if (value == null || value === "") {
+      if (def.type === "date") properties[columnName] = { date: null };
+      else if (def.type === "rich_text") properties[columnName] = { rich_text: [] };
+      else if (def.type === "url") properties[columnName] = { url: null };
+      else if (def.type === "checkbox") properties[columnName] = { checkbox: false };
+    }
+  }
+  if (!Object.keys(properties).length) return null;
+
+  await notion.pages.update({ page_id: page.id, properties });
   return page.id;
 }
 
