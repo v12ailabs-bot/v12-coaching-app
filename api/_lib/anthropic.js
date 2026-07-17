@@ -336,3 +336,45 @@ Plain text only — no markdown headers, no bullet lists.`,
   });
   return message.content[0].text.trim();
 }
+
+// A short coaching insight for a single goal, built from its computed score
+// (src/lib/scoring/goalScoring.js) rather than raw check-in rows. Returns
+// prose. Kept on the same small token budget as generateCheckinSummary —
+// this is a much smaller prompt than program generation and shouldn't
+// inherit that 16000-token budget.
+export async function generateGoalInsight({ profile = {}, goal = {}, scoreData = {} }) {
+  const data = {
+    goal_type: goal.goal_type,
+    direction: goal.direction,
+    unit: goal.unit,
+    baseline_value: goal.baseline_value,
+    baseline_date: goal.baseline_date,
+    target_value: goal.target_value,
+    target_date: goal.target_date,
+    overall_score: scoreData.overallScore,
+    classification: scoreData.classification,
+    progress_ratio: scoreData.progressRatio,
+    velocity_per_day: scoreData.velocity,
+    eta_date: scoreData.etaDate ? scoreData.etaDate.toISOString().slice(0, 10) : null,
+    components: scoreData.components || {},
+  };
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 700,
+    messages: [
+      {
+        role: "user",
+        content: `You are a supportive but honest performance coach. Write a short coaching insight for ${profile.name || "the client"}'s progress toward this goal: ${data.direction} ${data.goal_type} from ${data.baseline_value}${data.unit} to ${data.target_value}${data.unit} by ${data.target_date}.
+Use ONLY the data below — never invent numbers. If a component score is missing, don't mention it.
+
+DATA: ${JSON.stringify(data)}
+
+Write 2 short paragraphs, ~80-120 words total, second person ("you"):
+1. Where they stand right now (on pace / ahead / behind) and the specific number(s) driving that — cite the classification and whichever component score(s) are most responsible.
+2. One concrete, specific recommendation for the next 1-2 weeks.
+Plain text only — no markdown headers, no bullet lists.`,
+      },
+    ],
+  });
+  return message.content[0].text.trim();
+}
