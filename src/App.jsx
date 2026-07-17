@@ -5,7 +5,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection } from "./components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
 import { ClientSelector } from "./components/ClientSelector.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack } from "./lib/constants.js";
 import { adherenceFrom, nutritionScoreFrom } from "./lib/scoring.js";
@@ -921,8 +921,8 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
   // `short` labels are used in the cramped mobile bottom bar (clients have 9 tabs;
   // the full labels overlap at that width).
   const clientNav = programOnly
-    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"habits",icon:"🎯",label:"Daily Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"habits",icon:"🎯",label:"Habits",short:"Habits"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
+    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
+    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
@@ -1207,6 +1207,9 @@ function ClientHome({ profile, setPage }) {
     <div>
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
+      <CollapsibleSection title="Habits">
+        <Habits profile={profile} />
+      </CollapsibleSection>
       <InvoiceCard profile={profile} />
       {!doneToday && (
         <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12,flexWrap:"wrap"}}>
@@ -1479,7 +1482,6 @@ function Habits({ profile }) {
 
   return (
     <div>
-      <PageTitle title="Daily Habits" sub="Small wins, stacked daily" />
       {habits.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 48 }}>
           <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
@@ -1610,7 +1612,6 @@ function ProgramHabits({ profile }) {
 
   return (
     <div>
-      <PageTitle title="Daily Habits" sub="Small wins, stacked daily — just for you" />
       <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 22 }}>
         <Stat label="Done Today" value={doneToday} unit={"/" + PROGRAM_HABITS.length} />
         <Stat label="Today's Completion" value={pct} unit="%" />
@@ -2181,6 +2182,34 @@ function CoachHome({ setPage }) {
   return (
     <div>
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
+
+      <CollapsibleSection title="All Clients" summary={`${clients.length} total`}>
+        <ClientSelector clients={clients} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
+      </CollapsibleSection>
+
+      {messages.length>0 && (
+        <CollapsibleSection title="💬 Client Messages & Flags" summary={`${messages.length} this period`}>
+          <Card>
+            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
+            {messages.map((m,i)=>(
+              <div key={i} onClick={()=>setPage("clients")}
+                style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
+                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
+                  <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
+                </div>
+                {m.items.map((it,j)=>(
+                  <div key={j} style={{marginBottom:6}}>
+                    <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
+                    {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
+                  </div>
+                ))}
+              </div>
+            ))}
+          </Card>
+        </CollapsibleSection>
+      )}
+
       <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Total Clients" value={clients.length} unit=""/>
         <Stat label="Need Attention" value={needs.length} unit=""/>
@@ -2251,32 +2280,6 @@ function CoachHome({ setPage }) {
         })}
       </Card>
 
-      {messages.length>0 && (
-        <CollapsibleSection title="💬 Client Messages & Flags" summary={`${messages.length} this period`}>
-          <Card>
-            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
-            {messages.map((m,i)=>(
-              <div key={i} onClick={()=>setPage("clients")}
-                style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
-                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
-                  <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
-                </div>
-                {m.items.map((it,j)=>(
-                  <div key={j} style={{marginBottom:6}}>
-                    <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
-                    {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </Card>
-        </CollapsibleSection>
-      )}
-
-      <CollapsibleSection title="All Clients" summary={`${clients.length} total`}>
-        <ClientSelector clients={clients} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
-      </CollapsibleSection>
     </div>
   );
 }
@@ -2293,11 +2296,19 @@ function CoachHome({ setPage }) {
 // Placeholder weekly targets -- the coach can adjust these; not sourced from
 // the Notion Weekly Outreach Metrics thresholds (not inspected here).
 const WEEKLY_TARGETS = { dms_sent: 350, sales_conversations: 20, calls_booked: 10, clients_closed: 2, revenue_today: 3000 };
-function weekStatus(total, target) {
+// `daysElapsed` scales the target down for a week still in progress (1-7) —
+// without this, a week with only today's entry compares 1 day of activity
+// against the FULL weekly target and always reads "Behind", even seconds
+// after a perfectly-on-pace first entry. Completed weeks pass daysElapsed=7
+// (the full target, unscaled).
+function weekStatus(total, target, daysElapsed = 7) {
   if (!target) return null;
-  const pct = total / target;
+  const paceTarget = target * (clamp01(daysElapsed / 7));
+  if (paceTarget <= 0) return null; // day 0 of a new week — nothing to compare yet
+  const pct = total / paceTarget;
   return pct >= 1.1 ? "Ahead" : pct >= 0.9 ? "On Track" : "Behind";
 }
+function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 function isoWeekStart(dateStr) {
   const d = new Date(dateStr + "T00:00:00Z");
   const day = d.getUTCDay();
@@ -2351,6 +2362,18 @@ function MetricsDashboard() {
   const sum = (list, key) => list.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const METRIC_KEYS = ["dms_sent", "sales_conversations", "calls_booked", "clients_closed", "revenue_today"];
   const METRIC_LABEL = { dms_sent: "DMs Sent", sales_conversations: "Sales Conversations", calls_booked: "Calls Booked", clients_closed: "Clients Closed", revenue_today: "Revenue" };
+  const currentWeekStart = isoWeekStart(dateStr);
+  // How many days of the current week have actually happened (Monday=1 .. Sunday=7),
+  // so a week that just started isn't judged against the full 7-day target.
+  const daysElapsedThisWeek = Math.floor((new Date(dateStr) - new Date(currentWeekStart)) / 86400000) + 1;
+  const daysElapsedFor = (wk) => (wk === currentWeekStart ? daysElapsedThisWeek : 7);
+  // Oldest -> newest for a left-to-right trend chart, matching the Progress page.
+  const trendData = [...weeks].reverse().map((wk) => {
+    const list = byWeek[wk];
+    const point = { week: wk };
+    METRIC_KEYS.forEach((k) => { point[k] = sum(list, k); });
+    return point;
+  });
   const badge = (status) => !status ? null : (
     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "3px 8px", marginLeft: 6,
       background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : "rgba(255,107,91,.14)",
@@ -2398,12 +2421,14 @@ function MetricsDashboard() {
                 const list = byWeek[wk];
                 return (
                   <tr key={wk}>
-                    <td style={{ padding: "8px 10px", fontSize: 12, color: S.text }}>{wk}</td>
+                    <td style={{ padding: "8px 10px", fontSize: 12, color: S.text }}>
+                      {wk}{wk === currentWeekStart && <span style={{ fontSize: 9, color: S.muted, marginLeft: 6 }}>(in progress, day {daysElapsedThisWeek}/7)</span>}
+                    </td>
                     {METRIC_KEYS.map((k) => {
                       const total = sum(list, k);
                       return (
                         <td key={k} style={{ padding: "8px 10px", fontSize: 12, color: S.text, whiteSpace: "nowrap" }}>
-                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}{badge(weekStatus(total, WEEKLY_TARGETS[k]))}
+                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}{badge(weekStatus(total, WEEKLY_TARGETS[k], daysElapsedFor(wk)))}
                         </td>
                       );
                     })}
@@ -2414,6 +2439,24 @@ function MetricsDashboard() {
           </table>
         </div>
       </Card>
+      <CollapsibleSection title="Trends" summary={`last ${trendData.length} weeks`}>
+        <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+          {METRIC_KEYS.map((k) => (
+            <CC key={k} title={METRIC_LABEL[k]} sub="Weekly total · dashed = target">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={trendData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
+                  <XAxis dataKey="week" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} />
+                  <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} />
+                  <Tooltip {...TT} formatter={(v) => [k === "revenue_today" ? `$${v}` : v, METRIC_LABEL[k]]} />
+                  <ReferenceLine y={WEEKLY_TARGETS[k]} stroke={S.muted} strokeDasharray="4 4" />
+                  <Line type="monotone" dataKey={k} stroke={S.accent} strokeWidth={2} dot={{ r: 3 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          ))}
+        </div>
+      </CollapsibleSection>
     </div>
   );
 }
@@ -2904,6 +2947,11 @@ function ClientProgram({ profile }) {
       {profile.client_type === "program_only"
         ? <UpgradeCTA profile={profile} />
         : <CoachMessage profile={profile} />}
+      {profile.client_type === "program_only" && (
+        <CollapsibleSection title="Habits">
+          <ProgramHabits profile={profile} />
+        </CollapsibleSection>
+      )}
       <InvoiceCard profile={profile} />
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
@@ -3152,7 +3200,6 @@ function ClientDashboard({ profile, logout }) {
       {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
-      {page === "habits" && (programOnly ? <ProgramHabits profile={profile} /> : <Habits profile={profile} />)}
       {page === "resources" && <Resources />}
     </Shell>
   );
@@ -3165,6 +3212,18 @@ function ClientDashboard({ profile, logout }) {
 const LEAD_STATUSES = ["new", "applied", "accepted", "closed_lost", "follow_up_later", "price_objection", "not_ready"];
 const LEAD_STATUS_LABEL = { new: "New", applied: "Applied", accepted: "Accepted", closed_lost: "Closed Lost", follow_up_later: "Follow-up Later", price_objection: "Price Objection", not_ready: "Not Ready" };
 const REJECT_STATUSES = ["closed_lost", "follow_up_later", "price_objection", "not_ready"];
+// Select-option vocab copied exactly from the live Notion "V12 Lead Pipeline
+// — CRM" database (confirmed via the API 2026-07-17), so a lead logged here
+// and one logged in Notion read the same way.
+const CRM_GOAL_OPTIONS = ["Fat Loss", "Muscle Build", "Both", "Unknown"];
+const CRM_CHANNEL_OPTIONS = ["TikTok", "Instagram", "Facebook", "Referral", "WhatsApp Cold", "Other"];
+const CRM_STAGE_OPTIONS = ["New DM", "Qualifying", "Application Sent", "WhatsApp Moved", "Call Booked", "Call Done", "Closed Won", "Closed Lost", "Ghost"];
+const CRM_RESPONSE_RATE_OPTIONS = ["Replied", "No Response", "Ghosted After Interest"];
+const BLANK_MANUAL_LEAD = {
+  name: "", email: "", goal: "", channel: "", stage: "New DM", response_rate: "",
+  deal_value: "", follow_up_date: "", last_contact_date: "", notes: "",
+  dm_opener_sent: false, application_submitted: false, call_booked: false, moved_to_whatsapp: false,
+};
 
 function CRMPanel() {
   const [leads, setLeads] = useState([]);
@@ -3172,6 +3231,10 @@ function CRMPanel() {
   const [filter, setFilter] = useState("all");
   const [dueOnly, setDueOnly] = useState(false);
   const [expanded, setExpanded] = useState(null);
+  const [addForm, setAddForm] = useState(BLANK_MANUAL_LEAD);
+  const [adding, setAdding] = useState(false);
+  const [addMsg, setAddMsg] = useState(null);
+  const setAddField = (k, v) => setAddForm((p) => ({ ...p, [k]: v }));
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
@@ -3180,22 +3243,54 @@ function CRMPanel() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
+  // Fire-and-forget push to the lead's Notion CRM page (created if it doesn't
+  // exist yet) — never blocks or fails the coach's save on a Notion hiccup,
+  // same contract as the intake-form sync.
+  const syncToNotionCrm = (email, patch) => {
+    if (!email) return;
+    supabase.auth.getSession().then(({ data: { session } }) =>
+      fetch("/api/sync-lead-to-notion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ email, patch }),
+      })
+    ).catch(() => {});
+  };
+
   const updateLead = async (id, patch) => {
     const lead = leads.find((l) => l.id === id);
     setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
     await supabase.from("leads").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    // Fire-and-forget push to the lead's existing Notion page — never blocks
-    // or fails the save on a Notion hiccup, same contract as the intake sync.
-    if (lead?.email) {
-      const notionPatch = "status" in patch ? { ...patch, status: LEAD_STATUS_LABEL[patch.status] || patch.status } : patch;
-      supabase.auth.getSession().then(({ data: { session } }) =>
-        fetch("/api/sync-lead-to-notion", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-          body: JSON.stringify({ email: lead.email, patch: notionPatch }),
-        })
-      ).catch(() => {});
+    syncToNotionCrm(lead?.email, patch);
+  };
+
+  // Log a lead met via cold outreach (DM/social) that never touched the
+  // in-app intake form — mirrors the fields on the Notion Lead Pipeline CRM
+  // exactly so nothing needs re-entering by hand in either place.
+  const addLead = async () => {
+    if (!addForm.name.trim() || !addForm.email.trim()) {
+      setAddMsg({ ok: false, text: "Name and email are required." });
+      return;
     }
+    setAdding(true); setAddMsg(null);
+    const payload = {
+      name: addForm.name.trim(), email: addForm.email.trim().toLowerCase(),
+      goal: addForm.goal || null, channel: addForm.channel || null, stage: addForm.stage || null,
+      response_rate: addForm.response_rate || null,
+      deal_value: addForm.deal_value === "" ? null : Number(addForm.deal_value),
+      follow_up_date: addForm.follow_up_date || null, last_contact_date: addForm.last_contact_date || null,
+      notes: addForm.notes.trim() || null,
+      dm_opener_sent: addForm.dm_opener_sent, application_submitted: addForm.application_submitted,
+      call_booked: addForm.call_booked, moved_to_whatsapp: addForm.moved_to_whatsapp,
+      source: "manual", status: "new",
+    };
+    const { error } = await supabase.from("leads").insert(payload);
+    setAdding(false);
+    if (error) { setAddMsg({ ok: false, text: error.message }); return; }
+    setAddMsg({ ok: true, text: `${payload.name} added.` });
+    setAddForm(BLANK_MANUAL_LEAD);
+    syncToNotionCrm(payload.email, payload);
+    await load();
   };
 
   // Accept: mark accepted and auto-link to an existing profile by email if one
@@ -3218,6 +3313,34 @@ function CRMPanel() {
   return (
     <div>
       <PageTitle title="Leads / CRM" sub="Applications and prospects — migrated one-time from Notion, no live sync" />
+
+      <CollapsibleSection title="+ Add Lead" summary="log a cold-outreach contact">
+        <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
+          <Fld label="Name *"><Inp type="text" value={addForm.name} onChange={(e) => setAddField("name", e.target.value)} placeholder="Full name" /></Fld>
+          <Fld label="Email *"><Inp type="email" value={addForm.email} onChange={(e) => setAddField("email", e.target.value)} placeholder="name@email.com" /></Fld>
+          <Fld label="Goal"><RG options={CRM_GOAL_OPTIONS} value={addForm.goal} onChange={(v) => setAddField("goal", v)} /></Fld>
+          <Fld label="Source"><RG options={CRM_CHANNEL_OPTIONS} value={addForm.channel} onChange={(v) => setAddField("channel", v)} /></Fld>
+          <Fld label="Stage"><RG options={CRM_STAGE_OPTIONS} value={addForm.stage} onChange={(v) => setAddField("stage", v)} /></Fld>
+          <Fld label="Response Rate"><RG options={CRM_RESPONSE_RATE_OPTIONS} value={addForm.response_rate} onChange={(v) => setAddField("response_rate", v)} /></Fld>
+          <Fld label="Deal Value ($)"><Inp type="number" value={addForm.deal_value} onChange={(e) => setAddField("deal_value", e.target.value)} placeholder="e.g. 1500" /></Fld>
+          <Fld label="Follow-up Date"><Inp type="date" value={addForm.follow_up_date} onChange={(e) => setAddField("follow_up_date", e.target.value)} /></Fld>
+          <Fld label="Last Contact Date"><Inp type="date" value={addForm.last_contact_date} onChange={(e) => setAddField("last_contact_date", e.target.value)} /></Fld>
+        </div>
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", margin: "4px 0 16px" }}>
+          {[["dm_opener_sent", "DM Opener Sent"], ["application_submitted", "Application Submitted"], ["call_booked", "Call Booked"], ["moved_to_whatsapp", "Moved to WhatsApp"]].map(([k, label]) => (
+            <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
+              <input type="checkbox" checked={addForm[k]} onChange={(e) => setAddField(k, e.target.checked)} /> {label}
+            </label>
+          ))}
+        </div>
+        <Fld label="Notes"><textarea rows={2} value={addForm.notes} onChange={(e) => setAddField("notes", e.target.value)}
+          style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} /></Fld>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          <Btn onClick={addLead} disabled={adding}>{adding ? "Adding..." : "Add Lead"}</Btn>
+          <Alert variant={addMsg?.ok ? "success" : "error"}>{addMsg?.text}</Alert>
+        </div>
+      </CollapsibleSection>
+
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         {["all", ...LEAD_STATUSES].map((s) => (
           <button key={s} onClick={() => setFilter(s)}
@@ -3292,9 +3415,28 @@ function CRMPanel() {
                   </div>
                 </div>
               )}
-              <Fld label="Follow-up reminder">
-                <Inp type="date" value={lead.follow_up_date || ""} onChange={(e) => updateLead(lead.id, { follow_up_date: e.target.value || null })} />
-              </Fld>
+              <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 4 }}>
+                <Fld label="Stage"><RG options={CRM_STAGE_OPTIONS} value={lead.stage || ""} onChange={(v) => updateLead(lead.id, { stage: v })} /></Fld>
+                <Fld label="Source"><RG options={CRM_CHANNEL_OPTIONS} value={lead.channel || ""} onChange={(v) => updateLead(lead.id, { channel: v })} /></Fld>
+                <Fld label="Response Rate"><RG options={CRM_RESPONSE_RATE_OPTIONS} value={lead.response_rate || ""} onChange={(v) => updateLead(lead.id, { response_rate: v })} /></Fld>
+                <Fld label="Deal Value ($)">
+                  <Inp type="number" defaultValue={lead.deal_value ?? ""} placeholder="e.g. 1500"
+                    onBlur={(e) => updateLead(lead.id, { deal_value: e.target.value === "" ? null : Number(e.target.value) })} />
+                </Fld>
+                <Fld label="Follow-up Date">
+                  <Inp type="date" value={lead.follow_up_date || ""} onChange={(e) => updateLead(lead.id, { follow_up_date: e.target.value || null })} />
+                </Fld>
+                <Fld label="Last Contact Date">
+                  <Inp type="date" value={lead.last_contact_date || ""} onChange={(e) => updateLead(lead.id, { last_contact_date: e.target.value || null })} />
+                </Fld>
+              </div>
+              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", margin: "4px 0 16px" }}>
+                {[["dm_opener_sent", "DM Opener Sent"], ["application_submitted", "Application Submitted"], ["call_booked", "Call Booked"], ["moved_to_whatsapp", "Moved to WhatsApp"]].map(([k, label]) => (
+                  <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
+                    <input type="checkbox" checked={!!lead[k]} onChange={(e) => updateLead(lead.id, { [k]: e.target.checked })} /> {label}
+                  </label>
+                ))}
+              </div>
               <Fld label="Notes">
                 <textarea defaultValue={lead.notes || ""} rows={2}
                   onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, notes: e.target.value } : l)))}
