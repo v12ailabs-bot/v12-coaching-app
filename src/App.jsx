@@ -3124,6 +3124,21 @@ function Nutrition({ profile }) {
           </ul>
         </DayFolder>
       ))}
+
+      {Array.isArray(plan.supplements) && plan.supplements.length > 0 && (
+        <Card>
+          <CardTitle>Supplements</CardTitle>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+            {plan.supplements.map((s, i) => (
+              <li key={i}>
+                <strong>{s.name}</strong>{s.dose ? ` — ${s.dose}` : ""}{s.timing ? ` · ${s.timing}` : ""}
+                {s.note && <div style={{ fontSize: 12, color: S.muted }}>{s.note}</div>}
+              </li>
+            ))}
+          </ul>
+          {plan.supplements_disclaimer && <div style={{ fontSize: 11, color: S.muted, marginTop: 10, fontStyle: "italic" }}>{plan.supplements_disclaimer}</div>}
+        </Card>
+      )}
     </div>
   );
 }

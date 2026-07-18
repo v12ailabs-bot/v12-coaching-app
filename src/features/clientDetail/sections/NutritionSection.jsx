@@ -37,6 +37,9 @@ export function CoachNutrition({ clientId, refreshKey }) {
       name: plan.name || "", calories: plan.calories ?? "", protein_g: plan.protein_g ?? "",
       carbs_g: plan.carbs_g ?? "", fats_g: plan.fats_g ?? "", hydration: plan.hydration || "",
       guidelines: plan.guidelines || "",
+      supplements: (Array.isArray(plan.supplements) ? plan.supplements : []).map((s) => ({
+        name: s.name || "", dose: s.dose || "", timing: s.timing || "", note: s.note || "",
+      })),
       meals: (Array.isArray(plan.meals) ? plan.meals : []).map((m) => ({
         meal: m.meal || "", time: m.time || "", calories: m.calories ?? "", protein_g: m.protein_g ?? "",
         carbs_g: m.carbs_g ?? "", fats_g: m.fats_g ?? "",
@@ -50,14 +53,24 @@ export function CoachNutrition({ clientId, refreshKey }) {
   const setMeal = (i, k, v) => setDraft((d) => ({ ...d, meals: d.meals.map((m, j) => (j === i ? { ...m, [k]: v } : m)) }));
   const addMeal = () => setDraft((d) => ({ ...d, meals: [...d.meals, { meal: "", time: "", calories: "", protein_g: "", carbs_g: "", fats_g: "", itemsText: "" }] }));
   const removeMeal = (i) => setDraft((d) => ({ ...d, meals: d.meals.filter((_, j) => j !== i) }));
+  const setSupplement = (i, k, v) => setDraft((d) => ({ ...d, supplements: d.supplements.map((s, j) => (j === i ? { ...s, [k]: v } : s)) }));
+  const addSupplement = () => setDraft((d) => ({ ...d, supplements: [...d.supplements, { name: "", dose: "", timing: "", note: "" }] }));
+  const removeSupplement = (i) => setDraft((d) => ({ ...d, supplements: d.supplements.filter((_, j) => j !== i) }));
 
   const save = async () => {
     setSaving(true); setMsg(null);
+    const supplements = draft.supplements
+      .map((s) => ({ name: s.name.trim(), dose: s.dose.trim() || null, timing: s.timing.trim() || null, note: s.note.trim() || null }))
+      .filter((s) => s.name);
     const payload = {
       name: draft.name.trim() || null,
       calories: numOrNull(draft.calories), protein_g: numOrNull(draft.protein_g),
       carbs_g: numOrNull(draft.carbs_g), fats_g: numOrNull(draft.fats_g),
       hydration: draft.hydration.trim() || null, guidelines: draft.guidelines.trim() || null,
+      supplements,
+      supplements_disclaimer: supplements.length
+        ? "General information, not individualized medical or dietetic advice. Check with a doctor before starting any supplement, especially if pregnant, on medication, or managing a health condition."
+        : null,
       meals: draft.meals.map((m) => ({
         meal: m.meal.trim() || null, time: m.time.trim() || null,
         calories: numOrNull(m.calories), protein_g: numOrNull(m.protein_g),
@@ -95,6 +108,22 @@ export function CoachNutrition({ clientId, refreshKey }) {
           </div>
           <Fld label="Hydration"><Inp type="text" value={draft.hydration} onChange={(e) => setField("hydration", e.target.value)} placeholder="e.g. 3–4L water/day" /></Fld>
           <Fld label="Guidelines"><textarea rows={3} value={draft.guidelines} onChange={(e) => setField("guidelines", e.target.value)} style={taStyle} /></Fld>
+
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 8px" }}>
+            <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: S.muted }}>Supplements (general, not personalized)</div>
+            <Btn sm teal onClick={addSupplement}>+ Add Supplement</Btn>
+          </div>
+          {draft.supplements.map((s, i) => (
+            <div key={i} style={{ background: S.surface2, border: "1px solid " + S.border, padding: 14, marginBottom: 12 }}>
+              <div className="g2" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 12 }}>
+                <Fld label="Name"><Inp type="text" value={s.name} onChange={(e) => setSupplement(i, "name", e.target.value)} placeholder="e.g. Creatine Monohydrate" /></Fld>
+                <Fld label="Dose"><Inp type="text" value={s.dose} onChange={(e) => setSupplement(i, "dose", e.target.value)} placeholder="e.g. 5g" /></Fld>
+              </div>
+              <Fld label="Timing"><Inp type="text" value={s.timing} onChange={(e) => setSupplement(i, "timing", e.target.value)} placeholder="e.g. Daily, any time" /></Fld>
+              <Fld label="Note"><Inp type="text" value={s.note} onChange={(e) => setSupplement(i, "note", e.target.value)} placeholder="Why it's included" /></Fld>
+              <Btn sm danger onClick={() => removeSupplement(i)}>Remove Supplement</Btn>
+            </div>
+          ))}
 
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", margin: "18px 0 8px" }}>
             <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: S.muted }}>Meals</div>
@@ -155,6 +184,20 @@ export function CoachNutrition({ clientId, refreshKey }) {
               </ul>
             </DayFolder>
           ))}
+          {Array.isArray(plan.supplements) && plan.supplements.length > 0 && (
+            <div style={{ background: S.surface2, border: "1px solid " + S.border, padding: 14, marginTop: 16 }}>
+              <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Supplements</div>
+              <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+                {plan.supplements.map((s, i) => (
+                  <li key={i}>
+                    <strong>{s.name}</strong>{s.dose ? ` — ${s.dose}` : ""}{s.timing ? ` · ${s.timing}` : ""}
+                    {s.note && <div style={{ fontSize: 12, color: S.muted }}>{s.note}</div>}
+                  </li>
+                ))}
+              </ul>
+              {plan.supplements_disclaimer && <div style={{ fontSize: 11, color: S.muted, marginTop: 10, fontStyle: "italic" }}>{plan.supplements_disclaimer}</div>}
+            </div>
+          )}
           {msg && <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b", marginTop: 12 }}>{msg.text}</div>}
         </>
       )}
