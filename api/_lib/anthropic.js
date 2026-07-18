@@ -267,6 +267,15 @@ Guidance:
   Mixed) in the tone.
 - Strictly honor dietary preference and allergies.
 - Set realistic macro targets and a sample day of meals.
+- Include a GENERIC supplement/vitamin stack — general-population staples only
+  (e.g. whey/plant protein, creatine monohydrate, vitamin D3, omega-3/fish oil,
+  magnesium), each at standard label dosing. Pick only the ones that plausibly
+  serve the stated goal; do not include a supplement you would not give to any
+  healthy adult with that goal. Do NOT personalize dosing to age, sex, bodyweight,
+  medications, or health conditions, and do NOT recommend anything if the client
+  profile mentions pregnancy, a medical condition, or medication use — in that
+  case return an empty "supplements" array. This is general information, not
+  individualized medical or dietetic advice.
 
 OUTPUT FORMAT — respond with valid JSON only, no other text:
 {
@@ -286,6 +295,14 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
       "carbs_g": number,
       "fats_g": number,
       "items": ["1 cup oats", "2 whole eggs"]
+    }
+  ],
+  "supplements": [
+    {
+      "name": "Creatine Monohydrate",
+      "dose": "5g",
+      "timing": "Daily, any time",
+      "note": "Supports strength and training volume."
     }
   ]
 }`,

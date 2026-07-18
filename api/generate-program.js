@@ -221,6 +221,10 @@ export default async function handler(req, res) {
       hydration: nutrition.hydration || null,
       guidelines: nutrition.guidelines || null,
       meals: nutrition.meals || [],
+      supplements: nutrition.supplements || [],
+      supplements_disclaimer: Array.isArray(nutrition.supplements) && nutrition.supplements.length
+        ? "General information, not individualized medical or dietetic advice. Check with a doctor before starting any supplement, especially if pregnant, on medication, or managing a health condition."
+        : null,
       active: true,
     });
     if (nutErr) throw nutErr;
