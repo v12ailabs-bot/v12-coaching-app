@@ -779,8 +779,8 @@ function LoginScreen() {
         try {
           await fetch("/api/link-lead", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ email, client_id: data.user.id }),
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session?.access_token || ""}` },
+            body: JSON.stringify({ client_id: data.user.id }),
           });
         } catch { /* non-fatal — account creation already succeeded */ }
       }

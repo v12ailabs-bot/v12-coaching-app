@@ -3,6 +3,7 @@ import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { requireCoach } from "./_lib/auth.js";
 import { toScore } from "./_lib/scores.js";
 import { DAY_ORDER } from "../src/lib/constants.js";
 
@@ -22,6 +23,9 @@ function normalizeDay(day) {
 // 4. Saves both to Supabase (the tables the client portal reads)
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const user = await requireCoach(req, res);
+  if (!user) return;
 
   const { client_email, template_id, scope } = req.body || {};
   if (!client_email) return res.status(400).json({ error: "client_email is required" });

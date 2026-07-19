@@ -20,6 +20,12 @@ import { Progress } from "../progress/ProgressPage.jsx";
 
 const COACH_EMAIL = "coach@v12system.com";
 
+// Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
+async function authHeaders() {
+  const { data: { session } } = await supabase.auth.getSession();
+  return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` };
+}
+
 // Unified client detail page — replaces the old separate "Clients" and
 // "Progress" coach nav tabs. Client Header, primary actions (inside the
 // header), and Client Settings stay always visible; every other section is a
@@ -96,7 +102,8 @@ export function ClientDetailPage() {
   },[clients, showArchived]);
   // Program templates come from the Notion program library (via the API).
   useEffect(()=>{
-    fetch("/api/list-templates")
+    authHeaders()
+      .then(headers=>fetch("/api/list-templates",{headers}))
       .then(r=>r.ok?r.json():{templates:[]})
       .then(d=>setTemplates(d.templates||[]))
       .catch(()=>setTemplates([]));
@@ -148,7 +155,7 @@ export function ClientDetailPage() {
     setResettingGoal(true); setSettingsMsg(null);
     try{
       const r = await fetch("/api/notion-goal",{
-        method:"POST", headers:{"Content-Type":"application/json"},
+        method:"POST", headers:await authHeaders(),
         body:JSON.stringify({client_email:client.email}),
       });
       const data = await r.json().catch(()=>({}));
@@ -203,7 +210,7 @@ export function ClientDetailPage() {
     try{
       const r = await fetch("/api/sync-client",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:await authHeaders(),
         body:JSON.stringify({client_email:client.email}),
       });
       const data = await r.json().catch(()=>({}));
@@ -267,7 +274,7 @@ export function ClientDetailPage() {
     try{
       const r = await fetch("/api/generate-program",{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:await authHeaders(),
         body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope}),
       });
       const data = await r.json().catch(()=>({}));

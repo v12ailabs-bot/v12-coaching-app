@@ -1,14 +1,18 @@
 import { getClientFromNotion } from "./_lib/notion.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { requireCoach } from "./_lib/auth.js";
 import { toScore } from "./_lib/scores.js";
 
 // POST /api/sync-client  { client_email }
-// Re-pulls the client's intake from Notion and updates their app profile
-// (goal, name, and the three V12 assessment scores). Does NOT generate a
-// program. Only fields Notion actually provides are written, so a sync never
-// wipes a coach-set value that's missing in Notion.
+// Coach-only: re-pulls the client's intake from Notion and updates their app
+// profile (goal, name, and the three V12 assessment scores). Does NOT
+// generate a program. Only fields Notion actually provides are written, so a
+// sync never wipes a coach-set value that's missing in Notion.
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
+
+  const user = await requireCoach(req, res);
+  if (!user) return;
 
   const { client_email } = req.body || {};
   if (!client_email) return res.status(400).json({ error: "client_email is required" });
