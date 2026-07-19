@@ -656,30 +656,17 @@ function IntakeForm({ onDone }) {
     setError("");
     if (!form.name || !form.email || !form.height) { setError("Name, email, and height are required."); return; }
     setSaving(true);
-    const { error } = await supabase.from("leads").insert({
-      email: form.email.toLowerCase(),
-      name: form.name,
-      height: form.height,
-      source: "intake_form",
-      status: "applied",
-      intake_data: { ...form, currentInjuries, previousInjuries, painTriggers },
-    });
-    setSaving(false);
-    if (error) { setError(error.message); return; }
-    setDone(true);
-    // Fire-and-forget: also create a page in the Notion Applications Database
-    // so applicants who apply through the app show up there too. Failure
-    // here doesn't affect the applicant -- their submission already saved.
-    const injuries = [
-      ...currentInjuries.map((v) => `Current: ${v}`),
-      ...previousInjuries.map((v) => `Previous: ${v}`),
-      ...painTriggers.map((v) => `Trigger: ${v}`),
-    ].join("; ");
-    fetch("/api/create-notion-application", {
+    // Goes through the server (not a direct Supabase insert) so submissions
+    // can be rate-limited and mirrored into Notion server-side.
+    const res = await fetch("/api/submit-application", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, injuries }),
-    }).catch(() => {});
+      body: JSON.stringify({ ...form, currentInjuries, previousInjuries, painTriggers }),
+    });
+    const data = await res.json().catch(() => ({}));
+    setSaving(false);
+    if (!res.ok) { setError(data.error || "Submission failed. Please try again."); return; }
+    setDone(true);
   };
 
   if (done) return (

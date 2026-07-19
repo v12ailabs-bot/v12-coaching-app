@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { checkRateLimit, clientIp } from "./_lib/rateLimit.js";
 
 // POST /api/check-accepted  { email }
 // Gates account creation: a prospect can only sign up once their lead has
@@ -9,6 +10,11 @@ export default async function handler(req, res) {
 
   const { email } = req.body || {};
   if (!email) return res.status(400).json({ error: "email is required" });
+
+  // Generous limit -- this fires on every signup attempt, including retries
+  // after a typo -- but still caps email-enumeration/brute-force probing.
+  const allowed = await checkRateLimit(`check-accepted:${clientIp(req)}`, { limit: 20, windowMs: 5 * 60 * 1000 });
+  if (!allowed) return res.status(429).json({ error: "Too many requests. Please try again later." });
 
   try {
     const { data, error } = await supabaseAdmin
