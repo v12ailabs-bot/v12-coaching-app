@@ -271,7 +271,7 @@ export default async function handler(req, res) {
       calories: nutrition.daily_calories ?? null,
     });
   } catch (err) {
-    console.error("generate-program error:", err);
+    console.error("generate-program error:", err, "client_email:", client_email);
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }

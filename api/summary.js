@@ -38,6 +38,7 @@ export default async function handler(req, res) {
       .upsert({ client_id, period, content: summary, created_at: now.toISOString() }, { onConflict: "client_id,period" });
     return res.status(200).json({ summary, period });
   } catch (e) {
+    console.error("summary error:", e, "client_id:", client_id);
     return res.status(500).json({ error: e.message });
   }
 }

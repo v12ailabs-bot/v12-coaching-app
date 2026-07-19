@@ -70,6 +70,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ insight: saved });
   } catch (e) {
+    console.error("goal-insight error:", e, "goal_id:", goal_id);
     return res.status(500).json({ error: e.message });
   }
 }

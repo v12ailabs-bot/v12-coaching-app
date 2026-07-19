@@ -26,7 +26,7 @@ export default async function handler(req, res) {
     const pageId = await upsertCrmLead(email, patch);
     return res.status(200).json({ synced: !!pageId });
   } catch (err) {
-    console.error("sync-lead-to-notion error:", err);
+    console.error("sync-lead-to-notion error:", err, "email:", email);
     return res.status(200).json({ synced: false, error: err.message || "Notion sync failed" });
   }
 }

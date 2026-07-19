@@ -63,7 +63,7 @@ export default async function handler(req, res) {
       },
     });
   } catch (err) {
-    console.error("sync-client error:", err);
+    console.error("sync-client error:", err, "client_email:", client_email);
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }
