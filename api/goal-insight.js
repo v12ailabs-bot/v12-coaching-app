@@ -1,5 +1,6 @@
 import { generateGoalInsight } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 
@@ -10,15 +11,11 @@ import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  const user = await requireCoach(req, res);
+  if (!user) return;
+
   const { goal_id } = req.body || {};
   if (!goal_id) return res.status(400).json({ error: "goal_id is required" });
-
-  const token = (req.headers.authorization || "").replace(/^Bearer\s+/i, "");
-  const { data: userData } = token ? await supabaseAdmin.auth.getUser(token) : { data: {} };
-  const user = userData?.user;
-  if (!user) return res.status(401).json({ error: "Not authenticated" });
-  const { data: me } = await supabaseAdmin.from("profiles").select("role").eq("id", user.id).maybeSingle();
-  if (me?.role !== "coach") return res.status(403).json({ error: "Only a coach can generate goal insights." });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();
