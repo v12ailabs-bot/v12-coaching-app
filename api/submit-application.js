@@ -51,7 +51,7 @@ export default async function handler(req, res) {
 
     return res.status(200).json({ success: true, lead_id: lead.id });
   } catch (err) {
-    console.error("submit-application error:", err);
+    console.error("submit-application error:", err, "email:", email);
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }

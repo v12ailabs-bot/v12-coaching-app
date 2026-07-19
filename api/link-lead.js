@@ -30,7 +30,7 @@ export default async function handler(req, res) {
     if (error) throw error;
     return res.status(200).json({ linked: true });
   } catch (err) {
-    console.error("link-lead error:", err);
+    console.error("link-lead error:", err, "client_id:", client_id);
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }
