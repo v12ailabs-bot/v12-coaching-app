@@ -2113,17 +2113,21 @@ function CoachHome({ setPage }) {
     (async()=>{
       const {data:cl} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL).neq("archived",true);
       const list = cl||[];
-      const ids = list.map(c=>c.id);
+      // Coaching signals (check-ins, goals) only ever apply to coaching
+      // clients — program-only clients self-track outside any coach
+      // relationship, so they're excluded from these fetches at the source
+      // rather than relying on the per-client early-return below to ignore them.
+      const coachedIds = list.filter(c=>c.client_type!=="program_only").map(c=>c.id);
       const grouped = {};
       let weeklies = [];
       // Pending upgrade requests from program-only clients.
       const {data:ur} = await supabase.from("upgrade_requests").select("*").eq("status","pending").order("created_at",{ascending:false});
       setUpgrades(ur||[]);
-      if(ids.length){
+      if(coachedIds.length){
         const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
         const cut = cutoff.toISOString().split("T")[0];
         const {data:ch} = await supabase.from("daily_checkins")
-          .select("client_id,date,weight,workout,diet").in("client_id",ids).gte("date",cut).order("date");
+          .select("client_id,date,weight,workout,diet").in("client_id",coachedIds).gte("date",cut).order("date");
         (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
         // Weekly check-ins over a 28-day window: the last 14 days feed the
         // "Client Messages & Flags" card (filtered further below), while the
@@ -2133,12 +2137,12 @@ function CoachHome({ setPage }) {
         const wcut = wcutoff.toISOString().split("T")[0];
         const {data:wc} = await supabase.from("weekly_checkins")
           .select("client_id,date,coach_questions,adjustments,confidence_level,felt_weaker,biggest_challenge,mental_blocks,sleep_quality,hydration_quality")
-          .in("client_id",ids).gte("date",wcut).order("date");
+          .in("client_id",coachedIds).gte("date",wcut).order("date");
         weeklies = wc||[];
       }
       // Each coached client's active bodyweight goal — same client_goals rows
       // GoalsSection/Progress read, reused here instead of a duplicate signal.
-      const {data:cg} = ids.length ? await supabase.from("client_goals").select("*").in("client_id",ids).eq("status","active").eq("metric_key","bodyweight") : {data:[]};
+      const {data:cg} = coachedIds.length ? await supabase.from("client_goals").select("*").in("client_id",coachedIds).eq("status","active").eq("metric_key","bodyweight") : {data:[]};
       const goalsMap = {}; (cg||[]).forEach(g=>{goalsMap[g.client_id]=g;});
       setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setLoading(false);
     })();
@@ -2241,8 +2245,8 @@ function CoachHome({ setPage }) {
     <div>
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
 
-      <CollapsibleSection title="All Clients" summary={`${clients.length} total`}>
-        <ClientSelector clients={clients} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
+      <CollapsibleSection title="All Clients" summary={`${coached.length} total`}>
+        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
       </CollapsibleSection>
 
       {messages.length>0 && (
@@ -2269,9 +2273,9 @@ function CoachHome({ setPage }) {
       )}
 
       <div className="g4" style={{display:"grid",gridTemplateColumns:avgGoalProgress!=null?"repeat(5,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
-        <Stat label="Total Clients" value={clients.length} unit=""/>
+        <Stat label="Total Clients" value={coached.length} unit=""/>
         <Stat label="Need Attention" value={needs.length} unit=""/>
-        <Stat label="On Track" value={clients.length-needs.length} unit=""/>
+        <Stat label="On Track" value={coached.length-needs.length} unit=""/>
         <Stat label="Avg Adherence" value={avgAdh} unit="%"/>
         {avgGoalProgress!=null && <Stat label="Avg Goal Progress" value={avgGoalProgress} unit="%"/>}
       </div>
@@ -2304,8 +2308,8 @@ function CoachHome({ setPage }) {
           <CardTitle>⚠ Needs Attention</CardTitle>
           <Btn sm teal onClick={()=>setPage("clients")}>Manage Clients</Btn>
         </div>
-        {clients.length===0 && <div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No clients yet. Share the app URL with your clients.</div>}
-        {clients.length>0 && needs.length===0 && <div style={{color:S.accent2,fontSize:13,padding:"8px 0"}}>All clients are on track. Nice work.</div>}
+        {coached.length===0 && <div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No coaching clients yet. Share the app URL with your clients.</div>}
+        {coached.length>0 && needs.length===0 && <div style={{color:S.accent2,fontSize:13,padding:"8px 0"}}>All clients are on track. Nice work.</div>}
         {needs.map(a=>{
           const open = expandedNeeds.has(a.client.id);
           return (
