@@ -4,6 +4,16 @@ import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { toScore } from "./_lib/scores.js";
+import { DAY_ORDER } from "../src/lib/constants.js";
+
+// Maps the AI's returned day label onto one of the 7 canonical DAY_ORDER
+// values (case-insensitive exact match) so regeneration never introduces a
+// stray day label that doesn't match the client's existing day folders.
+function normalizeDay(day) {
+  const match = DAY_ORDER.find((d) => d.toLowerCase() === String(day || "").trim().toLowerCase());
+  if (!match) console.warn(`generate-program: unrecognized day "${day}", falling back to Unscheduled`);
+  return match || null;
+}
 
 // POST /api/generate-program  { client_email, template_id? }
 // 1. Reads the client's intake from Notion
@@ -33,7 +43,7 @@ export default async function handler(req, res) {
     const { data: profile, error: profileErr } = await supabaseAdmin
       .from("profiles")
       .select(
-        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal"
+        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal, is_local"
       )
       .eq("email", client_email)
       .maybeSingle();
@@ -84,7 +94,7 @@ export default async function handler(req, res) {
           .join("\n")
       : null;
 
-    const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null };
+    const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null, is_local: !!profile.is_local };
 
     // 3. Load the coach-selected template from the Notion program library and
     //    read its session structure as the AI framework. Falls back to the
@@ -185,7 +195,7 @@ export default async function handler(req, res) {
             category: ex.category || day.focus || null,
             section: ex.section || null,
             exercise_type: ex.exercise_type || null,
-            day_of_week: day.day,
+            day_of_week: normalizeDay(day.day),
             sets: ex.sets ?? null,
             reps: ex.reps != null ? String(ex.reps) : null,
             is_bodyweight: !!ex.is_bodyweight,

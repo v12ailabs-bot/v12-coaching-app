@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
-import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, CC } from "../../components/ui/index.js";
 import { PROGRAM_HABITS, streakBack } from "../../lib/constants.js";
+import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { StrengthTab } from "./StrengthTab.jsx";
 import { ProgressPhotos } from "./PhotosSection.jsx";
 
@@ -17,6 +18,7 @@ export function ProgramProgress({ profile }) {
   const [daily, setDaily] = useState([]);
   const [workoutDates, setWorkoutDates] = useState([]);
   const [scheduledDays, setScheduledDays] = useState(new Set());
+  const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,9 +29,12 @@ export function ProgramProgress({ profile }) {
         .select("date").eq("client_id", profile.id);
       const { data: exs } = await supabase.from("exercises")
         .select("day_of_week").eq("client_id", profile.id);
+      const { data: g } = await supabase.from("client_goals").select("*").eq("client_id", profile.id)
+        .eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle();
       setDaily(d || []);
       setWorkoutDates([...new Set((logs || []).map((l) => l.date))].sort());
       setScheduledDays(new Set((exs || []).map((e) => e.day_of_week).filter(Boolean)));
+      setGoal(g || null);
       setLoading(false);
     })();
   }, [profile.id]);
@@ -40,6 +45,9 @@ export function ProgramProgress({ profile }) {
   const waistSeries = daily.filter((d) => d.waist != null).map((d) => ({ date: d.date, waist: d.waist }));
   const lastWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].weight : null;
   const workoutsCompleted = workoutDates.length;
+  const goalScore = goal ? computeGoalScore(goal, weightSeries.map((w) => ({ date: w.date, value: w.weight })), {}) : null;
+  const daysRemaining = goal ? Math.max(0, Math.ceil((new Date(goal.target_date + "T00:00:00Z") - new Date()) / 86400000)) : null;
+  const tickEvery = (n) => Math.max(1, Math.floor(n / 8));
 
   const workoutSet = new Set(workoutDates);
   const workoutStreak = streakBack((date) => workoutSet.has(date));
@@ -67,11 +75,13 @@ export function ProgramProgress({ profile }) {
       <PageTitle title="Progress" sub="Your data over time" />
       <Card style={{ borderLeft: "3px solid " + S.neon }}>
         <CardTitle>Progress Summary</CardTitle>
-        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+        <div className="g4" style={{ display: "grid", gridTemplateColumns: goal ? "repeat(6,1fr)" : "repeat(4,1fr)", gap: 16 }}>
           <Stat label="Recent Weight" value={lastWeight ?? "—"} unit={lastWeight ? "lb" : ""} />
           <Stat label="Workouts Completed" value={workoutsCompleted} unit="" />
           <Stat label="Workout Streak" value={workoutStreak} unit="days" />
           <Stat label="Habit Streak" value={habitStreak} unit="days" />
+          {goal && <Stat label="Goal Progress" value={goalScore?.overallScore ?? "—"} unit={goalScore?.overallScore != null ? "%" : ""} />}
+          {goal && <Stat label="Days Remaining" value={daysRemaining} unit="days" />}
         </div>
       </Card>
       {missedSessions.length > 0 && (
@@ -93,13 +103,14 @@ export function ProgramProgress({ profile }) {
 
       {tab === "body" && (weightSeries.length === 0 && waistSeries.length === 0 ? empty : (
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          <CC title="Bodyweight Trend" sub="From your daily log">
+          <CC title="Bodyweight Trend" sub={goal ? `From your daily log · target ${goal.target_value}${goal.unit}` : "From your daily log"}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightSeries.slice(-30)}>
+              <LineChart data={weightSeries}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
-                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={6} />
+                <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={tickEvery(weightSeries.length)} />
                 <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} />
                 <Tooltip {...TT} />
+                {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{ value: "Goal", fontSize: 9, fill: S.accent2, position: "insideTopRight" }} />}
                 <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{ r: 2 }} />
               </LineChart>
             </ResponsiveContainer>
@@ -108,9 +119,9 @@ export function ProgramProgress({ profile }) {
             {waistSeries.length === 0
               ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: S.muted, fontSize: 13 }}>Log your waist to see this chart</div>
               : <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={waistSeries.slice(-30)}>
+                  <LineChart data={waistSeries}>
                     <CartesianGrid strokeDasharray="3 3" stroke={S.border} />
-                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={6} />
+                    <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} interval={tickEvery(waistSeries.length)} />
                     <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} />
                     <Tooltip {...TT} />
                     <Line type="monotone" dataKey="waist" stroke={S.accent2} strokeWidth={2} dot={{ r: 2 }} />

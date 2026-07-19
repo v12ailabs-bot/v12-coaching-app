@@ -1,5 +1,6 @@
 import { generateCheckinSummary } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 
 // POST /api/summary  { client_id }
 // Coach-only: generates a plain-text 30-day progress recap for a client and
@@ -22,12 +23,20 @@ export default async function handler(req, res) {
     const now = new Date();
     const cut = (() => { const d = new Date(now); d.setDate(d.getDate() - 29); return d.toISOString().split("T")[0]; })();
     const period = now.toISOString().slice(0, 7);   // YYYY-MM
-    const [{ data: profile }, { data: daily }, { data: logs }] = await Promise.all([
+    const [{ data: profile }, { data: daily }, { data: logs }, { data: phaseHistory }, { data: goal }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal").eq("id", client_id).maybeSingle(),
       supabaseAdmin.from("daily_checkins").select("date,weight,waist,habit_flags,workout").eq("client_id", client_id).gte("date", cut).order("date"),
       supabaseAdmin.from("workout_logs").select("date").eq("client_id", client_id).gte("date", cut),
+      supabaseAdmin.from("program_phase_history").select("phase,phase_note,changed_at").eq("client_id", client_id).gte("changed_at", cut).order("changed_at"),
+      supabaseAdmin.from("client_goals").select("*").eq("client_id", client_id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
-    const summary = await generateCheckinSummary({ profile: profile || {}, daily: daily || [], logs: logs || [] });
+    // Same computeGoalScore GoalsSection/Progress use, so the recap's goal
+    // context is never a separately-derived (and possibly inconsistent) number.
+    const goalScore = goal ? computeGoalScore(goal, (daily || []).filter((d) => d.weight != null).map((d) => ({ date: d.date, value: d.weight })), {}) : null;
+    const summary = await generateCheckinSummary({
+      profile: profile || {}, daily: daily || [], logs: logs || [], phaseHistory: phaseHistory || [],
+      goal: goal ? { direction: goal.direction, target_value: goal.target_value, unit: goal.unit, target_date: goal.target_date, classification: goalScore?.classification, overall_score: goalScore?.overallScore } : null,
+    });
     // Persist as this month's recap for this client (replaces an existing one).
     await supabaseAdmin.from("client_summaries")
       .upsert({ client_id, period, content: summary, created_at: now.toISOString() }, { onConflict: "client_id,period" });

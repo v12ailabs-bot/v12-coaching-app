@@ -9,6 +9,7 @@ import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder
 import { ClientSelector } from "./components/ClientSelector.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack } from "./lib/constants.js";
 import { adherenceFrom, nutritionScoreFrom } from "./lib/scoring.js";
+import { computeGoalScore } from "./lib/scoring/goalScoring.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -1181,6 +1182,7 @@ function ClientWelcome({ profile, onEnter }) {
 function ClientHome({ profile, setPage }) {
   const [checkins, setCheckins] = useState([]);
   const [weeklyDone, setWeeklyDone] = useState(true);
+  const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(()=>{
@@ -1190,6 +1192,9 @@ function ClientHome({ profile, setPage }) {
       const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
       const {data:wc} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",ws).maybeSingle();
       setWeeklyDone(!!wc);
+      const {data:g} = await supabase.from("client_goals").select("*").eq("client_id",profile.id).eq("status","active").eq("metric_key","bodyweight")
+        .order("created_at",{ascending:false}).limit(1).maybeSingle();
+      setGoal(g||null);
       setLoading(false);
     })();
   },[profile.id]);
@@ -1202,6 +1207,11 @@ function ClientHome({ profile, setPage }) {
   const avgS = r7.length?(r7.reduce((s,c)=>s+c.sleep,0)/r7.length).toFixed(1):"—";
   const lastW = checkins.length?checkins[checkins.length-1].weight:"—";
   const streak = (()=>{let s=0;for(let i=checkins.length-1;i>=0;i--){if(checkins[i].workout==="completed")s++;else break;}return s;})();
+  // Same computeGoalScore GoalsSection/Progress use — one source of truth.
+  const weightSeries = checkins.filter(c=>c.weight!=null).map(c=>({date:c.date,value:c.weight}));
+  const goalScore = goal ? computeGoalScore(goal, weightSeries, {}) : null;
+  const daysRemaining = goal ? Math.max(0,Math.ceil((new Date(goal.target_date+"T00:00:00Z") - new Date()) / 86400000)) : null;
+  const tickEvery = (n) => Math.max(1, Math.floor(n / 8));
 
   return (
     <div>
@@ -1223,30 +1233,33 @@ function ClientHome({ profile, setPage }) {
           <Btn sm teal onClick={()=>setPage("weekly")}>Start weekly</Btn>
         </div>
       )}
-      <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:22}}>
+      <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:22}}>
         <Stat label="Current Weight" value={lastW} unit="lb"/>
         <Stat label="Workout Streak" value={streak} unit="days"/>
         <Stat label="Avg Sleep" value={avgS} unit="/10"/>
         <Stat label="Avg Energy" value={avgE} unit="/10"/>
+        {goal && <Stat label="Goal Progress" value={goalScore?.overallScore??"—"} unit={goalScore?.overallScore!=null?"%":""}/>}
+        {goal && <Stat label="Days Remaining" value={daysRemaining} unit="days"/>}
       </div>
       {checkins.length>1?(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Bodyweight Trend" sub="Last 30 days">
+          <CC title="Bodyweight Trend" sub={goal?`Full history · target ${goal.target_value}${goal.unit}`:"Full history"}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={checkins.slice(-30)}>
+              <LineChart data={checkins}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={6}/>
+                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(checkins.length)}/>
                 <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                 <Tooltip {...TT}/>
+                {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
                 <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={false}/>
               </LineChart>
             </ResponsiveContainer>
           </CC>
-          <CC title="Energy and Sleep" sub="14-day trend">
+          <CC title="Energy and Sleep" sub="Full history">
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={checkins.slice(-14)}>
+              <LineChart data={checkins}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(checkins.length)}/>
                 <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
                 <Tooltip {...TT}/>
                 <Line type="monotone" dataKey="energy" stroke={S.accent} strokeWidth={2} dot={false} name="Energy"/>
@@ -1819,7 +1832,9 @@ function Workouts({ profile, readOnly, embedded }) {
   const [saved, setSaved] = useState(false);
 
   const loadEx = useCallback(async()=>{
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile)).order("created_at");
+    // No .order() here — groupByDay owns exercise ordering (by phase, then
+    // order_index) once grouped by day.
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile));
     setExercises(data||[]);
     if(data&&data.length>0&&!selected) setSelected(data[0].id);
   },[profile.id,profile.shared_program_owner_id]);
@@ -2081,6 +2096,7 @@ function CoachHome({ setPage }) {
   const [clients, setClients] = useState([]);
   const [byClient, setByClient] = useState({});
   const [weeklyRecent, setWeeklyRecent] = useState([]);
+  const [goalsByClient, setGoalsByClient] = useState({});
   const [upgrades, setUpgrades] = useState([]);
   const [loading, setLoading] = useState(true);
   // Session-only expand state — collapsed by default. Needs Attention itself
@@ -2109,16 +2125,22 @@ function CoachHome({ setPage }) {
         const {data:ch} = await supabase.from("daily_checkins")
           .select("client_id,date,weight,workout,diet").in("client_id",ids).gte("date",cut).order("date");
         (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
-        // Recent weekly check-ins carrying questions or red-flag answers the coach
-        // should respond to (last 14 days).
-        const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-13);
+        // Weekly check-ins over a 28-day window: the last 14 days feed the
+        // "Client Messages & Flags" card (filtered further below), while the
+        // full 28 gives the recovery-trend flag a prior-2-weeks baseline to
+        // compare against.
+        const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-27);
         const wcut = wcutoff.toISOString().split("T")[0];
         const {data:wc} = await supabase.from("weekly_checkins")
-          .select("client_id,date,coach_questions,adjustments,confidence_level,felt_weaker,biggest_challenge,mental_blocks")
+          .select("client_id,date,coach_questions,adjustments,confidence_level,felt_weaker,biggest_challenge,mental_blocks,sleep_quality,hydration_quality")
           .in("client_id",ids).gte("date",wcut).order("date");
         weeklies = wc||[];
       }
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setLoading(false);
+      // Each coached client's active bodyweight goal — same client_goals rows
+      // GoalsSection/Progress read, reused here instead of a duplicate signal.
+      const {data:cg} = ids.length ? await supabase.from("client_goals").select("*").in("client_id",ids).eq("status","active").eq("metric_key","bodyweight") : {data:[]};
+      const goalsMap = {}; (cg||[]).forEach(g=>{goalsMap[g.client_id]=g;});
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setLoading(false);
     })();
   },[]);
 
@@ -2130,39 +2152,75 @@ function CoachHome({ setPage }) {
   const assessed = clients.map(c=>{
     // Program-only clients have no coach and no check-ins, so the check-in-based
     // attention flags don't apply — never surface them here.
-    if(c.client_type==="program_only") return {client:c, adh:{score:0}, last:null, since:null, flags:[], severity:0, programOnly:true};
+    if(c.client_type==="program_only") return {client:c, adh:{score:0}, last:null, since:null, flags:[], severity:0, riskLevel:"On Track", goalScore:null, programOnly:true};
     const ch = byClient[c.id] || [];
     const adh = adherenceFrom(ch, 30);
     const last = ch.length ? ch[ch.length-1].date : null;
     const since = last ? daysSinceDate(last) : null;
-    // Each flag carries a `detail` sentence — the expanded per-client view in
-    // Needs Attention shows these instead of the raw dataset, so it stays
-    // scoped to "where they're lacking" rather than a full stats dump.
+    // Each flag carries a `detail` sentence and an optional `action` suggestion
+    // — the expanded per-client view in Needs Attention shows these instead of
+    // the raw dataset, so it stays scoped to "where they're lacking" and "what
+    // to do about it" rather than a full stats dump.
     const flags = [];
-    if(since==null) flags.push({label:"No activity yet", tone:"red", detail:"This client has never logged a daily check-in."});
-    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red", detail:`No daily check-in in ${since} days — worth reaching out to see what's going on.`});
-    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber", detail:`Last logged a daily check-in ${since} days ago.`});
-    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber", detail:`Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`});
+    if(since==null) flags.push({label:"No activity yet", tone:"red", detail:"This client has never logged a daily check-in.", action:"Reach out to help them log their first check-in."});
+    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red", detail:`No daily check-in in ${since} days — worth reaching out to see what's going on.`, action:"Send a check-in message today."});
+    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber", detail:`Last logged a daily check-in ${since} days ago.`, action:"A light nudge before this becomes a longer gap."});
+    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber", detail:`Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`, action:"Simplify the check-in ask and address any stated barriers."});
     const nut = nutritionScoreFrom(ch, 30);
-    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber", detail:`Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`});
+    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber", detail:`Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`, action:"Revisit the nutrition plan for something more sustainable."});
+
+    // Goal-based signals, all from the SAME computeGoalScore GoalsSection/Progress
+    // use — no duplicate progress math. Falls back to the older free-text
+    // goal-vs-weight-trend heuristic only when the client has no structured goal.
+    const goal = goalsByClient[c.id] || null;
     const weights = ch.filter(r=>r.weight!=null);
-    let weightFlag = null;
-    if(weights.length>=2){
-      const delta = weights[weights.length-1].weight - weights[0].weight;
-      const goal = (c.goal||"").toLowerCase();
-      const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goal);
-      const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goal);
-      if(wantsLoss && delta>1) weightFlag = {label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red", detail:`Weight is up ${delta.toFixed(1)}lb over the tracked period, working against a fat-loss goal.`};
-      else if(wantsGain && delta<-1) weightFlag = {label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red", detail:`Weight is down ${Math.abs(delta).toFixed(1)}lb over the tracked period, working against a muscle-gain goal.`};
+    let goalScore = null;
+    if(goal){
+      goalScore = computeGoalScore(goal, weights.map(w=>({date:w.date,value:w.weight})), {nutrition:nut.score,training:adh.trainingRate});
+      if(goalScore.classification==="Off Track") flags.push({label:"Goal off track", tone:"red", detail:`Goal score is ${goalScore.overallScore ?? "—"}/100 — trending the wrong way relative to the target.`, action:"Review the plan against this goal — the current approach isn't working."});
+      else if(goalScore.classification==="Slightly Behind") flags.push({label:"Goal slightly behind", tone:"amber", detail:`Goal score is ${goalScore.overallScore ?? "—"}/100 — behind the pace needed to hit the target date.`, action:"A small adjustment now could get this back on pace."});
+      if(goal.direction!=="maintain" && goalScore.velocity!=null && Math.abs(goalScore.velocity)<0.05)
+        flags.push({label:"Plateaued", tone:"amber", detail:"No meaningful weight movement toward the goal in the last 30 days.", action:"Consider a deload/refeed and review the program phase."});
+    } else {
+      // No structured goal yet — fall back to the free-text goal vs. weight-trend heuristic.
+      if(weights.length>=2){
+        const delta = weights[weights.length-1].weight - weights[0].weight;
+        const goalText = (c.goal||"").toLowerCase();
+        const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goalText);
+        const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goalText);
+        if(wantsLoss && delta>1) flags.push({label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red", detail:`Weight is up ${delta.toFixed(1)}lb over the tracked period, working against a fat-loss goal.`, action:"Set a structured goal to track this properly, and review nutrition adherence."});
+        else if(wantsGain && delta<-1) flags.push({label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red", detail:`Weight is down ${Math.abs(delta).toFixed(1)}lb over the tracked period, working against a muscle-gain goal.`, action:"Set a structured goal to track this properly, and review nutrition adherence."});
+      }
     }
-    if(weightFlag) flags.push(weightFlag);
+
+    // Recovery trend: trailing 2-week avg of self-rated sleep/hydration vs. the
+    // prior 2 weeks, from weekly_checkins (28-day window fetched above).
+    const wk = weeklyRecent.filter(w=>w.client_id===c.id);
+    const recoveryOf = (w)=> (w.sleep_quality!=null || w.hydration_quality!=null) ? ((w.sleep_quality||0)+(w.hydration_quality||0))/((w.sleep_quality!=null)+(w.hydration_quality!=null)) : null;
+    const recentWk = wk.filter(w=>daysSinceDate(w.date)<=13).map(recoveryOf).filter(v=>v!=null);
+    const priorWk = wk.filter(w=>daysSinceDate(w.date)>13 && daysSinceDate(w.date)<=27).map(recoveryOf).filter(v=>v!=null);
+    if(recentWk.length && priorWk.length){
+      const recentAvg = recentWk.reduce((s,v)=>s+v,0)/recentWk.length;
+      const priorAvg = priorWk.reduce((s,v)=>s+v,0)/priorWk.length;
+      if(priorAvg-recentAvg >= 1.5) flags.push({label:"Recovery down", tone:"amber", detail:`Self-rated sleep/hydration averaged ${recentAvg.toFixed(1)}/10 the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 the 2 weeks before.`, action:"Check in on sleep and stress load."});
+    }
+
+    // Consistency trend: check-in frequency dropping off, even before it
+    // triggers the blunter "days since last check-in" flag above.
+    const last7 = ch.filter(r=>daysSinceDate(r.date)<=6).length;
+    const prior7 = ch.filter(r=>daysSinceDate(r.date)>6 && daysSinceDate(r.date)<=13).length;
+    if(prior7>=4 && last7<=prior7-3) flags.push({label:"Logging slowing down", tone:"amber", detail:`Checked in ${last7}/7 days this week, down from ${prior7}/7 the week before.`, action:"Worth a quick check-in before this turns into a gap."});
+
     const severity = flags.reduce((s,f)=>s+(f.tone==="red"?2:1),0);
-    return {client:c, adh, last, since, flags, severity};
+    const riskLevel = severity>=4 ? "High" : severity>=2 ? "Medium" : severity>=1 ? "Low" : "On Track";
+    return {client:c, adh, last, since, flags, severity, riskLevel, goalScore};
   });
 
   const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
   const coached = assessed.filter(a=>!a.programOnly);
   const avgAdh = coached.length ? Math.round(coached.reduce((s,a)=>s+a.adh.score,0)/coached.length) : 0;
+  const withGoalScore = coached.filter(a=>a.goalScore?.overallScore!=null);
+  const avgGoalProgress = withGoalScore.length ? Math.round(withGoalScore.reduce((s,a)=>s+a.goalScore.overallScore,0)/withGoalScore.length) : null;
 
   // Weekly check-in messages/flags the coach should respond to, newest first.
   const nameOf = (id)=>{ const c=clients.find(x=>x.id===id); return c?(c.name||c.email):"Client"; };
@@ -2170,7 +2228,7 @@ function CoachHome({ setPage }) {
     setUpgrades(prev=>prev.filter(u=>u.id!==id));
     await supabase.from("upgrade_requests").update({status:"handled"}).eq("id",id);
   };
-  const messages = weeklyRecent.map(w=>{
+  const messages = weeklyRecent.filter(w=>daysSinceDate(w.date)<=13).map(w=>{
     const items=[];
     if((w.coach_questions||"").trim()) items.push({label:"Question",tone:"red",text:w.coach_questions});
     if((w.adjustments||"").trim()) items.push({label:"Wants adjusted",tone:"amber",text:w.adjustments});
@@ -2210,11 +2268,12 @@ function CoachHome({ setPage }) {
         </CollapsibleSection>
       )}
 
-      <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
+      <div className="g4" style={{display:"grid",gridTemplateColumns:avgGoalProgress!=null?"repeat(5,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Total Clients" value={clients.length} unit=""/>
         <Stat label="Need Attention" value={needs.length} unit=""/>
         <Stat label="On Track" value={clients.length-needs.length} unit=""/>
         <Stat label="Avg Adherence" value={avgAdh} unit="%"/>
+        {avgGoalProgress!=null && <Stat label="Avg Goal Progress" value={avgGoalProgress} unit="%"/>}
       </div>
 
       {upgrades.length>0 && (
@@ -2261,7 +2320,8 @@ function CoachHome({ setPage }) {
                   <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
                   <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"} · {a.last?`last check-in ${a.last}`:"never checked in"}</div>
                 </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"50%"}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"55%"}}>
+                  <StatusBadge label={`${a.riskLevel} Risk`} tone={a.riskLevel==="High"?"red":a.riskLevel==="Medium"?"amber":"neutral"}/>
                   {a.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
                 </div>
               </div>
@@ -2269,7 +2329,8 @@ function CoachHome({ setPage }) {
                 <div style={{padding:"0 18px 16px 74px"}}>
                   {a.flags.map((f,i)=>(
                     <div key={i} style={{fontSize:12,color:S.text,padding:"6px 0",borderTop:i===0?"1px solid "+S.border:"none",paddingTop:i===0?12:6}}>
-                      <span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.detail}
+                      <div><span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.detail}</div>
+                      {f.action && <div style={{color:S.muted,marginTop:2}}>→ {f.action}</div>}
                     </div>
                   ))}
                   <div style={{marginTop:10}}><Btn sm teal onClick={()=>setPage("clients")}>Open in Clients →</Btn></div>
@@ -2914,6 +2975,7 @@ function AssessmentBar({ profile }) {
 function ClientProgram({ profile }) {
   const [exercises, setExercises] = useState([]);
   const [program, setProgram] = useState(null);
+  const [phaseHistory, setPhaseHistory] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2934,6 +2996,13 @@ function ClientProgram({ profile }) {
       .limit(1)
       .maybeSingle()
       .then(({ data }) => setProgram(data || null));
+    supabase
+      .from("program_phase_history")
+      .select("*")
+      .eq("client_id", trainingOwnerId(profile))
+      .order("changed_at", { ascending: false })
+      .limit(20)
+      .then(({ data }) => setPhaseHistory(data || []));
   }, [profile.id, profile.shared_program_owner_id]);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
@@ -2960,6 +3029,19 @@ function ClientProgram({ profile }) {
             <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase}</span>
           </div>
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
+          {phaseHistory.length > 0 && (
+            <CollapsibleSection title="Phase History" summary={`${phaseHistory.length} change${phaseHistory.length > 1 ? "s" : ""}`}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {phaseHistory.map((h) => (
+                  <div key={h.id} style={{ fontSize: 12, color: S.text, display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                    <span style={{ color: S.muted, minWidth: 130 }}>{(h.changed_at || "").slice(0, 16).replace("T", " ")}</span>
+                    <span style={{ fontWeight: 600 }}>{h.phase}</span>
+                    {h.phase_note && <span style={{ color: S.muted }}>— {h.phase_note}</span>}
+                  </div>
+                ))}
+              </div>
+            </CollapsibleSection>
+          )}
         </Card>
       )}
       <AssessmentBar profile={profile} />
