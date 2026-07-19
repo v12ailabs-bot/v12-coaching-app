@@ -1,6 +1,61 @@
 // Shared constants used by both program/exercise editing (coach) and progress
 // grouping (client + coach) views. Centralized so they're defined once instead
 // of redeclared at multiple points in the file they were extracted from.
+
+// The one hardcoded account that gets the coach role on signup (see
+// features/auth/LoginScreen.jsx) and coach-only UI checks throughout the app.
+export const COACH_EMAIL = "coach@v12system.com";
+
+// Field list mirrors the Notion Applications Database (api/_lib/notion.js PROP
+// map) plus the new required height field. Config-driven so adding/removing a
+// field doesn't require new JSX per field. Also used by the coach CRM view to
+// look up a field's label when displaying a lead's raw intake_data.
+export const INTAKE_FIELDS = [
+  { key: "name", label: "Full Name", type: "text" },
+  { key: "email", label: "Email", type: "email" },
+  { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
+  { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: [
+    "Program Only — $97 one-time, includes app access",
+    "Standard Coaching — 12 Weeks: $750 in full or $250/month x3 ($750 total)",
+    "1:1 Elite Performance — 12 Weeks: $1500 in full or $600/month x3 ($1800 total)",
+    "Local — Group PT Training (max 3 people): $300/month each",
+    "Local — 1-on-1 Premium: $400/month, 12 Weeks",
+  ] },
+  { key: "goal", label: "Primary Goal", type: "text" },
+  { key: "daysAvailable", label: "Days Available / Week", type: "text" },
+  { key: "experienceLevel", label: "Training Experience", type: "text" },
+  { key: "equipment", label: "Where will you primarily train?", type: "text" },
+  { key: "homeEquipment", label: "If you train at home, what equipment do you have?", type: "text" },
+  { key: "sessionLength", label: "Time available per session", type: "text" },
+  { key: "age", label: "Age", type: "number" },
+  { key: "gender", label: "Gender", type: "select", options: ["Male", "Female", "Prefer not to say"] },
+  { key: "currentWeight", label: "Current Weight (lb)", type: "number" },
+  { key: "targetChange", label: "Target Change (lb)", type: "number" },
+  { key: "activityLevel", label: "Daily Activity Level", type: "text" },
+  { key: "sleepHours", label: "Average Sleep (hrs/night)", type: "number" },
+  { key: "trainingTenure", label: "How long have you trained consistently?", type: "text" },
+  { key: "nutritionConsistency", label: "Nutrition Consistency", type: "text" },
+  { key: "coachingStyle", label: "Coaching Style Preference", type: "text" },
+  { key: "commitmentLevel", label: "Commitment Level (1-10)", type: "number" },
+  { key: "confidence", label: "Confidence in following a 12-week program (1-10)", type: "number" },
+  { key: "pastBarriers", label: "What has prevented you from reaching your goal before?", type: "textarea" },
+  { key: "pastStruggles", label: "Past Struggles", type: "textarea" },
+  { key: "whyNow", label: "Why Now?", type: "textarea" },
+  { key: "dietaryPreference", label: "Dietary Preference", type: "text" },
+  { key: "allergies", label: "Allergies", type: "text" },
+  { key: "calorieTarget", label: "Calorie Target (optional)", type: "number" },
+  { key: "injuryFlags", label: "Injuries / Limitations (comma-separated)", type: "text" },
+  { key: "healthFlags", label: "Health Conditions (comma-separated)", type: "text" },
+];
+
+// Seeded from the Task-1 audit of the Assessment Form Database (sparse: None /
+// Knee / Deep squats) plus common categories — adjustable later, low-risk.
+export const INJURY_MULTISELECT_OPTIONS = {
+  currentInjuries: ["None", "Knee", "Shoulder", "Back/Spine", "Hip", "Ankle", "Wrist/Elbow", "Other"],
+  previousInjuries: ["None", "Knee", "Shoulder", "Back/Spine", "Hip", "Ankle", "Wrist/Elbow", "Other"],
+  painTriggers: ["None", "Deep squats", "Overhead movements", "Running/Impact", "Prolonged sitting", "Heavy loading", "Other"],
+};
+
 export const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const EX_TYPES = ["Compound", "Accessory", "Circuit", "Warmup"];
 export const PHASES = ["Onboarding", "Accumulation", "Intensification", "Peak", "Deload", "Maintenance"];
