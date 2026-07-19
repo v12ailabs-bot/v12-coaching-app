@@ -17,7 +17,6 @@ import { CoachConversations } from "./sections/ConversationLogSection.jsx";
 import { CoachClientInsights } from "./sections/ClientInsightsSection.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
-import { ProgramProgress } from "../progress/ProgramProgressPage.jsx";
 
 const COACH_EMAIL = "coach@v12system.com";
 
@@ -296,6 +295,9 @@ export function ClientDetailPage() {
   // here, not a rewrite of this page). Order roughly matches how a coach
   // scans a client: assessment/nutrition/program first, logs and history after.
   const sections = client ? [
+    // Goals, Progress (metrics/photos), and Insights (habit adherence) are all
+    // client-tracked data views — the coach has no visibility into any of it
+    // for a program-only client, only once switched back to "coaching".
     ...(client.client_type === "program_only" ? [] : [
       { key: "goals", title: "Goals", node: <GoalsSection client={client} /> },
     ]),
@@ -309,14 +311,14 @@ export function ClientDetailPage() {
     { key: "program-history", title: "Program History", node: (
         <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
     )},
-    { key: "progress", title: "Progress", node: (
-        client.client_type === "program_only"
-          ? <ProgramProgress profile={client} />
-          : <Progress profile={client} coachView />
-    )},
+    ...(client.client_type === "program_only" ? [] : [
+      { key: "progress", title: "Progress", node: <Progress profile={client} coachView /> },
+    ]),
     { key: "message", title: "Coach Messages", node: <CoachMessagesSection clientId={client.id} /> },
     { key: "habits", title: "Daily Habits", node: <CoachHabits clientId={client.id} /> },
-    { key: "insights", title: "Client Insights", node: <CoachClientInsights client={client} /> },
+    ...(client.client_type === "program_only" ? [] : [
+      { key: "insights", title: "Client Insights", node: <CoachClientInsights client={client} /> },
+    ]),
     { key: "notes", title: "Coach Notes", node: <CoachNotes clientId={client.id} /> },
     { key: "conversations", title: "Conversation Log", node: <CoachConversations clientId={client.id} /> },
     { key: "exercises", title: "Assigned Exercises", node: (
