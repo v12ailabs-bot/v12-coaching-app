@@ -147,6 +147,18 @@ never simply drop the pillar. Note the substitution reason in that exercise's "n
 ${lines.join("\n")}\n`;
 }
 
+// Local-gym equipment allowlist + banned-equipment substitutions, enforced via
+// the prompt only (this codebase has no exercise catalog to hard-validate
+// against). Returns "" for clients who aren't flagged is_local, so the prompt
+// is unchanged for remote/other-gym clients (who keep using their free-text
+// equipment/home_equipment answers as-is).
+export function equipmentBlock(client) {
+  if (!client.is_local) return "";
+  return `LOCAL GYM EQUIPMENT (this client trains at the coach's own gym — this OVERRIDES their free-text equipment answer above):
+Available: barbells, dumbbells, kettlebells, squat racks, benches, cable machines, pull-up bars, resistance bands, air bikes, SkiErgs, RowErgs, and standard cardio equipment (treadmills, bikes).
+NOT available — never program these, and substitute an equivalent movement that preserves the same training stimulus: medicine balls (substitute a dumbbell/kettlebell slam or throw variant), battle ropes (substitute an air bike or kettlebell/dumbbell conditioning interval), sled pushes/pulls (substitute loaded carries, air bike sprints, or a heavy trap-bar/hex-bar drag if a hex bar is available, or resisted band walks), BikeErg/calorie bikes (substitute an air bike or RowErg/SkiErg for that conditioning piece).\n`;
+}
+
 // Generates a 12-week V12 weekly training split tailored to the client and the
 // coach-selected template.
 export async function generateTrainingPlan(client) {
@@ -162,7 +174,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${constraintBlock(client)}
+${equipmentBlock(client)}${constraintBlock(client)}
 ${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
@@ -175,19 +187,22 @@ ${
       `SESSION TEMPLATE slot order, filling each slot with the actual exercises that ` +
       `best fit this client's assessment, goal, equipment, and injuries, using the ` +
       `template's set×rep schemes. Apply the progression rule. Set each exercise's ` +
-      `"section" to its session slot (e.g. "Primary", "Secondary", "Accessory", ` +
-      `"Core", "Conditioning"). Map slots to V12 pillars: primary/secondary lifts -> ` +
-      `Powerlifting; accessories/hypertrophy -> Bodybuilding; conditioning/finishers ` +
-      `-> Conditioning; add explosive/power work where the template calls for it. ` +
+      `"section" to its canonical workout phase (see PHASE ORDER below), mapped from ` +
+      `the template's session slot: primary/secondary lifts -> "Main Compound Lift"/` +
+      `"Secondary Compound Lift"; accessories/hypertrophy -> "Accessories" or ` +
+      `"Isolation"; conditioning/finishers -> "Conditioning" or "Finisher"; add ` +
+      `explosive/power work as "Power/Plyometrics" where the template calls for it. ` +
       `Bias volume by the client's three-system assessment.\n`
-    : "No template provided — design the week from the V12 method and the assessment, and still label each exercise with a sensible \"section\".\n"
+    : "No template provided — design the week from the V12 method and the assessment, and still label each exercise with a sensible \"section\" from the PHASE ORDER below.\n"
 }
+PHASE ORDER — every day's exercises must be assignable to exactly one of these, in this order: "Warm-Up", "Activation", "Power/Plyometrics", "Main Compound Lift", "Secondary Compound Lift", "Accessories", "Isolation", "Conditioning", "Finisher", "Cooldown". A day doesn't need every phase, but whichever phases it uses must appear in this order.
+
 Requirements for the output:
 - Each day's "focus" must name its primary V12 pillar(s), e.g. "Powerlifting — Lower" or "Hypertrophy + Conditioning".
 - Each exercise "category" must be one of: "Powerlifting", "Bodybuilding", "Power", or "Conditioning".
-- Each exercise "section" must name its session slot (e.g. "Primary", "Secondary", "Accessory", "Core", "Conditioning").
-- Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup).
-- Within a day, order exercises by the template's session-slot order.
+- Each exercise "section" must be exactly one of the PHASE ORDER values above — this is the exercise's workout-ordering phase, e.g. a heavy back squat is "Main Compound Lift", a dynamic warm-up drill is "Warm-Up", core/single-joint work is "Isolation".
+- Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
+- Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
 - Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
 - Across the week, ALL THREE pillars must appear.
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
@@ -202,13 +217,13 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   "weeks": 12,
   "weekly_split": [
     {
-      "day": "Monday",
+      "day": "Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday (must be exactly one of these 7)",
       "focus": "string",
       "exercises": [
         {
           "name": "string",
           "category": "Powerlifting | Bodybuilding | Power | Conditioning",
-          "section": "string (session slot, e.g. Primary, Accessory, Conditioning)",
+          "section": "Warm-Up | Activation | Power/Plyometrics | Main Compound Lift | Secondary Compound Lift | Accessories | Isolation | Conditioning | Finisher | Cooldown",
           "exercise_type": "Compound | Accessory | Circuit | Warmup",
           "block_type": "straight_set | superset | circuit_for_time | timed_circuit | weighted_circuit",
           "group_id": "string (exercises performed together as one block share this value)",
@@ -315,7 +330,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 
 // A short, encouraging plain-text recap of the client's last ~30 days, built from
 // their daily log, body metrics, and logged workouts. Returns prose (not JSON).
-export async function generateCheckinSummary({ profile = {}, daily = [], logs = [] }) {
+export async function generateCheckinSummary({ profile = {}, daily = [], logs = [], phaseHistory = [], goal = null }) {
   const weights = daily.filter((d) => d.weight != null);
   // Workouts = distinct days with a logged session OR a daily check-in marked
   // "completed" (the client's "Training Today" self-report).
@@ -331,6 +346,8 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
     weight_latest: weights[weights.length - 1]?.weight ?? null,
     habit_days_tracked: habitDays,
     sets_logged: logs.length,
+    phase_changes: phaseHistory.map((h) => ({ phase: h.phase, date: h.changed_at?.slice(0, 10), note: h.phase_note })),
+    structured_goal: goal,
   };
   const message = await anthropic.messages.create({
     model: MODEL,
@@ -339,7 +356,7 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
-Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging.
+Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself.
 
 DATA (last 30 days): ${JSON.stringify(data)}
 

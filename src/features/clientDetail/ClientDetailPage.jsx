@@ -32,7 +32,7 @@ export function ClientDetailPage() {
   const [selected, setSelected] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:""});
+  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""});
   const [editEx, setEditEx] = useState(null);   // {id, draft} | null
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,7 +44,7 @@ export function ClientDetailPage() {
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -82,7 +82,9 @@ export function ClientDetailPage() {
     await loadClients();
   };
   const loadEx = async(id)=>{
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",id).order("created_at");
+    // No .order() here — groupByDay (src/lib/constants.js) owns exercise
+    // ordering (by phase, then order_index) once grouped by day.
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",id);
     setExercises(data||[]);
   };
 
@@ -116,6 +118,7 @@ export function ClientDetailPage() {
       dashboard_url: c.dashboard_url || "",
       goal: c.goal || "",
       access_until: c.access_until || "",
+      is_local: !!c.is_local,
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
@@ -131,6 +134,7 @@ export function ClientDetailPage() {
       dashboard_url: settings.dashboard_url.trim() || null,
       goal: settings.goal.trim() || null,
       access_until: settings.access_until || null,
+      is_local: settings.is_local,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -217,14 +221,18 @@ export function ClientDetailPage() {
   const addEx = async()=>{
     if(!newEx.name) return;
     setSaving(true);
+    // Append after whatever's already in this day, so a manual add never
+    // collides with existing rows at order_index 0.
+    const orderIndex = exercises.filter(e=>(e.day_of_week||"")===(newEx.day_of_week||"")).length;
     await supabase.from("exercises").insert({
       client_id:trainOwnerId, name:newEx.name.trim(), category:newEx.category.trim()||null,
       day_of_week:newEx.day_of_week||null, sets:parseInt(newEx.sets)||null,
       reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
-      is_bodyweight:newEx.is_bodyweight, exercise_type:newEx.exercise_type||null, source:"coach",
+      is_bodyweight:newEx.is_bodyweight, exercise_type:newEx.exercise_type||null,
+      section:newEx.section||null, order_index:orderIndex, source:"coach",
     });
     await loadEx(trainOwnerId);
-    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:""});
+    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""});
     setShowAdd(false);setSaving(false);
   };
   const delEx = async(id)=>{
@@ -240,13 +248,13 @@ export function ClientDetailPage() {
   };
   // Edit an assigned exercise in place — the coach's progression / customization knob.
   const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
-    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"", exercise_type:ex.exercise_type||"",
+    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"", exercise_type:ex.exercise_type||"", section:ex.section||"",
   }});
   const saveEditEx = async()=>{
     const d = editEx.draft;
     await supabase.from("exercises").update({
       day_of_week:d.day_of_week||null, sets:parseInt(d.sets)||null,
-      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null,
+      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null, section:d.section||null,
     }).eq("id",editEx.id);
     setEditEx(null);
     await loadEx(trainOwnerId);

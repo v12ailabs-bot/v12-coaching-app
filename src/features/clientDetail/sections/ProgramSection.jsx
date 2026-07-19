@@ -2,21 +2,33 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
-import { DAY_ORDER, PHASES } from "../../../lib/constants.js";
+import { DAY_ORDER, PHASES, phaseRankOf } from "../../../lib/constants.js";
+
+// Append-only Program Phase log — every phase change is a new row, never an
+// update, so the history in program_phase_history can't silently disappear.
+async function logPhaseHistory({ programId, clientId, phase, phaseNote, changedBy }) {
+  if (!phase) return;
+  await supabase.from("program_phase_history").insert({
+    program_id: programId ?? null, client_id: clientId, phase, phase_note: phaseNote ?? null, changed_by: changedBy ?? null,
+  });
+}
 
 // Capture the client's current training plan (program metadata + exercises) as a
 // new immutable version. Returns {error, version}.
 export async function createProgramVersion(clientId, label) {
   const { data: program } = await supabase.from("programs").select("*")
     .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  const { data: exs } = await supabase.from("exercises").select("*").eq("client_id", clientId).order("order_index");
+  const { data: exs } = await supabase.from("exercises").select("*").eq("client_id", clientId);
   const { data: last } = await supabase.from("program_versions").select("version")
     .eq("client_id", clientId).order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (last?.version || 0) + 1;
+  // Sort by the same phase-then-order_index rule groupByDay uses, so a
+  // snapshot's exercise order always matches what was live when it was taken.
+  const sortedExs = (exs || []).slice().sort((a, b) => phaseRankOf(a) - phaseRankOf(b) || (a.order_index ?? 0) - (b.order_index ?? 0));
   const snapshot = {
     program: program ? { name: program.name, goal: program.goal, phase: program.phase, phase_note: program.phase_note } : null,
-    exercises: (exs || []).map((e) => ({
-      name: e.name, category: e.category, day_of_week: e.day_of_week, sets: e.sets,
+    exercises: sortedExs.map((e) => ({
+      name: e.name, category: e.category, section: e.section, day_of_week: e.day_of_week, sets: e.sets,
       reps: e.reps, is_bodyweight: e.is_bodyweight, notes: e.notes, order_index: e.order_index, source: e.source,
     })),
   };
@@ -36,7 +48,7 @@ export async function restoreProgramVersion(clientId, v) {
   const usedIds = new Set();
   for (const t of target) {
     const fields = {
-      category: t.category ?? null, day_of_week: t.day_of_week ?? null, sets: t.sets ?? null,
+      category: t.category ?? null, section: t.section ?? null, day_of_week: t.day_of_week ?? null, sets: t.sets ?? null,
       reps: t.reps ?? null, is_bodyweight: !!t.is_bodyweight, notes: t.notes ?? null,
       order_index: t.order_index ?? 0, source: t.source || "coach",
     };
@@ -51,7 +63,10 @@ export async function restoreProgramVersion(clientId, v) {
   if (prog) {
     const { data: latest } = await supabase.from("programs").select("id")
       .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    if (latest) await supabase.from("programs").update({ phase: prog.phase ?? null, phase_note: prog.phase_note ?? null, phase_updated_at: new Date().toISOString() }).eq("id", latest.id);
+    if (latest) {
+      await supabase.from("programs").update({ phase: prog.phase ?? null, phase_note: prog.phase_note ?? null, phase_updated_at: new Date().toISOString() }).eq("id", latest.id);
+      if (prog.phase) await logPhaseHistory({ programId: latest.id, clientId, phase: prog.phase, phaseNote: prog.phase_note, changedBy: `Restored to v${v.version}` });
+    }
   }
   await createProgramVersion(clientId, `Restored from v${v.version}`);
 }
@@ -136,31 +151,38 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
   );
 }
 
-// Program phase / block adjustment for the client's most recent program.
+// Program phase / block adjustment for the client's most recent program, plus
+// its permanent (append-only) change history.
 export function ProgramPhase({ clientId }) {
   const [program, setProgram] = useState(null);
   const [phase, setPhase] = useState("");
   const [note, setNote] = useState("");
+  const [history, setHistory] = useState([]);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const { data } = await supabase.from("programs").select("*").eq("client_id", clientId)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const [{ data }, { data: hist }] = await Promise.all([
+      supabase.from("programs").select("*").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("program_phase_history").select("*").eq("client_id", clientId).order("changed_at", { ascending: false }).limit(20),
+    ]);
     setProgram(data || null);
     setPhase(data?.phase || "");
     setNote(data?.phase_note || "");
+    setHistory(hist || []);
     setLoading(false);
   }, [clientId]);
   useEffect(() => { setLoading(true); load(); }, [load]);
 
   const save = async () => {
-    if (!program) return;
+    if (!program || !phase) return;
     setSaving(true); setMsg(null);
+    const trimmedNote = note.trim() || null;
     const { error } = await supabase.from("programs")
-      .update({ phase: phase || null, phase_note: note.trim() || null, phase_updated_at: new Date().toISOString() })
+      .update({ phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString() })
       .eq("id", program.id);
+    if (!error) await logPhaseHistory({ programId: program.id, clientId, phase, phaseNote: trimmedNote });
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase updated." });
     if (!error) load();
@@ -184,8 +206,25 @@ export function ProgramPhase({ clientId }) {
               style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical" }} />
           </Fld>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
-            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Phase"}</Btn>
+            <Btn onClick={save} disabled={saving || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
+          </div>
+          <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
+            <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Phase History</div>
+            {history.length === 0 ? (
+              <div style={{ fontSize: 12, color: S.muted }}>No phase changes logged yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {history.map((h) => (
+                  <div key={h.id} style={{ fontSize: 12, color: S.text, display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                    <span style={{ color: S.muted, minWidth: 130 }}>{(h.changed_at || "").slice(0, 16).replace("T", " ")}</span>
+                    <span style={{ fontWeight: 600 }}>{h.phase}</span>
+                    {h.changed_by && <span style={{ color: S.muted }}>· {h.changed_by}</span>}
+                    {h.phase_note && <span style={{ color: S.muted }}>— {h.phase_note}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </>
       )}

@@ -1,5 +1,5 @@
 import { S } from "../../../theme.jsx";
-import { Card, CardTitle, Fld, Inp, Btn } from "../../../components/ui/index.js";
+import { Card, CardTitle, Fld, Inp, RG, Btn } from "../../../components/ui/index.js";
 
 export function ClientSettingsSection({ client, settings, setSettings, saveSettings, savingSettings, settingsMsg, resetGoalToNotion, resettingGoal, syncing }) {
   return (
@@ -29,6 +29,10 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
         <Fld label="Access Until">
           <Inp type="date" value={settings.access_until} onChange={e=>setSettings(p=>({...p,access_until:e.target.value}))}/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Date this client's access ends — set it when you sell a fixed term. After this date they see an "access ended" screen. Leave blank for unlimited.</div>
+        </Fld>
+        <Fld label="Training Location">
+          <RG options={["Remote/Other Gym","V12 Local Gym"]} value={settings.is_local?"V12 Local Gym":"Remote/Other Gym"} onChange={v=>setSettings(p=>({...p,is_local:v==="V12 Local Gym"}))}/>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>"V12 Local Gym" restricts AI program generation to the gym's actual equipment — never medicine balls, battle ropes, sleds, or BikeErgs.</div>
         </Fld>
       </div>
       <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>

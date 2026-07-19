@@ -4,6 +4,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
 import { Card, PageTitle, Stat, CC } from "../../components/ui/index.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
+import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
 import { StrengthTab } from "./StrengthTab.jsx";
 import { ProgressPhotos } from "./PhotosSection.jsx";
@@ -20,6 +21,7 @@ export function Progress({ profile, coachView }) {
   const [habits, setHabits] = useState([]);
   const [habitLogs, setHabitLogs] = useState([]);
   const [target, setTarget] = useState(null);
+  const [goal, setGoal] = useState(null);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
@@ -30,6 +32,10 @@ export function Progress({ profile, coachView }) {
     // Last 30 days of habit completions, for the coach-visible adherence grid.
     const cut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
     supabase.from("habit_logs").select("*").eq("client_id",profile.id).gte("date",cut).then(({data})=>setHabitLogs(data||[]));
+    // The client's single active bodyweight goal — the same client_goals row
+    // GoalsSection reads, so the goal line/stats here never drift from it.
+    supabase.from("client_goals").select("*").eq("client_id",profile.id).eq("status","active").eq("metric_key","bodyweight")
+      .order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setGoal(data||null));
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
@@ -47,17 +53,26 @@ export function Progress({ profile, coachView }) {
     return Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
   })();
   const lastWeight = weightSeries.length?weightSeries[weightSeries.length-1].weight:null;
+  // Goal progress, computed with the exact same function GoalsSection uses —
+  // one source of truth for "how is this goal going," never a duplicate calc.
+  const goalScore = goal ? computeGoalScore(goal, weightSeries.map(w=>({date:w.date,value:w.weight})), {nutrition:nut.score,training:adh.trainingRate}) : null;
+  const daysRemaining = goal ? Math.ceil((new Date(goal.target_date+"T00:00:00Z") - new Date()) / 86400000) : null;
+  // X-axis tick spacing scales with series length so full-history charts
+  // (not just the last 14/30 days) don't overlap their date labels.
+  const tickEvery = (n) => Math.max(1, Math.floor(n / 8));
 
   return (
     <div>
       <PageTitle title="Progress" sub="Your data over time"/>
-      <div className="g4" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:16,marginBottom:24}}>
+      <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Adherence (30d)" value={adh.score} unit="%"/>
         <Stat label="Nutrition (30d)" value={nut.score??"—"} unit={nut.score!=null?"%":""}/>
         <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
+        {goal && <Stat label="Goal Progress" value={goalScore?.overallScore??"—"} unit={goalScore?.overallScore!=null?"%":""}/>}
+        {goal && <Stat label="Days Remaining" value={Math.max(0,daysRemaining)} unit="days"/>}
       </div>
-      {coachView && <ClientSummaries profile={profile}/>}
+      <ClientSummaries profile={profile} coachView={coachView}/>
       <div style={{display:"flex",borderBottom:"1px solid "+S.border,marginBottom:24,flexWrap:"wrap"}}>
         {[["weight","Weight"],["wellness","Wellness"],["measurements","Measurements"],["strength","Strength"],["habits","Habits"],...(coachView?[["notes","Check-in Notes"]]:[]),["photos","Photos"],["goals","Goals"]].map(([id,label])=>(
           <button key={id} onClick={()=>setTab(id)} style={ts(id)}>{label}</button>
@@ -66,22 +81,23 @@ export function Progress({ profile, coachView }) {
 
       {tab==="weight" && (daily.length===0&&weightSeries.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Bodyweight Trend" sub="Daily + weekly check-ins">
+          <CC title="Bodyweight Trend" sub={goal?`Daily + weekly check-ins · target ${goal.target_value}${goal.unit}`:"Daily + weekly check-ins"}>
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightSeries.slice(-30)}>
+              <LineChart data={weightSeries}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={6}/>
+                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(weightSeries.length)}/>
                 <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                 <Tooltip {...TT}/>
+                {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
                 <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{r:2}}/>
               </LineChart>
             </ResponsiveContainer>
           </CC>
-          <CC title="Workout Completion" sub="Last 30 days">
+          <CC title="Workout Completion" sub="Full history">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={daily.slice(-30).map(d=>({...d,done:d.workout==="completed"?1:0}))}>
+              <BarChart data={daily.map(d=>({...d,done:d.workout==="completed"?1:0}))}>
                 <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={6}/>
+                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
                 <YAxis tick={false}/>
                 <Tooltip {...TT} formatter={v=>[v?"Done":"Rest/Missed",""]}/>
                 <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
@@ -94,11 +110,11 @@ export function Progress({ profile, coachView }) {
       {tab==="wellness" && (daily.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["energy",S.accent,"Energy"],["sleep",S.accent2,"Sleep Quality"],["mood","#8B5CF6","Mood"],["water","#3B82F6","Water (glasses)"]].map(([key,color,label])=>(
-            <CC key={key} title={label} sub="14-day trend">
+            <CC key={key} title={label} sub="Full history">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily.slice(-14)}>
+                <LineChart data={daily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
                   <YAxis domain={[0,key==="water"?16:10]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{r:2}}/>
@@ -107,11 +123,11 @@ export function Progress({ profile, coachView }) {
             </CC>
           ))}
           {daily.some(d=>d.calories!=null) && (
-            <CC title="Calories" sub={target?.calories!=null?`14-day trend · target ${target.calories} kcal`:"14-day trend"}>
+            <CC title="Calories" sub={target?.calories!=null?`Full history · target ${target.calories} kcal`:"Full history"}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily.slice(-14)}>
+                <LineChart data={daily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   {target?.calories!=null && <ReferenceLine y={target.calories} stroke={S.muted} strokeDasharray="4 4" label={{value:"Target",fontSize:9,fill:S.muted,position:"insideTopRight"}}/>}
@@ -121,11 +137,11 @@ export function Progress({ profile, coachView }) {
             </CC>
           )}
           {daily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
-            <CC title="Macros (g)" sub="14-day trend · dashed = target">
+            <CC title="Macros (g)" sub="Full history · dashed = target">
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily.slice(-14)}>
+                <LineChart data={daily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={3}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Legend wrapperStyle={{fontSize:11}}/>
