@@ -17,8 +17,7 @@ import { CoachConversations } from "./sections/ConversationLogSection.jsx";
 import { CoachClientInsights } from "./sections/ClientInsightsSection.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
-
-const COACH_EMAIL = "coach@v12system.com";
+import { COACH_EMAIL } from "../../lib/constants.js";
 
 // Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
 async function authHeaders() {
