@@ -296,7 +296,9 @@ export function ClientDetailPage() {
   // here, not a rewrite of this page). Order roughly matches how a coach
   // scans a client: assessment/nutrition/program first, logs and history after.
   const sections = client ? [
-    { key: "goals", title: "Goals", node: <GoalsSection client={client} /> },
+    ...(client.client_type === "program_only" ? [] : [
+      { key: "goals", title: "Goals", node: <GoalsSection client={client} /> },
+    ]),
     { key: "assessment", title: "Assessment", node: (
         <AssessmentSection client={client} assess={assess} setAssess={setAssess}
           saveAssessment={saveAssessment} savingAssess={savingAssess} assessMsg={assessMsg}
