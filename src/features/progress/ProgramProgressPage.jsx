@@ -2,12 +2,15 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, CC } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, RG, Btn, Alert } from "../../components/ui/index.js";
 import { PROGRAM_HABITS, streakBack } from "../../lib/constants.js";
 import { StrengthTab } from "./StrengthTab.jsx";
 import { ProgressPhotos } from "./PhotosSection.jsx";
 
 const WD_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+// Friendlier phrasing than the raw client_goals.direction enum value.
+const DIRECTION_VERB = { decrease: "Lose to", increase: "Gain to", maintain: "Maintain at" };
+const DIFF_LABEL = { decrease: "Total Lost", increase: "Total Gained", maintain: "Change" };
 
 // Progress page for program-only (no-coach) clients: body/strength/habits/photos
 // tabs driven purely by their own daily-check-in self-tracking, no weekly
@@ -17,7 +20,11 @@ export function ProgramProgress({ profile }) {
   const [daily, setDaily] = useState([]);
   const [workoutDates, setWorkoutDates] = useState([]);
   const [scheduledDays, setScheduledDays] = useState(new Set());
+  const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState({ direction: "decrease", target_value: "", target_date: "" });
+  const [creating, setCreating] = useState(false);
+  const [createMsg, setCreateMsg] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -27,12 +34,41 @@ export function ProgramProgress({ profile }) {
         .select("date").eq("client_id", profile.id);
       const { data: exs } = await supabase.from("exercises")
         .select("day_of_week").eq("client_id", profile.id);
+      // The client's single active bodyweight goal — same client_goals row
+      // GoalsSection/ProgressPage read, computed here without AI so it never
+      // costs a generation credit just to view it.
+      const { data: g } = await supabase.from("client_goals")
+        .select("*").eq("client_id", profile.id).eq("status", "active").eq("metric_key", "bodyweight")
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
       setDaily(d || []);
       setWorkoutDates([...new Set((logs || []).map((l) => l.date))].sort());
       setScheduledDays(new Set((exs || []).map((e) => e.day_of_week).filter(Boolean)));
+      setGoal(g || null);
       setLoading(false);
     })();
   }, [profile.id]);
+
+  // Self-service goal creation — program-only clients have no coach touchpoint
+  // to set this for them (the coach's Goals section is hidden for this client
+  // type), so it has to be settable from their own Progress page instead.
+  // Baseline is their latest already-logged daily-checkin weight — no new query.
+  const createGoal = async () => {
+    if (!form.target_value || !form.target_date) return;
+    const latest = daily.filter((d) => d.weight != null).slice(-1)[0];
+    if (!latest) { setCreateMsg({ ok: false, text: "Log at least one daily check-in with your weight first, then come back to set a goal." }); return; }
+    setCreating(true); setCreateMsg(null);
+    const { error } = await supabase.from("client_goals").insert({
+      client_id: profile.id, goal_type: "weight", metric_key: "bodyweight",
+      direction: form.direction, unit: "lb", baseline_value: latest.weight, baseline_date: latest.date,
+      target_value: Number(form.target_value), target_date: form.target_date,
+    });
+    setCreating(false);
+    if (error) { setCreateMsg({ ok: false, text: error.message }); return; }
+    setForm({ direction: "decrease", target_value: "", target_date: "" });
+    const { data: g } = await supabase.from("client_goals").select("*").eq("client_id", profile.id)
+      .eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle();
+    setGoal(g || null);
+  };
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
@@ -44,6 +80,13 @@ export function ProgramProgress({ profile }) {
 
   const workoutSet = new Set(workoutDates);
   const workoutStreak = streakBack((date) => workoutSet.has(date));
+
+  // Goal progress card fields — plain arithmetic off already-loaded data, no
+  // AI generation involved.
+  const goalWorkouts = goal ? workoutDates.filter((d) => d >= goal.baseline_date).length : 0;
+  const goalDiff = goal && lastWeight != null
+    ? Math.round(((goal.direction === "increase" ? lastWeight - goal.baseline_value : goal.baseline_value - lastWeight)) * 10) / 10
+    : null;
 
   // Missed sessions: scheduled program days (by weekday) in the last 14 days
   // that have already passed with no matching workout_logs entry.
@@ -75,6 +118,31 @@ export function ProgramProgress({ profile }) {
           <Stat label="Habit Streak" value={habitStreak} unit="days" />
         </div>
       </Card>
+      {goal ? (
+        <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
+          <CardTitle>Goal — {DIRECTION_VERB[goal.direction] || goal.direction} {goal.target_value}{goal.unit} by {goal.target_date}</CardTitle>
+          <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>Started {goal.baseline_date} at {goal.baseline_value}{goal.unit}</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 16 }}>
+            <Stat label="Starting Point" value={goal.baseline_value} unit={goal.unit} />
+            <Stat label="Current Weight" value={lastWeight ?? "—"} unit={lastWeight != null ? goal.unit : ""} />
+            <Stat label={DIFF_LABEL[goal.direction] || "Change"} value={goalDiff ?? "—"} unit={goalDiff != null ? goal.unit : ""} />
+            <Stat label="Workouts Since Start" value={goalWorkouts} unit="" />
+            <Stat label="Current Streak" value={workoutStreak} unit="days" />
+          </div>
+        </Card>
+      ) : (
+        <Card>
+          <CardTitle>Set a Goal</CardTitle>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 12 }}>Set a weight target to start tracking real progress here.</div>
+          <div className="g3" style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 16, marginBottom: 8 }}>
+            <Fld label="Direction"><RG options={["decrease", "increase", "maintain"]} value={form.direction} onChange={(v) => setForm((p) => ({ ...p, direction: v }))} cap /></Fld>
+            <Fld label="Target Weight (lb)"><Inp type="number" value={form.target_value} onChange={(e) => setForm((p) => ({ ...p, target_value: e.target.value }))} placeholder="e.g. 180" /></Fld>
+            <Fld label="Target Date"><Inp type="date" value={form.target_date} onChange={(e) => setForm((p) => ({ ...p, target_date: e.target.value }))} /></Fld>
+          </div>
+          <Btn onClick={createGoal} disabled={creating}>{creating ? "Saving..." : "Set Goal"}</Btn>
+          <Alert variant={createMsg?.ok ? "success" : "error"}>{createMsg?.text}</Alert>
+        </Card>
+      )}
       {missedSessions.length > 0 && (
         <Card style={{ borderLeft: "3px solid #ff6b5b" }}>
           <CardTitle>Missed Sessions</CardTitle>

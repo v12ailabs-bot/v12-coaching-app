@@ -36,7 +36,7 @@ export function ClientDetailPage() {
   const [selected, setSelected] = useState(null);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""});
+  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
   const [editEx, setEditEx] = useState(null);   // {id, draft} | null
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -235,9 +235,10 @@ export function ClientDetailPage() {
       reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
       is_bodyweight:newEx.is_bodyweight, exercise_type:newEx.exercise_type||null,
       section:newEx.section||null, order_index:orderIndex, source:"coach",
+      block_type:newEx.block_type||"straight_set", group_id:newEx.group_id.trim()||null,
     });
     await loadEx(trainOwnerId);
-    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""});
+    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
     setShowAdd(false);setSaving(false);
   };
   const delEx = async(id)=>{
@@ -254,12 +255,14 @@ export function ClientDetailPage() {
   // Edit an assigned exercise in place — the coach's progression / customization knob.
   const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
     day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"", exercise_type:ex.exercise_type||"", section:ex.section||"",
+    block_type:ex.block_type||"straight_set", group_id:ex.group_id||"",
   }});
   const saveEditEx = async()=>{
     const d = editEx.draft;
     await supabase.from("exercises").update({
       day_of_week:d.day_of_week||null, sets:parseInt(d.sets)||null,
       reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null, section:d.section||null,
+      block_type:d.block_type||"straight_set", group_id:String(d.group_id||"").trim()||null,
     }).eq("id",editEx.id);
     setEditEx(null);
     await loadEx(trainOwnerId);
