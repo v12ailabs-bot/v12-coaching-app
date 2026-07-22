@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, PageTitle, Stat, CC } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC } from "../../components/ui/index.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -22,6 +22,7 @@ export function Progress({ profile, coachView }) {
   const [habitLogs, setHabitLogs] = useState([]);
   const [target, setTarget] = useState(null);
   const [goal, setGoal] = useState(null);
+  const [insight, setInsight] = useState(null);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
@@ -36,6 +37,10 @@ export function Progress({ profile, coachView }) {
     // GoalsSection reads, so the goal line/stats here never drift from it.
     supabase.from("client_goals").select("*").eq("client_id",profile.id).eq("status","active").eq("metric_key","bodyweight")
       .order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setGoal(data||null));
+    // Latest coach-generated goal insight, read-only here — this is where it
+    // stays viewable after the client dismisses its Home-page banner.
+    supabase.from("client_goal_insights").select("*").eq("client_id",profile.id)
+      .order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setInsight(data||null));
   },[profile.id]);
 
   const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
@@ -184,48 +189,59 @@ export function Progress({ profile, coachView }) {
 
       {tab==="photos" && <ProgressPhotos profile={profile} coachView={coachView}/>}
 
-      {tab==="goals" && (weekly.length===0?emptyWeekly:(
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Goal Progress" sub="Weekly percent">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={weekly}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                <YAxis domain={[0,100]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT} formatter={v=>[v+"%","Progress"]}/>
-                <Bar dataKey="goal_progress" fill={S.accent} radius={[4,4,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </CC>
-          <CC title="Weekly Feeling" sub="Overall rating">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weekly}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT}/>
-                <Line type="monotone" dataKey="feeling" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CC>
-          <CC title="Weekly Self-Ratings" sub="1–10 · discipline / confidence / sleep / nutrition / hydration">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weekly}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT}/>
-                <Legend wrapperStyle={{fontSize:11}}/>
-                <Line type="monotone" dataKey="discipline_level" name="Discipline" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
-                <Line type="monotone" dataKey="confidence_level" name="Confidence" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
-                <Line type="monotone" dataKey="sleep_quality" name="Sleep" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
-                <Line type="monotone" dataKey="nutrition_compliance" name="Nutrition" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
-                <Line type="monotone" dataKey="hydration_quality" name="Hydration" stroke="#F59E0B" strokeWidth={2} dot={{r:2}} connectNulls/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CC>
-        </div>
-      ))}
+      {tab==="goals" && (
+        <>
+          {insight && (
+            <Card style={{borderLeft:"3px solid "+S.accent,marginBottom:20}}>
+              <CardTitle>Coaching Insight</CardTitle>
+              <div style={{fontSize:11,color:S.muted,marginBottom:10}}>{(insight.created_at||"").slice(0,10)}</div>
+              <div style={{fontSize:13.5,color:S.text,opacity:.92,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{insight.insight_text}</div>
+            </Card>
+          )}
+          {weekly.length===0?emptyWeekly:(
+            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <CC title="Goal Progress" sub="Weekly percent">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={weekly}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                    <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                    <YAxis domain={[0,100]} tick={{fontSize:10,fill:"#666"}}/>
+                    <Tooltip {...TT} formatter={v=>[v+"%","Progress"]}/>
+                    <Bar dataKey="goal_progress" fill={S.accent} radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CC>
+              <CC title="Weekly Feeling" sub="Overall rating">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weekly}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                    <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                    <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
+                    <Tooltip {...TT}/>
+                    <Line type="monotone" dataKey="feeling" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CC>
+              <CC title="Weekly Self-Ratings" sub="1–10 · discipline / confidence / sleep / nutrition / hydration">
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weekly}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                    <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                    <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
+                    <Tooltip {...TT}/>
+                    <Legend wrapperStyle={{fontSize:11}}/>
+                    <Line type="monotone" dataKey="discipline_level" name="Discipline" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
+                    <Line type="monotone" dataKey="confidence_level" name="Confidence" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
+                    <Line type="monotone" dataKey="sleep_quality" name="Sleep" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                    <Line type="monotone" dataKey="nutrition_compliance" name="Nutrition" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
+                    <Line type="monotone" dataKey="hydration_quality" name="Hydration" stroke="#F59E0B" strokeWidth={2} dot={{r:2}} connectNulls/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CC>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }
