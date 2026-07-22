@@ -1768,7 +1768,7 @@ function Workouts({ profile, readOnly, embedded }) {
 
 // Coach priority dashboard: surfaces clients who need attention based on missed
 // check-ins, low adherence, no recent activity, or a wrong-direction weight trend.
-function CoachHome({ setPage }) {
+function CoachHome({ setPage, openClient }) {
   const [clients, setClients] = useState([]);
   const [byClient, setByClient] = useState({});
   const [weeklyRecent, setWeeklyRecent] = useState([]);
@@ -1922,7 +1922,7 @@ function CoachHome({ setPage }) {
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
 
       <CollapsibleSection title="All Clients" summary={`${coached.length} total`}>
-        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={()=>setPage("clients")} showArchivedToggle={false}/>
+        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={openClient} showArchivedToggle={false}/>
       </CollapsibleSection>
 
       {messages.length>0 && (
@@ -1930,7 +1930,7 @@ function CoachHome({ setPage }) {
           <Card>
             <div style={{fontSize:11,color:S.muted,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
             {messages.map((m,i)=>(
-              <div key={i} onClick={()=>setPage("clients")}
+              <div key={i} onClick={()=>openClient(m.id)}
                 style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
                   <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
@@ -1970,7 +1970,7 @@ function CoachHome({ setPage }) {
                   <div style={{fontSize:12,color:S.muted}}>Wants to upgrade to coaching · {(u.created_at||"").slice(0,10)}</div>
                 </div>
                 <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <Btn sm teal onClick={()=>setPage("clients")}>Open Client</Btn>
+                  <Btn sm teal onClick={()=>openClient(u.client_id)}>Open Client</Btn>
                   <Btn sm onClick={()=>markHandled(u.id)}>Mark handled</Btn>
                 </div>
               </div>
@@ -2013,7 +2013,7 @@ function CoachHome({ setPage }) {
                       {f.action && <div style={{color:S.muted,marginTop:2}}>→ {f.action}</div>}
                     </div>
                   ))}
-                  <div style={{marginTop:10}}><Btn sm teal onClick={()=>setPage("clients")}>Open in Clients →</Btn></div>
+                  <div style={{marginTop:10}}><Btn sm teal onClick={()=>openClient(a.client.id)}>Open in Clients →</Btn></div>
                 </div>
               )}
             </div>
@@ -3230,11 +3230,17 @@ function CRMPanel() {
 
 function CoachDashboard({ profile, logout }) {
   const [page, setPage] = useState("dashboard");
+  // Set right before switching to "clients" when the coach clicked a specific
+  // client elsewhere (Home's client list, flags, messages, upgrade requests) —
+  // ClientDetailPage consumes it once on mount so it opens straight to that
+  // client instead of falling back to whichever is first in the roster.
+  const [openClientId, setOpenClientId] = useState(null);
+  const openClient = (id) => { setOpenClientId(id); setPage("clients"); };
 
   return (
     <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && <CoachHome setPage={setPage} />}
-      {page === "clients" && <ClientDetailPage />}
+      {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
+      {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)} />}
       {page === "crm" && <CRMPanel />}
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
