@@ -29,7 +29,7 @@ export function ClientSummaries({ profile, coachView }) {
 
   const toggle = async (row) => {
     const next = new Set(expanded);
-    if (next.has(row.id)) { setExpanded(next); return; }
+    if (next.has(row.id)) { next.delete(row.id); setExpanded(next); return; }
     next.add(row.id); setExpanded(next);
     if (content[row.id] != null) return;
     setContentLoading((prev) => new Set(prev).add(row.id));
