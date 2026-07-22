@@ -7,7 +7,7 @@ import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
 import { ClientSelector } from "./components/ClientSelector.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT } from "./lib/constants.js";
 import { adherenceFrom, nutritionScoreFrom } from "./lib/scoring.js";
 import { computeGoalScore } from "./lib/scoring/goalScoring.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
@@ -1484,9 +1484,6 @@ function RoadmapSection() {
     </div>
   );
 }
-
-const BLOCK_TYPE_LABEL = { straight_set: "Straight Set", superset: "Superset / Giant Set", circuit_for_time: "Circuit — For Time", timed_circuit: "Timed Circuit", weighted_circuit: "Weighted Circuit" };
-const BLOCK_TYPE_SHORT = { superset: "SS", circuit_for_time: "CFT", timed_circuit: "TC", weighted_circuit: "WC" };
 
 function Workouts({ profile, readOnly, embedded }) {
   const [exercises, setExercises] = useState([]);

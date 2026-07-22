@@ -60,6 +60,14 @@ export const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"
 export const EX_TYPES = ["Compound", "Accessory", "Circuit", "Warmup"];
 export const PHASES = ["Onboarding", "Accumulation", "Intensification", "Peak", "Deload", "Maintenance"];
 
+// Session-time block grouping (exercises.block_type / group_id — see
+// db/add_block_type.sql). Shared by the client workout log, the coach's
+// manual exercise builder, and program version snapshots, so a superset
+// created anywhere is labeled the same way everywhere.
+export const BLOCK_TYPES = ["straight_set", "superset", "circuit_for_time", "timed_circuit", "weighted_circuit"];
+export const BLOCK_TYPE_LABEL = { straight_set: "Straight Set", superset: "Superset / Giant Set", circuit_for_time: "Circuit — For Time", timed_circuit: "Timed Circuit", weighted_circuit: "Weighted Circuit" };
+export const BLOCK_TYPE_SHORT = { superset: "SS", circuit_for_time: "CFT", timed_circuit: "TC", weighted_circuit: "WC" };
+
 // Canonical within-day workout ordering. Stored in exercises.section (distinct
 // from exercise_type, which drives strength-tracking grouping in StrengthTab —
 // section is purely a slot label, never used for PR/strength charts).

@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
-import { DAY_ORDER, PHASES, phaseRankOf } from "../../../lib/constants.js";
+import { DAY_ORDER, PHASES, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
 
 // Append-only Program Phase log — every phase change is a new row, never an
 // update, so the history in program_phase_history can't silently disappear.
@@ -30,6 +30,7 @@ export async function createProgramVersion(clientId, label) {
     exercises: sortedExs.map((e) => ({
       name: e.name, category: e.category, section: e.section, day_of_week: e.day_of_week, sets: e.sets,
       reps: e.reps, is_bodyweight: e.is_bodyweight, notes: e.notes, order_index: e.order_index, source: e.source,
+      block_type: e.block_type, group_id: e.group_id,
     })),
   };
   const { error } = await supabase.from("program_versions").insert({ client_id: clientId, program_id: program?.id || null, version, label, snapshot });
@@ -51,6 +52,7 @@ export async function restoreProgramVersion(clientId, v) {
       category: t.category ?? null, section: t.section ?? null, day_of_week: t.day_of_week ?? null, sets: t.sets ?? null,
       reps: t.reps ?? null, is_bodyweight: !!t.is_bodyweight, notes: t.notes ?? null,
       order_index: t.order_index ?? 0, source: t.source || "coach",
+      block_type: t.block_type || "straight_set", group_id: t.group_id ?? null,
     };
     const match = curMap.get(key(t));
     if (match) { usedIds.add(match.id); await supabase.from("exercises").update(fields).eq("id", match.id); }
@@ -133,7 +135,9 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
                 <tbody>
                   {exs.map((e, i) => (
                     <tr key={i}>
-                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid " + S.border }}>{e.name}</td>
+                      <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: "1px solid " + S.border }}>
+                        {e.name}{BLOCK_TYPE_SHORT[e.block_type] && <span style={{ marginLeft: 6, fontSize: 9, color: S.accent2 }}>{BLOCK_TYPE_SHORT[e.block_type]}{e.group_id ? " " + e.group_id : ""}</span>}
+                      </td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{dayLabelOf[e.day_of_week] || "—"}</td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.sets ?? "—"}</td>
                       <td style={{ padding: "6px 10px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{e.reps || "—"}</td>
