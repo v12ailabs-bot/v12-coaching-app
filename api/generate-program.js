@@ -116,16 +116,43 @@ export default async function handler(req, res) {
     }
     const templateText = template?.frameworkText || null;
 
-    // 4. Generate the plan(s). Nutrition-only skips the training generation;
+    // 4. Full-scope only: find which of the client's current AI exercises
+    //    already have logged history BEFORE generating the new plan, so the
+    //    AI can design the week around them instead of the old flow, where
+    //    this was only discovered after generation and the AI had already
+    //    (unknowingly) reintroduced the same lift as a separate exercise.
+    //    Preserve an exercise if ANY partner has logged sets against it (logs
+    //    are per-client but the exercise rows are shared), so regenerating one
+    //    partner's program never destroys the other partner's history.
+    let aiIds = [];
+    let lockedExercises = [];
+    if (!nutritionOnly) {
+      const { data: aiExercises } = await supabaseAdmin
+        .from("exercises")
+        .select("id, name, day_of_week, sets, reps")
+        .eq("client_id", trainingOwnerId)
+        .eq("source", "ai");
+      aiIds = (aiExercises || []).map((e) => e.id);
+      if (aiIds.length) {
+        const { data: logged } = await supabaseAdmin.from("workout_logs").select("exercise_id").in("exercise_id", aiIds);
+        const loggedIds = new Set((logged || []).map((l) => l.exercise_id));
+        lockedExercises = (aiExercises || []).filter((e) => loggedIds.has(e.id));
+      }
+    }
+    const lockedExercisesText = lockedExercises.length
+      ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
+      : null;
+
+    // 5. Generate the plan(s). Nutrition-only skips the training generation;
     //    full mode runs both concurrently.
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText }),
+          generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText }),
           generateNutritionPlan(assessed),
         ]);
 
-    // 4. Save program metadata. Nutrition-only reuses the client's latest
+    // 6. Save program metadata. Nutrition-only reuses the client's latest
     //    existing program (for the nutrition plan's program_id link) instead of
     //    creating a new one.
     let program = null;
@@ -158,36 +185,20 @@ export default async function handler(req, res) {
       if (progErr) throw progErr;
       program = newProgram;
 
-      // 5. Replace previously AI-generated exercises (coach-added ones are never
+      // 7. Replace previously AI-generated exercises (coach-added ones are never
       //    touched), but PRESERVE any AI exercise that already has logged sets —
       //    deleting it would cascade-delete the client's workout_logs
       //    (exercise_id references exercises on delete cascade). Preserved
       //    exercises are re-pointed at the new program so history stays visible.
-      const { data: aiExercises } = await supabaseAdmin
-        .from("exercises")
-        .select("id")
-        .eq("client_id", trainingOwnerId)
-        .eq("source", "ai");
-      const aiIds = (aiExercises || []).map((e) => e.id);
-
-      if (aiIds.length) {
-        // Preserve an exercise if ANY partner has logged sets against it (logs
-        // are per-client but the exercise rows are shared), so regenerating one
-        // partner's program never destroys the other partner's history.
-        const { data: logged } = await supabaseAdmin
-          .from("workout_logs")
-          .select("exercise_id")
-          .in("exercise_id", aiIds);
-        preservedIds = [...new Set((logged || []).map((l) => l.exercise_id))];
-
-        const deletableIds = aiIds.filter((id) => !preservedIds.includes(id));
-        if (deletableIds.length) {
-          const { error } = await supabaseAdmin.from("exercises").delete().in("id", deletableIds);
-          if (error) throw error;
-        }
-        if (preservedIds.length) {
-          await supabaseAdmin.from("exercises").update({ program_id: program.id }).in("id", preservedIds);
-        }
+      //    lockedExercises/aiIds were computed in step 4, before generation.
+      preservedIds = lockedExercises.map((e) => e.id);
+      const deletableIds = aiIds.filter((id) => !preservedIds.includes(id));
+      if (deletableIds.length) {
+        const { error } = await supabaseAdmin.from("exercises").delete().in("id", deletableIds);
+        if (error) throw error;
+      }
+      if (preservedIds.length) {
+        await supabaseAdmin.from("exercises").update({ program_id: program.id }).in("id", preservedIds);
       }
 
       for (const day of training.weekly_split || []) {
@@ -217,7 +228,7 @@ export default async function handler(req, res) {
       }
     }
 
-    // 6. Replace the active nutrition plan.
+    // 8. Replace the active nutrition plan.
     await supabaseAdmin
       .from("nutrition_plans")
       .update({ active: false })
@@ -243,7 +254,7 @@ export default async function handler(req, res) {
     });
     if (nutErr) throw nutErr;
 
-    // 7. Mark onboarding complete, sync the goal, and persist the resolved
+    // 9. Mark onboarding complete, sync the goal, and persist the resolved
     //    assessment (coerced to 1-10 ints; non-numeric Notion values -> null).
     if (!nutritionOnly) {
       await supabaseAdmin

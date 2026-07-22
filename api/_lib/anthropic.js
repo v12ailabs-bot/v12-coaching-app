@@ -180,6 +180,10 @@ ${
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
 }${
+  client.locked_exercises_text
+    ? `LOCKED-IN EXERCISES — these already exist in this client's program exactly as listed below and will remain unchanged (they have logged history that can't be discarded). Do NOT include them in your output, and do NOT invent a different exercise that duplicates the same movement pattern on the same day — design the rest of that day's work around them, accounting for the volume/phase they already cover:\n${client.locked_exercises_text}\n\n`
+    : ""
+}${
   client.program_template
     ? `${client.program_template}\n\n` +
       `Use this template as the framework. Replicate its WEEKLY SPLIT exactly — the ` +

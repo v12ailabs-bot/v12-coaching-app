@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, useIsMobile } from "../../theme.jsx";
 import { PageTitle, CollapsibleSection } from "../../components/ui/index.js";
@@ -30,10 +30,13 @@ async function authHeaders() {
 // header), and Client Settings stay always visible; every other section is a
 // collapsed-by-default accordion. Expand state is session-only (a plain
 // useState Set, not persisted) per the progressive-disclosure requirement.
-export function ClientDetailPage() {
+export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
   const isMobile = useIsMobile();
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState(null);
+  // Applied at most once per mount — after that, the coach's own in-page
+  // ClientSelector clicks (or a showArchived toggle) own `selected`.
+  const appliedInitial = useRef(false);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
@@ -97,8 +100,14 @@ export function ClientDetailPage() {
   useEffect(()=>{
     const vis = (clients||[]).filter(c=>showArchived?c.archived:!c.archived);
     if(!vis.length){ setSelected(s=>s?null:s); return; }
+    if(!appliedInitial.current && initialClientId && vis.some(c=>c.id===initialClientId)){
+      appliedInitial.current = true;
+      setSelected(initialClientId);
+      onInitialClientOpened?.();
+      return;
+    }
     setSelected(s=>(s && vis.some(c=>c.id===s)) ? s : vis[0].id);
-  },[clients, showArchived]);
+  },[clients, showArchived, initialClientId]);
   // Program templates come from the Notion program library (via the API).
   useEffect(()=>{
     authHeaders()
@@ -270,8 +279,27 @@ export function ClientDetailPage() {
 
   // Runs the pipeline: Notion -> AI -> Supabase. scope "full" regenerates the
   // whole program (training + nutrition); "nutrition" regenerates only the
-  // nutrition plan and leaves training + logged history untouched.
+  // nutrition plan and leaves training + logged history untouched. The API
+  // already never deletes an AI exercise with logged history (see
+  // api/generate-program.js) — but the AI itself was blind to that when
+  // designing the new week, so it could reintroduce the same lift as a
+  // separate, duplicate exercise. Surface what's about to be kept up front
+  // (a heads-up, not a per-exercise picker) instead of letting that surprise
+  // the coach after the fact.
   const generateProgram = async(client, scope="full")=>{
+    if(scope==="full"){
+      const {data:aiEx} = await supabase.from("exercises").select("id,name,day_of_week").eq("client_id",trainOwnerId).eq("source","ai");
+      const aiIds = (aiEx||[]).map(e=>e.id);
+      if(aiIds.length){
+        const {data:logged} = await supabase.from("workout_logs").select("exercise_id").in("exercise_id",aiIds);
+        const loggedIds = new Set((logged||[]).map(l=>l.exercise_id));
+        const keepers = (aiEx||[]).filter(e=>loggedIds.has(e.id));
+        if(keepers.length){
+          const list = keepers.map(e=>`${e.name}${e.day_of_week?` (${e.day_of_week})`:""}`).join("\n");
+          if(!window.confirm(`These ${keepers.length} exercise${keepers.length>1?"s":""} already have logged history and will be kept exactly as-is — the AI will design the rest of the program around them:\n\n${list}\n\nContinue?`)) return;
+        }
+      }
+    }
     setGenerating(true); setGenScope(scope); setGenMsg(null);
     try{
       const r = await fetch("/api/generate-program",{
