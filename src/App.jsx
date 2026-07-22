@@ -683,6 +683,45 @@ function CoachMessage({ profile }) {
     </div>
   );
 }
+
+// Client-visible surface for a coach-generated AI goal insight
+// (client_goal_insights) — same read-state pattern as CoachMessage above:
+// the newest unacknowledged insight shows as a banner on Home with a "Got
+// it" button, then never reappears here (it stays viewable under Progress ->
+// Goals for as long as the goal is active).
+function GoalInsightBanner({ profile }) {
+  const [insight, setInsight] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [acking, setAcking] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("client_goal_insights").select("*").eq("client_id", profile.id)
+      .is("acknowledged_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    setInsight(data || null);
+    setLoading(false);
+  }, [profile.id]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading || !insight) return null;
+
+  const acknowledge = async () => {
+    setAcking(true);
+    await supabase.from("client_goal_insights").update({ acknowledged_at: new Date().toISOString() }).eq("id", insight.id);
+    setAcking(false);
+    load();
+  };
+
+  return (
+    <Card style={{ borderLeft: "3px solid " + S.accent, marginBottom: 20 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>🎯</span> New Coaching Insight
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap", marginBottom: 14 }}>{insight.insight_text}</div>
+      <Btn sm teal onClick={acknowledge} disabled={acking}>{acking ? "..." : "Got it"}</Btn>
+    </Card>
+  );
+}
+
 // Client-side surface for the manual PayPal invoice link the coach pastes in
 // after Accept (CRMPanel) -- shown until the coach marks the lead paid.
 function InvoiceCard({ profile }) {
@@ -896,6 +935,7 @@ function ClientHome({ profile, setPage }) {
     <div>
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
+      <GoalInsightBanner profile={profile} />
       <CollapsibleSection title="Habits">
         <Habits profile={profile} />
       </CollapsibleSection>

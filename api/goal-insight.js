@@ -57,8 +57,28 @@ export default async function handler(req, res) {
       ? Math.round(((habitLogs || []).filter(l => l.done).length / (habitCount * 30)) * 100)
       : null;
 
+    // The component scores above are all reduced to 0-100 — enough to say
+    // "nutrition is at 62%" but not WHY. Pull the underlying numbers behind
+    // each one from the same 30-day window so the insight can cite concrete
+    // reasons (calorie/macro gaps, workout-session count) instead of only
+    // restating a percentage.
+    const avgOf = (rows, key) => { const v = rows.map(r => r[key]).filter(v => v != null); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null; };
+    const rawStats = {
+      calorie_target: nutPlan?.calories ?? null,
+      avg_calories_logged: avgOf(recentDaily, "calories"),
+      protein_target_g: nutPlan?.protein_g ?? null,
+      avg_protein_g: avgOf(recentDaily, "protein_g"),
+      carbs_target_g: nutPlan?.carbs_g ?? null,
+      avg_carbs_g: avgOf(recentDaily, "carbs_g"),
+      fats_target_g: nutPlan?.fats_g ?? null,
+      avg_fats_g: avgOf(recentDaily, "fats_g"),
+      days_with_nutrition_logged: recentDaily.filter(d => d.calories != null || d.protein_g != null).length,
+      workouts_completed: recentDaily.filter(d => d.workout === "completed").length,
+      window_days: recentDaily.length,
+    };
+
     const scoreData = computeGoalScore(goal, series, { nutrition, training, recovery, habit });
-    const insightText = await generateGoalInsight({ profile: profile || {}, goal, scoreData });
+    const insightText = await generateGoalInsight({ profile: profile || {}, goal, scoreData, rawStats });
 
     const { data: saved, error: insertErr } = await supabaseAdmin.from("client_goal_insights").insert({
       client_id: goal.client_id,
