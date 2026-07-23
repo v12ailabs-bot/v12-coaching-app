@@ -1289,6 +1289,8 @@ function ProgramHabits({ profile }) {
   const [waist, setWaist] = useState("");
   const [savingBody, setSavingBody] = useState(false);
   const [savedBody, setSavedBody] = useState(false);
+  const [bodyErr, setBodyErr] = useState(null);
+  const [habitErr, setHabitErr] = useState(null);
   const today = todayStr();
 
   const load = useCallback(async () => {
@@ -1315,21 +1317,25 @@ function ProgramHabits({ profile }) {
       if (i === -1) return [...prev, { date: today, habit_flags: next }];
       const copy = [...prev]; copy[i] = { ...copy[i], habit_flags: next }; return copy;
     });
-    await supabase.from("daily_checkins").upsert(
+    setHabitErr(null);
+    const { error } = await supabase.from("daily_checkins").upsert(
       { client_id: profile.id, date: today, habit_flags: next },
       { onConflict: "client_id,date" }
     );
+    if (error) { setHabitErr(error.message); load(); }
   };
 
   const saveBody = async () => {
-    setSavingBody(true);
-    await supabase.from("daily_checkins").upsert(
+    setSavingBody(true); setBodyErr(null);
+    const { error } = await supabase.from("daily_checkins").upsert(
       { client_id: profile.id, date: today,
         weight: weight === "" ? null : parseFloat(weight),
         waist: waist === "" ? null : parseFloat(waist) },
       { onConflict: "client_id,date" }
     );
-    setSavingBody(false); setSavedBody(true); setTimeout(() => setSavedBody(false), 2000);
+    setSavingBody(false);
+    if (error) { setBodyErr(error.message); return; }
+    setSavedBody(true); setTimeout(() => setSavedBody(false), 2000);
     load();
   };
 
@@ -1351,6 +1357,7 @@ function ProgramHabits({ profile }) {
       </div>
       <Card>
         <CardTitle>Today · {today}</CardTitle>
+        <Alert variant="error">{habitErr}</Alert>
         {PROGRAM_HABITS.map((h) => {
           const done = !!todayFlags[h.key];
           return (
@@ -1367,6 +1374,7 @@ function ProgramHabits({ profile }) {
       </Card>
       <Card>
         <CardTitle>Body Metrics · Today</CardTitle>
+        <Alert variant="error">{bodyErr}</Alert>
         <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
           <Fld label="Bodyweight (lb)"><input type="number" value={weight} onChange={(e) => setWeight(e.target.value)} style={inS} /></Fld>
           <Fld label="Waist (in)"><input type="number" value={waist} onChange={(e) => setWaist(e.target.value)} style={inS} /></Fld>
