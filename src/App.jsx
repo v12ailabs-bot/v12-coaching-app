@@ -2082,9 +2082,11 @@ function CoachHome({ setPage, openClient }) {
 // In-app only, no live Notion pull (matches the CRM's one-time-backfill
 // approach) -- excludes Fitness/Discipline by design (Business+Content only).
 // ---------------------------------------------------------------------------
-// Placeholder weekly targets -- the coach can adjust these; not sourced from
-// the Notion Weekly Outreach Metrics thresholds (not inspected here).
-const WEEKLY_TARGETS = { dms_sent: 350, sales_conversations: 20, calls_booked: 10, clients_closed: 2, revenue_today: 3000 };
+// Real weekly goals: DMs 120, Sales Conversations 15-20, Calls Booked 3-4,
+// Revenue $500-1200 — the low end of each range is the target (hitting it
+// reads "On Track"; anything above naturally reads "Ahead"). Clients Closed
+// has no set goal yet, kept at the prior placeholder of 2/week.
+const WEEKLY_TARGETS = { dms_sent: 120, sales_conversations: 15, calls_booked: 3, clients_closed: 2, revenue_today: 500 };
 // `daysElapsed` scales the target down for a week still in progress (1-7) —
 // without this, a week with only today's entry compares 1 day of activity
 // against the FULL weekly target and always reads "Behind", even seconds
@@ -2095,7 +2097,7 @@ function weekStatus(total, target, daysElapsed = 7) {
   const paceTarget = target * (clamp01(daysElapsed / 7));
   if (paceTarget <= 0) return null; // day 0 of a new week — nothing to compare yet
   const pct = total / paceTarget;
-  return pct >= 1.1 ? "Ahead" : pct >= 0.9 ? "On Track" : "Behind";
+  return pct >= 1.1 ? "Ahead" : pct >= 0.9 ? "On Track" : pct >= 0.5 ? "Behind" : "Red Flag";
 }
 function clamp01(v) { return Math.max(0, Math.min(1, v)); }
 function isoWeekStart(dateStr) {
@@ -2165,8 +2167,8 @@ function MetricsDashboard() {
   });
   const badge = (status) => !status ? null : (
     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "3px 8px", marginLeft: 6,
-      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : "rgba(255,107,91,.14)",
-      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : "#ff6b5b" }}>{status}</span>
+      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : status === "Red Flag" ? "#ff6b5b" : "rgba(255,107,91,.14)",
+      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : status === "Red Flag" ? "white" : "#ff6b5b" }}>{status}</span>
   );
 
   return (
@@ -2196,7 +2198,7 @@ function MetricsDashboard() {
       </Card>
       <Card>
         <CardTitle>Weekly Rollup</CardTitle>
-        <div style={{ fontSize: 11, color: S.muted, marginBottom: 12 }}>On Track / Behind / Ahead, same scale as Weekly Outreach Metrics — that schema has no "Red Flag" tier yet, so none is shown here either.</div>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 12 }}>Ahead / On Track / Behind / Red Flag, based on pace toward the weekly target for each metric.</div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ borderCollapse: "collapse", minWidth: 640, width: "100%" }}>
             <thead>
