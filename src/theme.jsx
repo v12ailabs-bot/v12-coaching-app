@@ -112,7 +112,12 @@ export function GlobalStyles() {
         .sidebar { position: fixed !important; bottom: 0; left: 0; right: 0; top: auto !important;
           width: 100% !important; height: 58px !important; flex-shrink: 0;
           padding: 0 !important; border-right: none !important; border-top: 1px solid #333;
-          overflow-x: auto !important; overflow-y: hidden !important; z-index: 999; }
+          overflow-x: auto !important; overflow-y: hidden !important; z-index: 999;
+          /* iOS Safari can visually detach a fixed element from the viewport
+             mid-scroll while its address bar animates; forcing its own GPU
+             compositing layer keeps it pinned to the bottom instead of
+             drifting up the page. */
+          transform: translateZ(0); -webkit-transform: translateZ(0); will-change: transform; }
         .sidebar-inner { display: flex !important; flex-direction: row; width: 100%;
           align-items: stretch; padding: 0 !important; }
         .sidebar-heading { display: none !important; }
@@ -131,6 +136,12 @@ export function GlobalStyles() {
         .main-content { padding: 18px 16px 84px !important; }
         .topbar { padding: 0 14px !important; }
         .card { padding: 16px !important; }
+        /* iOS Safari auto-zooms the whole page on focus for any input under
+           16px, and never zooms back out — that's the "screen zooms in when
+           I tap a text box" the app stays stuck at until the user manually
+           pinches out. Most inputs here are 13-14px; floor them all at 16px
+           so focus never triggers it. */
+        input, textarea, select { font-size: 16px !important; }
         .g4 { grid-template-columns: repeat(2, 1fr) !important; }
         .g2, .g3, .cg { grid-template-columns: 1fr !important; }
         table { font-size: 12px; }
