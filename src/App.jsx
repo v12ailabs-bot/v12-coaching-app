@@ -1004,12 +1004,17 @@ function DailyCheckin({ profile, onDone }) {
   const [loading, setLoading] = useState(false);
   const [saved, setSaved] = useState(false);
   const [existing, setExisting] = useState(null);
+  // Guards against the fetch below overwriting text the client already
+  // started typing before it resolved — render nothing until it's settled.
+  const [ready, setReady] = useState(false);
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).eq("date",todayStr()).maybeSingle()
-      .then(({data})=>{if(data){setExisting(data);setForm({weight:data.weight||"",sleep:data.sleep,energy:data.energy,mood:data.mood,water:data.water,diet:data.diet,workout:data.workout,calories:data.calories??"",protein_g:data.protein_g??"",carbs_g:data.carbs_g??"",fats_g:data.fats_g??""});}});
+      .then(({data})=>{if(data){setExisting(data);setForm({weight:data.weight||"",sleep:data.sleep,energy:data.energy,mood:data.mood,water:data.water,diet:data.diet,workout:data.workout,calories:data.calories??"",protein_g:data.protein_g??"",carbs_g:data.carbs_g??"",fats_g:data.fats_g??""});}setReady(true);});
   },[profile.id]);
+
+  if(!ready) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
   const submit = async () => {
     setLoading(true);
@@ -1061,6 +1066,9 @@ function WeeklyCheckin({ profile, onDone }) {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState("");
   const [existing, setExisting] = useState(null);
+  // Guards against the fetches below overwriting text the client already
+  // started typing before they resolved — render nothing until settled.
+  const [ready, setReady] = useState(false);
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   // Numeric columns — coerced to number|null on save so empty inputs don't
@@ -1070,14 +1078,17 @@ function WeeklyCheckin({ profile, onDone }) {
   useEffect(()=>{
     (async()=>{
       const {data} = await supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle();
-      if(data){ setExisting(data); setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;}); return; }
+      if(data){ setExisting(data); setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;}); setReady(true); return; }
       // No entry yet this week — prefill the stable measurements from the most
       // recent prior check-in (and bump the week number) so the client only
       // updates what changed instead of re-typing everything.
       const {data:prev} = await supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).lt("date",weekStart).order("date",{ascending:false}).limit(1).maybeSingle();
       if(prev){ setForm(f=>({...f, bodyweight:prev.bodyweight??"", waist:prev.waist??"", chest:prev.chest??"", hips:prev.hips??"", arms:prev.arms??"", week_number:prev.week_number!=null?String(Number(prev.week_number)+1):""})); }
+      setReady(true);
     })();
   },[profile.id]);
+
+  if(!ready) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
   const submit = async () => {
     setLoading(true); setError("");
