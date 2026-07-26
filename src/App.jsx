@@ -2168,15 +2168,25 @@ function MetricsDashboard() {
   const [saved, setSaved] = useState(false);
   const dateStr = todayStr();
 
-  const load = useCallback(async () => {
+  // Refreshes the rollup/trend rows only — never touches `today`. saveToday()
+  // relies on this: `today` already holds exactly what was just submitted, so
+  // re-deriving it from a refetch after save would race any typing done into
+  // the form right after clicking Save and silently wipe it out (same class
+  // of bug fixed in 7f744a3 for the client check-in forms).
+  const loadRows = useCallback(async () => {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
     const { data } = await supabase.from("daily_metrics").select("*").gte("date", cutoff.toISOString().split("T")[0]).order("date");
     setRows(data || []);
-    const t = (data || []).find((r) => r.date === dateStr);
-    if (t) setToday({ ...t });
-    setLoading(false);
-  }, [dateStr]);
-  useEffect(() => { load(); }, [load]);
+    return data || [];
+  }, []);
+  useEffect(() => {
+    (async () => {
+      const data = await loadRows();
+      const t = data.find((r) => r.date === dateStr);
+      if (t) setToday({ ...t });
+      setLoading(false);
+    })();
+  }, [loadRows, dateStr]);
 
   const setF = (k, v) => setToday((p) => ({ ...p, [k]: v }));
 
@@ -2195,7 +2205,7 @@ function MetricsDashboard() {
       content_recorded: !!today.content_recorded,
     }, { onConflict: "date" });
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
-    load();
+    loadRows();
   };
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
