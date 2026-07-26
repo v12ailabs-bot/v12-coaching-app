@@ -2160,19 +2160,29 @@ function isoWeekStart(dateStr) {
   return d.toISOString().split("T")[0];
 }
 
+// Additive metrics: each save ADDS the entered amount to today's running
+// total (not an absolute overwrite), then the input clears — so you log
+// "sent 4 more DMs" as you go through the day instead of having to re-enter
+// the full day's total each time. Active Clients + the content checkboxes
+// are current-state snapshots, not activity counts, so they stay absolute.
+const BLANK_ADDS = { dms_sent: "", sales_conversations: "", calls_booked: "", clients_closed: "", revenue_today: "" };
+
 function MetricsDashboard() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [today, setToday] = useState({ dms_sent: "", sales_conversations: "", calls_booked: "", clients_closed: "", active_clients: "", revenue_today: "", content_posted: false, content_created: false, content_recorded: false });
+  const [todayRow, setTodayRow] = useState(null);
+  const [adds, setAdds] = useState(BLANK_ADDS);
+  const [snapshot, setSnapshot] = useState({ active_clients: "", content_posted: false, content_created: false, content_recorded: false });
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const dateStr = todayStr();
 
-  // Refreshes the rollup/trend rows only — never touches `today`. saveToday()
-  // relies on this: `today` already holds exactly what was just submitted, so
-  // re-deriving it from a refetch after save would race any typing done into
-  // the form right after clicking Save and silently wipe it out (same class
-  // of bug fixed in 7f744a3 for the client check-in forms).
+  // Refreshes the rollup/trend rows only — never touches the add-inputs or
+  // the snapshot fields. saveToday() relies on this: a refetch after save
+  // racing further typing was the bug fixed here previously (same class as
+  // 7f744a3 for the client check-in forms) — now there's nothing left for a
+  // background refetch to clobber, since `adds` always resets to blank
+  // right after its own save completes, not from a fetch.
   const loadRows = useCallback(async () => {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 60);
     const { data } = await supabase.from("daily_metrics").select("*").gte("date", cutoff.toISOString().split("T")[0]).order("date");
@@ -2182,28 +2192,38 @@ function MetricsDashboard() {
   useEffect(() => {
     (async () => {
       const data = await loadRows();
-      const t = data.find((r) => r.date === dateStr);
-      if (t) setToday({ ...t });
+      const t = data.find((r) => r.date === dateStr) || null;
+      setTodayRow(t);
+      setSnapshot({
+        active_clients: t?.active_clients ?? "",
+        content_posted: !!t?.content_posted,
+        content_created: !!t?.content_created,
+        content_recorded: !!t?.content_recorded,
+      });
       setLoading(false);
     })();
   }, [loadRows, dateStr]);
 
-  const setF = (k, v) => setToday((p) => ({ ...p, [k]: v }));
+  const setAdd = (k, v) => setAdds((p) => ({ ...p, [k]: v }));
+  const setSnap = (k, v) => setSnapshot((p) => ({ ...p, [k]: v }));
 
   const saveToday = async () => {
     setSaving(true);
-    await supabase.from("daily_metrics").upsert({
+    const payload = {
       date: dateStr,
-      dms_sent: parseInt(today.dms_sent) || 0,
-      sales_conversations: parseInt(today.sales_conversations) || 0,
-      calls_booked: parseInt(today.calls_booked) || 0,
-      clients_closed: parseInt(today.clients_closed) || 0,
-      active_clients: today.active_clients === "" ? null : parseInt(today.active_clients),
-      revenue_today: parseFloat(today.revenue_today) || 0,
-      content_posted: !!today.content_posted,
-      content_created: !!today.content_created,
-      content_recorded: !!today.content_recorded,
-    }, { onConflict: "date" });
+      dms_sent: (todayRow?.dms_sent || 0) + (parseInt(adds.dms_sent) || 0),
+      sales_conversations: (todayRow?.sales_conversations || 0) + (parseInt(adds.sales_conversations) || 0),
+      calls_booked: (todayRow?.calls_booked || 0) + (parseInt(adds.calls_booked) || 0),
+      clients_closed: (todayRow?.clients_closed || 0) + (parseInt(adds.clients_closed) || 0),
+      revenue_today: (todayRow?.revenue_today || 0) + (parseFloat(adds.revenue_today) || 0),
+      active_clients: snapshot.active_clients === "" ? null : parseInt(snapshot.active_clients),
+      content_posted: !!snapshot.content_posted,
+      content_created: !!snapshot.content_created,
+      content_recorded: !!snapshot.content_recorded,
+    };
+    const { data } = await supabase.from("daily_metrics").upsert(payload, { onConflict: "date" }).select().maybeSingle();
+    setTodayRow(data || payload);
+    setAdds(BLANK_ADDS);
     setSaving(false); setSaved(true); setTimeout(() => setSaved(false), 2000);
     loadRows();
   };
@@ -2239,23 +2259,24 @@ function MetricsDashboard() {
       <PageTitle title="Business + Content" sub="Daily outreach and content metrics, rolled up weekly" />
       <Card>
         <CardTitle>Today · {dateStr}</CardTitle>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>Enter what you did since your last save — it adds to today's total below, then clears so you can log the next batch.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14, marginBottom: 16 }}>
-          <Fld label="DMs Sent"><Inp type="number" value={today.dms_sent} onChange={(e) => setF("dms_sent", e.target.value)} /></Fld>
-          <Fld label="Sales Conversations"><Inp type="number" value={today.sales_conversations} onChange={(e) => setF("sales_conversations", e.target.value)} /></Fld>
-          <Fld label="Calls Booked"><Inp type="number" value={today.calls_booked} onChange={(e) => setF("calls_booked", e.target.value)} /></Fld>
-          <Fld label="Clients Closed"><Inp type="number" value={today.clients_closed} onChange={(e) => setF("clients_closed", e.target.value)} /></Fld>
-          <Fld label="Active Clients"><Inp type="number" value={today.active_clients} onChange={(e) => setF("active_clients", e.target.value)} /></Fld>
-          <Fld label="Revenue Today ($)"><Inp type="number" value={today.revenue_today} onChange={(e) => setF("revenue_today", e.target.value)} /></Fld>
+          {METRIC_KEYS.map((k) => (
+            <Fld key={k} label={`${METRIC_LABEL[k]} — today: ${k === "revenue_today" ? "$" + (todayRow?.[k] || 0) : (todayRow?.[k] || 0)}`}>
+              <Inp type="number" value={adds[k]} onChange={(e) => setAdd(k, e.target.value)} placeholder="Add..." />
+            </Fld>
+          ))}
+          <Fld label="Active Clients (current count)"><Inp type="number" value={snapshot.active_clients} onChange={(e) => setSnap("active_clients", e.target.value)} /></Fld>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
           {[["content_posted", "Content Posted"], ["content_created", "Content Created"], ["content_recorded", "Content Recorded"]].map(([k, label]) => (
             <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
-              <input type="checkbox" checked={!!today[k]} onChange={(e) => setF(k, e.target.checked)} /> {label}
+              <input type="checkbox" checked={!!snapshot[k]} onChange={(e) => setSnap(k, e.target.checked)} /> {label}
             </label>
           ))}
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <Btn onClick={saveToday} disabled={saving}>{saving ? "Saving..." : "Save Today"}</Btn>
+          <Btn onClick={saveToday} disabled={saving}>{saving ? "Saving..." : "Add to Today"}</Btn>
           {saved && <span style={{ color: S.accent2, fontSize: 12, fontWeight: 600 }}>Saved!</span>}
         </div>
       </Card>
