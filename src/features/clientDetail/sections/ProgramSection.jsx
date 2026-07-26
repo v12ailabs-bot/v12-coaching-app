@@ -189,7 +189,16 @@ export function ProgramPhase({ clientId }) {
     if (!error) await logPhaseHistory({ programId: program.id, clientId, phase, phaseNote: trimmedNote });
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase updated." });
-    if (!error) load();
+    if (!error) {
+      // Reflect the save optimistically instead of calling load() — a full
+      // refetch here would race any typing the coach does into the Phase
+      // Note textarea right after clicking Save and wipe it out. `phase`/
+      // `note` already hold what was just saved, so only `program` (for the
+      // "phase set" timestamp) and the append-only history log need refreshing.
+      setProgram((p) => (p ? { ...p, phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString() } : p));
+      const { data: hist } = await supabase.from("program_phase_history").select("*").eq("client_id", clientId).order("changed_at", { ascending: false }).limit(20);
+      setHistory(hist || []);
+    }
   };
 
   if (loading) return null;

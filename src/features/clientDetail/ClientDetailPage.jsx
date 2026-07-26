@@ -80,6 +80,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
     const {data} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL);
     setClients(data||[]);
     setLoading(false);
+    return data||[];
   };
 
   const setArchived = async(client, archived)=>{
@@ -119,7 +120,14 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
   useEffect(()=>{if(selected){loadEx(trainOwnerId);setGenMsg(null);}},[selected,trainOwnerId]);
   // Sync the assessment editor to the selected client, and collapse every
   // section back down when switching clients so nothing stays open from the
-  // previous client's context.
+  // previous client's context. Deliberately depends on `selected` only, not
+  // `clients` — this used to also depend on `clients`, so ANY save anywhere on
+  // the page (Save Assessment, Archive, Save Partner, Refresh from Notion, even
+  // Save Settings itself) called loadClients() and re-ran this effect,
+  // silently wiping whatever the coach was mid-typing into Client Settings.
+  // Actions that need the editors to reflect freshly synced server data
+  // (refreshFromNotion) update the relevant state directly instead of relying
+  // on this effect.
   useEffect(()=>{
     const c = clients.find(x=>x.id===selected);
     if(c) setAssess({
@@ -139,7 +147,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
     setSettingsMsg(null);
     setPartnerMsg(null);
     setExpanded(new Set());
-  },[selected, clients]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selected]);
 
   const saveSettings = async()=>{
     setSavingSettings(true); setSettingsMsg(null);
@@ -224,7 +233,14 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
       const data = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
       setAssessMsg({ok:true,text:data.updated?.length?`Synced from Notion (${data.updated.join(", ")}).`:"Notion had nothing new to sync."});
-      await loadClients();
+      const fresh = (await loadClients()).find(c=>c.id===selected);
+      // The assess editor no longer auto-resyncs from loadClients() (see the
+      // effect above), so pull the newly synced values in directly here.
+      if(fresh) setAssess({
+        nervous_system_recruitment: fresh.nervous_system_recruitment ?? 5,
+        muscular_density_to_size: fresh.muscular_density_to_size ?? 5,
+        metabolic_work_capacity: fresh.metabolic_work_capacity ?? 5,
+      });
     }catch(e){
       setAssessMsg({ok:false,text:e.message});
     }finally{
