@@ -34,8 +34,10 @@ export default async function handler(req, res) {
       goal: goal ? { direction: goal.direction, target_value: goal.target_value, unit: goal.unit, target_date: goal.target_date, classification: goalScore?.classification, overall_score: goalScore?.overallScore } : null,
     });
     // Persist as this month's recap for this client (replaces an existing one).
+    // acknowledged_at: null so regenerating an already-seen month's recap
+    // re-surfaces the "new recap" banner on the client's Home page.
     await supabaseAdmin.from("client_summaries")
-      .upsert({ client_id, period, content: summary, created_at: now.toISOString() }, { onConflict: "client_id,period" });
+      .upsert({ client_id, period, content: summary, created_at: now.toISOString(), acknowledged_at: null }, { onConflict: "client_id,period" });
     return res.status(200).json({ summary, period });
   } catch (e) {
     console.error("summary error:", e, "client_id:", client_id);

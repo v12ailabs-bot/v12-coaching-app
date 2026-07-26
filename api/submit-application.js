@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { createNotionApplication } from "./_lib/notion.js";
+import { sendApplicationNotificationEmail } from "./_lib/resend.js";
 import { checkRateLimit, clientIp } from "./_lib/rateLimit.js";
 
 // POST /api/submit-application  { name, email, height, ...intake fields }
@@ -47,6 +48,11 @@ export default async function handler(req, res) {
     ].join("; ");
     createNotionApplication({ ...fields, email, injuries }).catch((e) =>
       console.error("submit-application: Notion sync failed:", e)
+    );
+
+    // Fire-and-forget: an email failure never fails the applicant's submission.
+    sendApplicationNotificationEmail({ ...fields, email }).catch((e) =>
+      console.error("submit-application: notification email failed:", e)
     );
 
     return res.status(200).json({ success: true, lead_id: lead.id });

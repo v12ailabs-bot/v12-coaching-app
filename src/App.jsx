@@ -722,6 +722,47 @@ function GoalInsightBanner({ profile }) {
   );
 }
 
+const SUMMARY_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+const summaryMonthLabel = (period) => { const [y,m] = (period||"").split("-"); return m ? `${SUMMARY_MONTH_NAMES[+m-1]} ${y}` : period; };
+
+// Client-visible "new recap ready" banner for the AI monthly summary
+// (client_summaries) — same read-state pattern as CoachMessage/
+// GoalInsightBanner above: the newest unacknowledged recap shows as a banner
+// on Home, and "View Recap" both acknowledges it and sends the client to
+// Progress, where the full recap lives (read-only, in AISummarySection.jsx).
+function NewSummaryBanner({ profile, setPage }) {
+  const [summary, setSummary] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [acking, setAcking] = useState(false);
+
+  const load = useCallback(async () => {
+    const { data } = await supabase.from("client_summaries").select("id,period").eq("client_id", profile.id)
+      .is("acknowledged_at", null).order("period", { ascending: false }).limit(1).maybeSingle();
+    setSummary(data || null);
+    setLoading(false);
+  }, [profile.id]);
+  useEffect(() => { load(); }, [load]);
+
+  if (loading || !summary) return null;
+
+  const view = async () => {
+    setAcking(true);
+    await supabase.from("client_summaries").update({ acknowledged_at: new Date().toISOString() }).eq("id", summary.id);
+    setAcking(false);
+    setPage("progress");
+  };
+
+  return (
+    <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: 20 }}>
+      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
+        <span>📊</span> New Monthly Recap
+      </div>
+      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, marginBottom: 14 }}>Your recap for {summaryMonthLabel(summary.period)} is ready to view.</div>
+      <Btn sm teal onClick={view} disabled={acking}>{acking ? "..." : "View Recap"}</Btn>
+    </Card>
+  );
+}
+
 // Client-side surface for the manual PayPal invoice link the coach pastes in
 // after Accept (CRMPanel) -- shown until the coach marks the lead paid.
 function InvoiceCard({ profile }) {
@@ -936,6 +977,7 @@ function ClientHome({ profile, setPage }) {
       <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
       <CoachMessage profile={profile} />
       <GoalInsightBanner profile={profile} />
+      <NewSummaryBanner profile={profile} setPage={setPage} />
       <CollapsibleSection title="Habits">
         <Habits profile={profile} />
       </CollapsibleSection>
