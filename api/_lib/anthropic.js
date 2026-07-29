@@ -1,6 +1,16 @@
 import Anthropic from "@anthropic-ai/sdk";
+import { getBibleVoiceGuidance } from "./bible.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+// Wraps the V12 Bible content (see api/_lib/bible.js) as a tone-reference
+// block for a prompt. Empty when the Bible isn't configured/reachable, so
+// the prompt is unchanged rather than referencing a missing section.
+async function bibleBlock() {
+  const text = await getBibleVoiceGuidance();
+  if (!text) return "";
+  return `V12 VOICE & PHILOSOPHY — this is how V12's coach (Daniel) actually talks to clients. Match this tone and language in any client-facing text you write below; do not treat it as data to cite or quote verbatim.\n${text}\n\n`;
+}
 
 const MODEL = "claude-opus-4-8";
 // A full 12-week, multi-day split (or a detailed meal plan) can exceed a few
@@ -162,6 +172,7 @@ NOT available — never program these, and substitute an equivalent movement tha
 // Generates a 12-week V12 weekly training split tailored to the client and the
 // coach-selected template.
 export async function generateTrainingPlan(client) {
+  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -170,7 +181,7 @@ export async function generateTrainingPlan(client) {
         role: "user",
         content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI.
 
-${V12_METHOD}
+${bible}${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
@@ -250,6 +261,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 // Generates a daily nutrition plan personalized to the client's goal (from their
 // Notion application) and aligned with the V12 method's energy-system demands.
 export async function generateNutritionPlan(client) {
+  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -258,7 +270,7 @@ export async function generateNutritionPlan(client) {
         role: "user",
         content: `You are V12 Performance Systems, an elite sports-nutrition AI.
 
-Build a daily nutrition plan PERSONALIZED to this client's goal from their Notion
+${bible}Build a daily nutrition plan PERSONALIZED to this client's goal from their Notion
 application. The plan must directly serve their stated goal and fuel the V12
 method's three energy systems (heavy strength work, hypertrophy volume, and
 metabolic conditioning).
@@ -353,6 +365,7 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
     phase_changes: phaseHistory.map((h) => ({ phase: h.phase, date: h.changed_at?.slice(0, 10), note: h.phase_note })),
     structured_goal: goal,
   };
+  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 700,
@@ -360,6 +373,8 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
+
+${bible}
 Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself.
 
 DATA (last 30 days): ${JSON.stringify(data)}
@@ -396,6 +411,7 @@ export async function generateGoalInsight({ profile = {}, goal = {}, scoreData =
     eta_date: scoreData.etaDate ? scoreData.etaDate.toISOString().slice(0, 10) : null,
     components: scoreData.components || {},
   };
+  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 700,
@@ -403,6 +419,8 @@ export async function generateGoalInsight({ profile = {}, goal = {}, scoreData =
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a short coaching insight for ${profile.name || "the client"}'s progress toward this goal: ${data.direction} ${data.goal_type} from ${data.baseline_value}${data.unit} to ${data.target_value}${data.unit} by ${data.target_date}.
+
+${bible}
 Use ONLY the data below — never invent numbers. If a component score or raw stat is missing (null), don't mention it.
 
 SCORES (0-100, already-computed component scores): ${JSON.stringify(data)}
