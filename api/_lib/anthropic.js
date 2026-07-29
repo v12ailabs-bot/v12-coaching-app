@@ -1,16 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { getBibleVoiceGuidance } from "./bible.js";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
-// Wraps the V12 Bible content (see api/_lib/bible.js) as a tone-reference
-// block for a prompt. Empty when the Bible isn't configured/reachable, so
-// the prompt is unchanged rather than referencing a missing section.
-async function bibleBlock() {
-  const text = await getBibleVoiceGuidance();
-  if (!text) return "";
-  return `V12 VOICE & PHILOSOPHY — this is how V12's coach (Daniel) actually talks to clients. Match this tone and language in any client-facing text you write below; do not treat it as data to cite or quote verbatim.\n${text}\n\n`;
-}
 
 const MODEL = "claude-opus-4-8";
 // A detailed meal plan can exceed a few thousand tokens; 4000 truncated the
@@ -211,7 +201,6 @@ NOT available — never program these, and substitute an equivalent movement tha
 // coach-selected template. phaseContext = { phase, weekStart, weekEnd,
 // priorPhaseSummary }; defaults to Onboarding if omitted.
 export async function generateTrainingPlan(client, phaseContext) {
-  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS_TRAINING,
@@ -220,7 +209,7 @@ export async function generateTrainingPlan(client, phaseContext) {
         role: "user",
         content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI.
 
-${bible}${V12_METHOD}
+${V12_METHOD}
 
 ${phaseBlock(phaseContext)}${clientProfileBlock(client)}
 
@@ -305,7 +294,6 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 // Generates a daily nutrition plan personalized to the client's goal (from their
 // Notion application) and aligned with the V12 method's energy-system demands.
 export async function generateNutritionPlan(client) {
-  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS_NUTRITION,
@@ -314,7 +302,7 @@ export async function generateNutritionPlan(client) {
         role: "user",
         content: `You are V12 Performance Systems, an elite sports-nutrition AI.
 
-${bible}Build a daily nutrition plan PERSONALIZED to this client's goal from their Notion
+Build a daily nutrition plan PERSONALIZED to this client's goal from their Notion
 application. The plan must directly serve their stated goal and fuel the V12
 method's three energy systems (heavy strength work, hypertrophy volume, and
 metabolic conditioning).
