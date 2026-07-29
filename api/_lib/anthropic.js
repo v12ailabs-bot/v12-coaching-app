@@ -3,19 +3,9 @@ import Anthropic from "@anthropic-ai/sdk";
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
 const MODEL = "claude-opus-4-8";
-// A detailed meal plan can exceed a few thousand tokens; 4000 truncated the
-// JSON mid-string for larger clients.
-const MAX_TOKENS_NUTRITION = 16000;
-// Training generation is phase-scoped (one phase's weekly template, not a
-// flat 12-week catch-all). Measured throughput on this call is ~120-130
-// output tokens/sec regardless of phase, so hitting even a fraction of a
-// high ceiling can still approach Vercel's 60s function timeout — an 8000
-// cap still let a high-volume phase (Accumulation) complete a full,
-// non-truncated response in ~62s. The real backstop is the "max 5
-// exercises/day" prompt rule below (bounds actual output size); this cap
-// is a hard ceiling in case that rule is ever violated, sized so hitting it
-// outright still finishes with real margin under 60s.
-const MAX_TOKENS_TRAINING = 6000;
+// A full 12-week, multi-day split (or a detailed meal plan) can exceed a few
+// thousand tokens; 4000 truncated the JSON mid-string for larger clients.
+const MAX_TOKENS = 16000;
 
 // Parses model output as JSON, tolerating markdown code fences.
 function parseJson(text) {
@@ -203,7 +193,7 @@ NOT available — never program these, and substitute an equivalent movement tha
 export async function generateTrainingPlan(client, phaseContext) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: MAX_TOKENS_TRAINING,
+    max_tokens: MAX_TOKENS,
     messages: [
       {
         role: "user",
@@ -252,7 +242,6 @@ Requirements for the output:
 - Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
 - Each exercise "notes" must be ONE short clause (aim for ≤12 words) giving loading guidance only — e.g. "@80% 1RM", "RPE 8, 2s pause", "3 rounds, 40s work/20s rest". Do not restate the exercise's phase, day focus, or general coaching philosophy in "notes"; state any injury-substitution rationale just as concisely, on only the affected exercise.
 - Across the week, ALL THREE pillars must appear.
-- Each day has AT MOST 5 exercises (fewer is fine). Express a phase's volume emphasis (e.g. Accumulation) through more sets/reps per exercise or less rest, never through adding more distinct exercises — this keeps the plan focused and fast to generate.
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
 - Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
@@ -296,7 +285,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 export async function generateNutritionPlan(client) {
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: MAX_TOKENS_NUTRITION,
+    max_tokens: MAX_TOKENS,
     messages: [
       {
         role: "user",
