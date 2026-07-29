@@ -1,20 +1,9 @@
-import { getClientFromNotion } from "./_lib/notion.js";
-import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { toScore } from "./_lib/scores.js";
-import { DAY_ORDER } from "../src/lib/constants.js";
-
-// Maps the AI's returned day label onto one of the 7 canonical DAY_ORDER
-// values (case-insensitive exact match) so regeneration never introduces a
-// stray day label that doesn't match the client's existing day folders.
-function normalizeDay(day) {
-  const match = DAY_ORDER.find((d) => d.toLowerCase() === String(day || "").trim().toLowerCase());
-  if (!match) console.warn(`generate-program: unrecognized day "${day}", falling back to Unscheduled`);
-  return match || null;
-}
+import { resolveClientForGeneration, resolveLockedExercises, replaceAiExercises } from "./_lib/programGeneration.js";
 
 // POST /api/generate-program  { client_email, template_id? }
 // 1. Reads the client's intake from Notion
@@ -34,71 +23,11 @@ export default async function handler(req, res) {
   const nutritionOnly = scope === "nutrition";
 
   try {
-    // 1. Read client data from Notion, falling back to the in-app leads
-    //    table for clients who applied through the new intake form instead.
-    let client = await getClientFromNotion(client_email);
-    if (!client) client = await getClientFromLead(client_email);
-    if (!client) {
-      return res.status(404).json({ error: `No intake found for ${client_email} (checked Notion and in-app leads)` });
-    }
-
-    // 2. Make sure the client has an app profile to attach the program to.
-    //    Pull any stored assessment scores so coach overrides take priority.
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select(
-        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal, is_local"
-      )
-      .eq("email", client_email)
-      .maybeSingle();
-    if (profileErr) throw profileErr;
-    if (!profile) {
-      return res.status(404).json({ error: "Client has not signed up in the app yet" });
-    }
-
-    // TRAINING is shared between linked partners: a client with a
-    // shared_program_owner_id writes its program + exercises against the
-    // owner's id, so both partners see the same training. NUTRITION and logged
-    // history stay keyed to this client's OWN id (profile.id) — always separate.
-    const trainingOwnerId = profile.shared_program_owner_id || profile.id;
-
-    // Coach's in-app onboarding assessment (keyed by email), if one exists. This
-    // is the coach's own evaluation and takes priority over inference.
-    const { data: coachAssessment } = await supabaseAdmin
-      .from("client_assessments")
-      .select("*")
-      .eq("email", client_email.toLowerCase())
-      .maybeSingle();
-
-    // Resolve the V12 assessment: a coach-set profile score wins, then the
-    // in-app coach assessment, then Notion.
-    const assessment = {
-      nervous_system_recruitment:
-        profile.nervous_system_recruitment ?? coachAssessment?.nervous_system_recruitment ?? client.nervous_system_recruitment,
-      muscular_density_to_size:
-        profile.muscular_density_to_size ?? coachAssessment?.muscular_density_to_size ?? client.muscular_density_to_size,
-      metabolic_work_capacity:
-        profile.metabolic_work_capacity ?? coachAssessment?.metabolic_work_capacity ?? client.metabolic_work_capacity,
-    };
-
-    // Free-text coach assessment, condensed into a prompt block the generator
-    // treats as authoritative (see clientProfileBlock/generateTrainingPlan).
-    const coachAssessmentText = coachAssessment
-      ? [
-          ["Strengths", coachAssessment.strengths],
-          ["Weaknesses/limitations", coachAssessment.weaknesses],
-          ["Injuries/health", coachAssessment.injuries],
-          ["Training history", coachAssessment.training_history],
-          ["Recovery/lifestyle", coachAssessment.recovery_lifestyle],
-          ["Goal/focus", coachAssessment.goal_focus],
-          ["Coach notes", coachAssessment.notes],
-        ]
-          .filter(([, v]) => (v || "").trim())
-          .map(([k, v]) => `- ${k}: ${v}`)
-          .join("\n")
-      : null;
-
-    const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null, is_local: !!profile.is_local };
+    // 1-2. Read client intake (Notion/leads) + app profile + coach assessment,
+    //    resolved into the flat object the generators expect.
+    const resolved = await resolveClientForGeneration(client_email);
+    if (resolved.error) return res.status(resolved.error.status).json({ error: resolved.error.message });
+    const { client, profile, trainingOwnerId, assessment, assessed } = resolved;
 
     // 3. Load the coach-selected template from the Notion program library and
     //    read its session structure as the AI framework. Falls back to the
@@ -121,34 +50,25 @@ export default async function handler(req, res) {
     //    AI can design the week around them instead of the old flow, where
     //    this was only discovered after generation and the AI had already
     //    (unknowingly) reintroduced the same lift as a separate exercise.
-    //    Preserve an exercise if ANY partner has logged sets against it (logs
-    //    are per-client but the exercise rows are shared), so regenerating one
-    //    partner's program never destroys the other partner's history.
     let aiIds = [];
     let lockedExercises = [];
+    let lockedExercisesText = null;
     if (!nutritionOnly) {
-      const { data: aiExercises } = await supabaseAdmin
-        .from("exercises")
-        .select("id, name, day_of_week, sets, reps")
-        .eq("client_id", trainingOwnerId)
-        .eq("source", "ai");
-      aiIds = (aiExercises || []).map((e) => e.id);
-      if (aiIds.length) {
-        const { data: logged } = await supabaseAdmin.from("workout_logs").select("exercise_id").in("exercise_id", aiIds);
-        const loggedIds = new Set((logged || []).map((l) => l.exercise_id));
-        lockedExercises = (aiExercises || []).filter((e) => loggedIds.has(e.id));
-      }
+      ({ aiIds, lockedExercises, lockedExercisesText } = await resolveLockedExercises(trainingOwnerId));
     }
-    const lockedExercisesText = lockedExercises.length
-      ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
-      : null;
 
     // 5. Generate the plan(s). Nutrition-only skips the training generation;
-    //    full mode runs both concurrently.
+    //    full mode runs both concurrently. Every new program starts at the
+    //    first phase (Onboarding) — the coach can immediately override the
+    //    phase/week-range or advance it via the Program Phase section.
+    const INITIAL_PHASE = { phase: "Onboarding", weekStart: 1, weekEnd: 4 };
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText }),
+          generateTrainingPlan(
+            { ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText },
+            INITIAL_PHASE
+          ),
           generateNutritionPlan(assessed),
         ]);
 
@@ -179,11 +99,27 @@ export default async function handler(req, res) {
             `AI-generated V12 program for ${client.name || client_email}` +
             (template ? ` · template: ${template.name}` : ""),
           weeks: training.weeks || 12,
+          phase: INITIAL_PHASE.phase,
+          phase_week_start: INITIAL_PHASE.weekStart,
+          phase_week_end: INITIAL_PHASE.weekEnd,
+          phase_updated_at: new Date().toISOString(),
         })
         .select()
         .single();
       if (progErr) throw progErr;
       program = newProgram;
+
+      // Seed phase history from day one — previously phase was only ever
+      // logged via the coach's manual "Save Phase" edit, so a freshly
+      // generated program had no history until the coach touched it.
+      await supabaseAdmin.from("program_phase_history").insert({
+        program_id: program.id,
+        client_id: trainingOwnerId,
+        phase: INITIAL_PHASE.phase,
+        week_start: INITIAL_PHASE.weekStart,
+        week_end: INITIAL_PHASE.weekEnd,
+        changed_by: "system: initial generation",
+      });
 
       // 7. Replace previously AI-generated exercises (coach-added ones are never
       //    touched), but PRESERVE any AI exercise that already has logged sets —
@@ -191,41 +127,13 @@ export default async function handler(req, res) {
       //    (exercise_id references exercises on delete cascade). Preserved
       //    exercises are re-pointed at the new program so history stays visible.
       //    lockedExercises/aiIds were computed in step 4, before generation.
-      preservedIds = lockedExercises.map((e) => e.id);
-      const deletableIds = aiIds.filter((id) => !preservedIds.includes(id));
-      if (deletableIds.length) {
-        const { error } = await supabaseAdmin.from("exercises").delete().in("id", deletableIds);
-        if (error) throw error;
-      }
-      if (preservedIds.length) {
-        await supabaseAdmin.from("exercises").update({ program_id: program.id }).in("id", preservedIds);
-      }
-
-      for (const day of training.weekly_split || []) {
-        (day.exercises || []).forEach((ex, i) => {
-          exercises.push({
-            client_id: trainingOwnerId,
-            program_id: program.id,
-            name: ex.name,
-            category: ex.category || day.focus || null,
-            section: ex.section || null,
-            exercise_type: ex.exercise_type || null,
-            day_of_week: normalizeDay(day.day),
-            sets: ex.sets ?? null,
-            reps: ex.reps != null ? String(ex.reps) : null,
-            is_bodyweight: !!ex.is_bodyweight,
-            notes: ex.notes || null,
-            order_index: i,
-            block_type: ex.block_type || "straight_set",
-            group_id: ex.group_id != null ? String(ex.group_id) : null,
-            source: "ai",
-          });
-        });
-      }
-      if (exercises.length) {
-        const { error } = await supabaseAdmin.from("exercises").insert(exercises);
-        if (error) throw error;
-      }
+      ({ exercises, preservedIds } = await replaceAiExercises({
+        trainingOwnerId,
+        programId: program.id,
+        aiIds,
+        lockedExercises,
+        weeklySplit: training.weekly_split,
+      }));
     }
 
     // 8. Replace the active nutrition plan.

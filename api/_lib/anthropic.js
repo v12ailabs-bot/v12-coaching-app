@@ -13,9 +13,19 @@ async function bibleBlock() {
 }
 
 const MODEL = "claude-opus-4-8";
-// A full 12-week, multi-day split (or a detailed meal plan) can exceed a few
-// thousand tokens; 4000 truncated the JSON mid-string for larger clients.
-const MAX_TOKENS = 16000;
+// A detailed meal plan can exceed a few thousand tokens; 4000 truncated the
+// JSON mid-string for larger clients.
+const MAX_TOKENS_NUTRITION = 16000;
+// Training generation is phase-scoped (one phase's weekly template, not a
+// flat 12-week catch-all). Measured throughput on this call is ~120-130
+// output tokens/sec regardless of phase, so hitting even a fraction of a
+// high ceiling can still approach Vercel's 60s function timeout — an 8000
+// cap still let a high-volume phase (Accumulation) complete a full,
+// non-truncated response in ~62s. The real backstop is the "max 5
+// exercises/day" prompt rule below (bounds actual output size); this cap
+// is a hard ceiling in case that rule is ever violated, sized so hitting it
+// outright still finishes with real margin under 60s.
+const MAX_TOKENS_TRAINING = 6000;
 
 // Parses model output as JSON, tolerating markdown code fences.
 function parseJson(text) {
@@ -128,6 +138,33 @@ const HEALTH_GUIDANCE = {
   "pregnancy/postpartum": 'AVOID supine work after the first trimester, Valsalva/maximal straining, deep core flexion, and high-impact/high-fall-risk movements. SUBSTITUTE: upright and supported variations, controlled breathing, pelvic-floor-safe loading.',
 };
 
+// Phase-specific volume/intensity rules (see src/lib/constants.js PHASES).
+// Training generation is scoped to ONE phase at a time — see generateTrainingPlan
+// — rather than one flat template meant to cover the whole program.
+const PHASE_RULES = {
+  Onboarding: 'Foundational block introducing all three V12 pillars with lighter, technique-focused loading (RPE 6-7; 6-10 reps on compounds, 10-15 on accessories). Prioritize movement competency and consistency over intensity; conditioning stays low-impact and short.',
+  Accumulation: 'Volume-building block: raise total sets/reps across all three pillars (RPE 7-8; 8-12 reps on compounds, 10-15 on accessories) to build work capacity and muscular density before intensity rises. Conditioning volume increases; keep loads moderate.',
+  Intensification: 'Load-building block: shift toward heavier compound work (RPE 8-9; 3-6 reps on main lifts) while trimming accessory volume slightly to manage fatigue. Conditioning shifts toward higher-intensity intervals over steady-state volume.',
+  Peak: 'Highest-intensity, lowest-volume block preparing for a strength/performance milestone (RPE 9-9.5; 1-5 reps on main lifts, minimal accessory and conditioning volume). Prioritize recovery between key sessions.',
+  Deload: 'Planned recovery block: cut volume ~40-50% and intensity to RPE 5-6 across all three pillars. Keep movement patterns familiar; conditioning becomes low-intensity active recovery. The purpose is dissipating fatigue, not driving new adaptation.',
+  Maintenance: 'Steady-state block sustaining prior gains between structured blocks (RPE 6-7, moderate volume across all three pillars) with autoregulated rather than strictly linear progression — suitable for an open-ended duration.',
+};
+
+// Builds the CURRENT-PHASE framing for generateTrainingPlan. phaseContext =
+// { phase, weekStart, weekEnd, priorPhaseSummary }; defaults to Onboarding
+// so a caller that forgets to pass it still gets a safe, valid prompt.
+function phaseBlock(phaseContext) {
+  const phase = phaseContext?.phase && PHASE_RULES[phaseContext.phase] ? phaseContext.phase : "Onboarding";
+  const rule = PHASE_RULES[phase];
+  const range = phaseContext?.weekStart && phaseContext?.weekEnd
+    ? `weeks ${phaseContext.weekStart}-${phaseContext.weekEnd} of this client's program`
+    : "the client's current program block";
+  const prior = phaseContext?.priorPhaseSummary
+    ? `PRIOR PHASE PERFORMANCE (use to calibrate starting intensity/volume — do not restate this verbatim in the output): ${phaseContext.priorPhaseSummary}\n\n`
+    : "";
+  return `CURRENT TRAINING PHASE — ${phase} (covers ${range}). ${rule}\n\n${prior}`;
+}
+
 // Normalizes a multi_select label for lookup against the tables above.
 const normFlag = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -169,13 +206,15 @@ Available: barbells, dumbbells, kettlebells, squat racks, benches, cable machine
 NOT available — never program these, and substitute an equivalent movement that preserves the same training stimulus: medicine balls (substitute a dumbbell/kettlebell slam or throw variant), battle ropes (substitute an air bike or kettlebell/dumbbell conditioning interval), sled pushes/pulls (substitute loaded carries, air bike sprints, or a heavy trap-bar/hex-bar drag if a hex bar is available, or resisted band walks), BikeErg/calorie bikes (substitute an air bike or RowErg/SkiErg for that conditioning piece).\n`;
 }
 
-// Generates a 12-week V12 weekly training split tailored to the client and the
-// coach-selected template.
-export async function generateTrainingPlan(client) {
+// Generates a weekly training split for ONE phase of the client's program
+// (see PHASE_RULES/phaseBlock above), tailored to the client and the
+// coach-selected template. phaseContext = { phase, weekStart, weekEnd,
+// priorPhaseSummary }; defaults to Onboarding if omitted.
+export async function generateTrainingPlan(client, phaseContext) {
   const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: MAX_TOKENS,
+    max_tokens: MAX_TOKENS_TRAINING,
     messages: [
       {
         role: "user",
@@ -183,7 +222,7 @@ export async function generateTrainingPlan(client) {
 
 ${bible}${V12_METHOD}
 
-${clientProfileBlock(client)}
+${phaseBlock(phaseContext)}${clientProfileBlock(client)}
 
 ${equipmentBlock(client)}${constraintBlock(client)}
 ${
@@ -193,6 +232,10 @@ ${
 }${
   client.locked_exercises_text
     ? `LOCKED-IN EXERCISES — these already exist in this client's program exactly as listed below and will remain unchanged (they have logged history that can't be discarded). Do NOT include them in your output, and do NOT invent a different exercise that duplicates the same movement pattern on the same day — design the rest of that day's work around them, accounting for the volume/phase they already cover:\n${client.locked_exercises_text}\n\n`
+    : ""
+}${
+  client.upgrade_instructions_text
+    ? `EXERCISE UPGRADES for this phase transition — the client has been training the exercises below; replace each with its paired upgrade (same movement pattern, progressed for this phase) rather than reusing the original or inventing an unrelated replacement:\n${client.upgrade_instructions_text}\n\n`
     : ""
 }${
   client.program_template
@@ -218,8 +261,9 @@ Requirements for the output:
 - Each exercise "section" must be exactly one of the PHASE ORDER values above — this is the exercise's workout-ordering phase, e.g. a heavy back squat is "Main Compound Lift", a dynamic warm-up drill is "Warm-Up", core/single-joint work is "Isolation".
 - Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
 - Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
-- Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
+- Each exercise "notes" must be ONE short clause (aim for ≤12 words) giving loading guidance only — e.g. "@80% 1RM", "RPE 8, 2s pause", "3 rounds, 40s work/20s rest". Do not restate the exercise's phase, day focus, or general coaching philosophy in "notes"; state any injury-substitution rationale just as concisely, on only the affected exercise.
 - Across the week, ALL THREE pillars must appear.
+- Each day has AT MOST 5 exercises (fewer is fine). Express a phase's volume emphasis (e.g. Accumulation) through more sets/reps per exercise or less rest, never through adding more distinct exercises — this keeps the plan focused and fast to generate.
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
 - Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
@@ -264,7 +308,7 @@ export async function generateNutritionPlan(client) {
   const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: MAX_TOKENS,
+    max_tokens: MAX_TOKENS_NUTRITION,
     messages: [
       {
         role: "user",
