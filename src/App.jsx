@@ -604,7 +604,7 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
     ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"upgrades",icon:"🔁",label:"Exercise Upgrades",short:"Upgrades"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
@@ -2492,115 +2492,6 @@ function TemplatesPanel() {
 }
 
 // ---------------------------------------------------------------------------
-// COACH — EXERCISE UPGRADES (global reference data consulted by
-// /api/advance-phase when a client enters a phase that upgrades an
-// exercise — e.g. Goblet Squat -> Barbell Back Squat entering
-// Intensification). Simple add/view/delete list — no in-place edit; delete
-// and re-add to change a mapping.
-// ---------------------------------------------------------------------------
-const BLANK_UPGRADE = { base_exercise:"", upgrade_exercise:"", movement_pattern:"", activates_at_phase:PHASES[1], notes:"" };
-
-function ExerciseUpgradesPanel() {
-  const [upgrades, setUpgrades] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState(BLANK_UPGRADE);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null);
-  const set = (k,v) => setForm(p=>({...p,[k]:v}));
-
-  const load = async()=>{
-    const {data} = await supabase.from("exercise_upgrades").select("*").order("activates_at_phase").order("base_exercise");
-    setUpgrades(data||[]); setLoading(false);
-  };
-  useEffect(()=>{load();},[]);
-
-  const startNew = ()=>{ setAdding(true); setForm(BLANK_UPGRADE); setMsg(null); };
-  const cancel = ()=>{ setAdding(false); setForm(BLANK_UPGRADE); };
-
-  const save = async()=>{
-    if(!form.base_exercise.trim()||!form.upgrade_exercise.trim()){ setMsg({ok:false,text:"Base exercise and upgrade exercise are both required."}); return; }
-    setSaving(true); setMsg(null);
-    const { error } = await supabase.from("exercise_upgrades").insert({
-      base_exercise:form.base_exercise.trim(), upgrade_exercise:form.upgrade_exercise.trim(),
-      movement_pattern:form.movement_pattern.trim()||null, activates_at_phase:form.activates_at_phase,
-      notes:form.notes.trim()||null,
-    });
-    setSaving(false);
-    if(error){ setMsg({ok:false,text:error.message}); return; }
-    setMsg({ok:true,text:"Upgrade added."});
-    setAdding(false); setForm(BLANK_UPGRADE);
-    await load();
-  };
-
-  const remove = async(u)=>{
-    if(!window.confirm(`Delete "${u.base_exercise} -> ${u.upgrade_exercise}"?`)) return;
-    const { error } = await supabase.from("exercise_upgrades").delete().eq("id",u.id);
-    if(error){ setMsg({ok:false,text:error.message}); return; }
-    await load();
-  };
-
-  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
-
-  return (
-    <div>
-      <PageTitle title="Exercise Upgrades" sub="Harder variations the AI swaps in when a client advances into a new phase"/>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-        <Btn teal onClick={startNew}>+ New Upgrade</Btn>
-      </div>
-
-      {msg && (
-        <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
-          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",
-          color:msg.ok?S.accent2:"#ff6b5b"}}>
-          {msg.text}
-        </div>
-      )}
-
-      {adding && (
-        <Card>
-          <CardTitle>New Exercise Upgrade</CardTitle>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-            <Fld label="Base Exercise (what the client is currently doing)"><Inp type="text" value={form.base_exercise} onChange={e=>set("base_exercise",e.target.value)} placeholder="e.g. Goblet Squat"/></Fld>
-            <Fld label="Upgrade Exercise (what it becomes)"><Inp type="text" value={form.upgrade_exercise} onChange={e=>set("upgrade_exercise",e.target.value)} placeholder="e.g. Barbell Back Squat"/></Fld>
-          </div>
-          <Fld label="Movement Pattern (optional)"><Inp type="text" value={form.movement_pattern} onChange={e=>set("movement_pattern",e.target.value)} placeholder="e.g. Squat"/></Fld>
-          <Fld label="Activates At Phase"><RG options={PHASES} value={form.activates_at_phase} onChange={v=>set("activates_at_phase",v)}/></Fld>
-          <Fld label="Notes (optional)">
-            <textarea rows={2} value={form.notes} onChange={e=>set("notes",e.target.value)} placeholder="Anything the AI should know about this swap."
-              style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
-          </Fld>
-          <div style={{display:"flex",gap:10,marginTop:8}}>
-            <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save Upgrade"}</Btn>
-            <button onClick={cancel} style={{padding:"10px 20px",fontSize:12,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
-          </div>
-        </Card>
-      )}
-
-      {upgrades.length===0 && !adding && (
-        <Card style={{textAlign:"center",padding:40,color:S.muted}}>No exercise upgrades yet. Add your first one.</Card>
-      )}
-
-      {upgrades.map(u=>(
-        <Card key={u.id}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>{u.base_exercise} → {u.upgrade_exercise}</div>
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{u.activates_at_phase}</span>
-              </div>
-              {u.movement_pattern && <div style={{fontSize:11,color:S.muted,margin:"4px 0"}}>{u.movement_pattern}</div>}
-              {u.notes && <div style={{fontSize:12,color:S.muted}}>{u.notes}</div>}
-            </div>
-            <Btn sm danger onClick={()=>remove(u)}>Delete</Btn>
-          </div>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // COACH — ONBOARDING ASSESSMENTS (pre-assess a client before building a program)
 // ---------------------------------------------------------------------------
 // Coach-only, keyed by email so it can be filled before the client signs up. On
@@ -2913,7 +2804,7 @@ function ClientProgram({ profile }) {
       });
     supabase
       .from("programs")
-      .select("name,phase,phase_note,phase_week_start,phase_week_end,weeks,created_at")
+      .select("name,phase,phase_note")
       .eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false })
       .limit(1)
@@ -2945,26 +2836,12 @@ function ClientProgram({ profile }) {
         </CollapsibleSection>
       )}
       <InvoiceCard profile={profile} />
-      {program?.phase && (() => {
-        // Calendar-elapsed weeks since the program started. Once this exceeds
-        // the program's total (expected for an open-ended Deload/Maintenance
-        // phase), drop the "of Y" suffix rather than showing "Week 15 of 12".
-        const totalWeeks = program.weeks || 12;
-        const elapsedWeeks = program.created_at
-          ? Math.floor((Date.now() - new Date(program.created_at).getTime()) / (7 * 24 * 3600 * 1000)) + 1
-          : null;
-        const weekLabel = elapsedWeeks
-          ? elapsedWeeks <= totalWeeks ? `Week ${elapsedWeeks} of ${totalWeeks}` : `Week ${elapsedWeeks}`
-          : null;
-        return (
+      {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
           <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-            <span style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted }}>{weekLabel || "Current Phase"}</span>
-            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase} Phase</span>
+            <span style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted }}>Current Phase</span>
+            <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase}</span>
           </div>
-          {(program.phase_week_start || program.phase_week_end) && (
-            <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Weeks {program.phase_week_start ?? "?"}-{program.phase_week_end ?? "?"}</div>
-          )}
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
           {phaseHistory.length > 0 && (
             <CollapsibleSection title="Phase History" summary={`${phaseHistory.length} change${phaseHistory.length > 1 ? "s" : ""}`}>
@@ -2980,8 +2857,7 @@ function ClientProgram({ profile }) {
             </CollapsibleSection>
           )}
         </Card>
-        );
-      })()}
+      )}
       <AssessmentBar profile={profile} />
       {exercises.length === 0 ? (
         <Card style={{ textAlign: "center", padding: 48 }}>
@@ -3503,7 +3379,6 @@ function CoachDashboard({ profile, logout }) {
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}
-      {page === "upgrades" && <ExerciseUpgradesPanel />}
       {page === "library" && <ResourcesPanel />}
     </Shell>
   );

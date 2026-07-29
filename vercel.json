@@ -1,7 +1,6 @@
 {
   "functions": {
     "api/generate-program.js": { "maxDuration": 60 },
-    "api/advance-phase.js": { "maxDuration": 60 },
     "api/summary.js": { "maxDuration": 60 },
     "api/goal-insight.js": { "maxDuration": 60 }
   }

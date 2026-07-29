@@ -360,7 +360,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
           refreshFromNotion={refreshFromNotion} syncing={syncing}/>
     )},
     { key: "nutrition", title: "Nutrition", node: <CoachNutrition clientId={client.id} refreshKey={progTick} /> },
-    { key: "program-phase", title: "Program Phase", node: <ProgramPhase clientId={trainOwnerId} client={client} /> },
+    { key: "program-phase", title: "Program Phase", node: <ProgramPhase clientId={trainOwnerId} /> },
     { key: "program-history", title: "Program History", node: (
         <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
     )},

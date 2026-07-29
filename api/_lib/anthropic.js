@@ -118,33 +118,6 @@ const HEALTH_GUIDANCE = {
   "pregnancy/postpartum": 'AVOID supine work after the first trimester, Valsalva/maximal straining, deep core flexion, and high-impact/high-fall-risk movements. SUBSTITUTE: upright and supported variations, controlled breathing, pelvic-floor-safe loading.',
 };
 
-// Phase-specific volume/intensity rules (see src/lib/constants.js PHASES).
-// Training generation is scoped to ONE phase at a time — see generateTrainingPlan
-// — rather than one flat template meant to cover the whole program.
-const PHASE_RULES = {
-  Onboarding: 'Foundational block introducing all three V12 pillars with lighter, technique-focused loading (RPE 6-7; 6-10 reps on compounds, 10-15 on accessories). Prioritize movement competency and consistency over intensity; conditioning stays low-impact and short.',
-  Accumulation: 'Volume-building block: raise total sets/reps across all three pillars (RPE 7-8; 8-12 reps on compounds, 10-15 on accessories) to build work capacity and muscular density before intensity rises. Conditioning volume increases; keep loads moderate.',
-  Intensification: 'Load-building block: shift toward heavier compound work (RPE 8-9; 3-6 reps on main lifts) while trimming accessory volume slightly to manage fatigue. Conditioning shifts toward higher-intensity intervals over steady-state volume.',
-  Peak: 'Highest-intensity, lowest-volume block preparing for a strength/performance milestone (RPE 9-9.5; 1-5 reps on main lifts, minimal accessory and conditioning volume). Prioritize recovery between key sessions.',
-  Deload: 'Planned recovery block: cut volume ~40-50% and intensity to RPE 5-6 across all three pillars. Keep movement patterns familiar; conditioning becomes low-intensity active recovery. The purpose is dissipating fatigue, not driving new adaptation.',
-  Maintenance: 'Steady-state block sustaining prior gains between structured blocks (RPE 6-7, moderate volume across all three pillars) with autoregulated rather than strictly linear progression — suitable for an open-ended duration.',
-};
-
-// Builds the CURRENT-PHASE framing for generateTrainingPlan. phaseContext =
-// { phase, weekStart, weekEnd, priorPhaseSummary }; defaults to Onboarding
-// so a caller that forgets to pass it still gets a safe, valid prompt.
-function phaseBlock(phaseContext) {
-  const phase = phaseContext?.phase && PHASE_RULES[phaseContext.phase] ? phaseContext.phase : "Onboarding";
-  const rule = PHASE_RULES[phase];
-  const range = phaseContext?.weekStart && phaseContext?.weekEnd
-    ? `weeks ${phaseContext.weekStart}-${phaseContext.weekEnd} of this client's program`
-    : "the client's current program block";
-  const prior = phaseContext?.priorPhaseSummary
-    ? `PRIOR PHASE PERFORMANCE (use to calibrate starting intensity/volume — do not restate this verbatim in the output): ${phaseContext.priorPhaseSummary}\n\n`
-    : "";
-  return `CURRENT TRAINING PHASE — ${phase} (covers ${range}). ${rule}\n\n${prior}`;
-}
-
 // Normalizes a multi_select label for lookup against the tables above.
 const normFlag = (s) => String(s || "").toLowerCase().replace(/\s+/g, " ").trim();
 
@@ -186,11 +159,9 @@ Available: barbells, dumbbells, kettlebells, squat racks, benches, cable machine
 NOT available — never program these, and substitute an equivalent movement that preserves the same training stimulus: medicine balls (substitute a dumbbell/kettlebell slam or throw variant), battle ropes (substitute an air bike or kettlebell/dumbbell conditioning interval), sled pushes/pulls (substitute loaded carries, air bike sprints, or a heavy trap-bar/hex-bar drag if a hex bar is available, or resisted band walks), BikeErg/calorie bikes (substitute an air bike or RowErg/SkiErg for that conditioning piece).\n`;
 }
 
-// Generates a weekly training split for ONE phase of the client's program
-// (see PHASE_RULES/phaseBlock above), tailored to the client and the
-// coach-selected template. phaseContext = { phase, weekStart, weekEnd,
-// priorPhaseSummary }; defaults to Onboarding if omitted.
-export async function generateTrainingPlan(client, phaseContext) {
+// Generates a 12-week V12 weekly training split tailored to the client and the
+// coach-selected template.
+export async function generateTrainingPlan(client) {
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -201,7 +172,7 @@ export async function generateTrainingPlan(client, phaseContext) {
 
 ${V12_METHOD}
 
-${phaseBlock(phaseContext)}${clientProfileBlock(client)}
+${clientProfileBlock(client)}
 
 ${equipmentBlock(client)}${constraintBlock(client)}
 ${
@@ -211,10 +182,6 @@ ${
 }${
   client.locked_exercises_text
     ? `LOCKED-IN EXERCISES — these already exist in this client's program exactly as listed below and will remain unchanged (they have logged history that can't be discarded). Do NOT include them in your output, and do NOT invent a different exercise that duplicates the same movement pattern on the same day — design the rest of that day's work around them, accounting for the volume/phase they already cover:\n${client.locked_exercises_text}\n\n`
-    : ""
-}${
-  client.upgrade_instructions_text
-    ? `EXERCISE UPGRADES for this phase transition — the client has been training the exercises below; replace each with its paired upgrade (same movement pattern, progressed for this phase) rather than reusing the original or inventing an unrelated replacement:\n${client.upgrade_instructions_text}\n\n`
     : ""
 }${
   client.program_template
@@ -240,7 +207,7 @@ Requirements for the output:
 - Each exercise "section" must be exactly one of the PHASE ORDER values above — this is the exercise's workout-ordering phase, e.g. a heavy back squat is "Main Compound Lift", a dynamic warm-up drill is "Warm-Up", core/single-joint work is "Isolation".
 - Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
 - Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
-- Each exercise "notes" must be ONE short clause (aim for ≤12 words) giving loading guidance only — e.g. "@80% 1RM", "RPE 8, 2s pause", "3 rounds, 40s work/20s rest". Do not restate the exercise's phase, day focus, or general coaching philosophy in "notes"; state any injury-substitution rationale just as concisely, on only the affected exercise.
+- Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
 - Across the week, ALL THREE pillars must appear.
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
@@ -393,7 +360,6 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
-
 Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself.
 
 DATA (last 30 days): ${JSON.stringify(data)}
@@ -437,7 +403,6 @@ export async function generateGoalInsight({ profile = {}, goal = {}, scoreData =
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a short coaching insight for ${profile.name || "the client"}'s progress toward this goal: ${data.direction} ${data.goal_type} from ${data.baseline_value}${data.unit} to ${data.target_value}${data.unit} by ${data.target_date}.
-
 Use ONLY the data below — never invent numbers. If a component score or raw stat is missing (null), don't mention it.
 
 SCORES (0-100, already-computed component scores): ${JSON.stringify(data)}

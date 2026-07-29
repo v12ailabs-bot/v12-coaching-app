@@ -1,14 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
-import { Card, CardTitle, Btn, Fld, RG, Inp, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
+import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
 import { DAY_ORDER, PHASES, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
-
-// Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
-async function authHeaders() {
-  const { data: { session } } = await supabase.auth.getSession();
-  return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` };
-}
 
 // Append-only Program Phase log — every phase change is a new row, never an
 // update, so the history in program_phase_history can't silently disappear.
@@ -162,17 +156,13 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
 }
 
 // Program phase / block adjustment for the client's most recent program, plus
-// its permanent (append-only) change history. `client` (needs `.email`) is
-// only required for "Advance to Next Phase" — "Save Phase" works without it.
-export function ProgramPhase({ clientId, client }) {
+// its permanent (append-only) change history.
+export function ProgramPhase({ clientId }) {
   const [program, setProgram] = useState(null);
   const [phase, setPhase] = useState("");
   const [note, setNote] = useState("");
-  const [weekStart, setWeekStart] = useState("");
-  const [weekEnd, setWeekEnd] = useState("");
   const [history, setHistory] = useState([]);
   const [saving, setSaving] = useState(false);
-  const [advancing, setAdvancing] = useState(false);
   const [msg, setMsg] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -184,24 +174,17 @@ export function ProgramPhase({ clientId, client }) {
     setProgram(data || null);
     setPhase(data?.phase || "");
     setNote(data?.phase_note || "");
-    setWeekStart(data?.phase_week_start ?? "");
-    setWeekEnd(data?.phase_week_end ?? "");
     setHistory(hist || []);
     setLoading(false);
   }, [clientId]);
   useEffect(() => { setLoading(true); load(); }, [load]);
 
-  // Manual, non-generative correction — updates the phase label/week-range/note
-  // only. No AI call, no exercise changes. Use "Advance to Next Phase" below
-  // to actually regenerate the training plan for a phase transition.
   const save = async () => {
     if (!program || !phase) return;
     setSaving(true); setMsg(null);
     const trimmedNote = note.trim() || null;
-    const weekStartVal = weekStart === "" ? null : parseInt(weekStart, 10);
-    const weekEndVal = weekEnd === "" ? null : parseInt(weekEnd, 10);
     const { error } = await supabase.from("programs")
-      .update({ phase, phase_note: trimmedNote, phase_week_start: weekStartVal, phase_week_end: weekEndVal, phase_updated_at: new Date().toISOString() })
+      .update({ phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString() })
       .eq("id", program.id);
     if (!error) await logPhaseHistory({ programId: program.id, clientId, phase, phaseNote: trimmedNote });
     setSaving(false);
@@ -212,55 +195,9 @@ export function ProgramPhase({ clientId, client }) {
       // Note textarea right after clicking Save and wipe it out. `phase`/
       // `note` already hold what was just saved, so only `program` (for the
       // "phase set" timestamp) and the append-only history log need refreshing.
-      setProgram((p) => (p ? { ...p, phase, phase_note: trimmedNote, phase_week_start: weekStartVal, phase_week_end: weekEndVal, phase_updated_at: new Date().toISOString() } : p));
+      setProgram((p) => (p ? { ...p, phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString() } : p));
       const { data: hist } = await supabase.from("program_phase_history").select("*").eq("client_id", clientId).order("changed_at", { ascending: false }).limit(20);
       setHistory(hist || []);
-    }
-  };
-
-  // Regenerates the training plan for the selected phase via /api/advance-phase
-  // — unlike "Save Phase" (metadata only), this calls Claude and replaces the
-  // client's AI-generated exercises (preserving any with logged history).
-  // Same pre-flight confirm pattern as ClientDetailPage's generateProgram().
-  const advance = async () => {
-    if (!client?.email || !phase) return;
-    const { data: aiEx } = await supabase.from("exercises").select("id,name,day_of_week").eq("client_id", clientId).eq("source", "ai");
-    const aiIds = (aiEx || []).map((e) => e.id);
-    if (aiIds.length) {
-      const { data: logged } = await supabase.from("workout_logs").select("exercise_id").in("exercise_id", aiIds);
-      const loggedIds = new Set((logged || []).map((l) => l.exercise_id));
-      const keepers = (aiEx || []).filter((e) => loggedIds.has(e.id));
-      if (keepers.length) {
-        const list = keepers.map((e) => `${e.name}${e.day_of_week ? ` (${e.day_of_week})` : ""}`).join("\n");
-        if (!window.confirm(`These ${keepers.length} exercise${keepers.length > 1 ? "s" : ""} already have logged history and will be kept exactly as-is — the AI will design the rest of the ${phase} phase around them:\n\n${list}\n\nContinue?`)) return;
-      }
-    }
-    if (!window.confirm(`Advance to ${phase}? This regenerates the training plan for this phase.`)) return;
-    setAdvancing(true); setMsg(null);
-    try {
-      const r = await fetch("/api/advance-phase", {
-        method: "POST",
-        headers: await authHeaders(),
-        body: JSON.stringify({
-          client_email: client.email,
-          phase,
-          phase_note: note.trim() || undefined,
-          week_start: weekStart === "" ? undefined : parseInt(weekStart, 10),
-          week_end: weekEnd === "" ? undefined : parseInt(weekEnd, 10),
-        }),
-      });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(data.error || `Request failed (${r.status})`);
-      setMsg({
-        ok: true,
-        text: `Advanced to ${data.phase} — ${data.exercises_created} exercises${data.exercises_preserved ? ` · kept ${data.exercises_preserved} with logged history` : ""}${data.upgrades_applied ? ` · applied ${data.upgrades_applied} exercise upgrade${data.upgrades_applied > 1 ? "s" : ""}` : ""}.`,
-      });
-      await createProgramVersion(clientId, `Advanced to ${data.phase}`);
-      await load();
-    } catch (e) {
-      setMsg({ ok: false, text: e.message });
-    } finally {
-      setAdvancing(false);
     }
   };
 
@@ -277,20 +214,14 @@ export function ProgramPhase({ clientId, client }) {
             {program.name || "Program"} · {program.phase_updated_at ? `phase set ${program.phase_updated_at.slice(0, 10)}` : "no phase set yet"}
           </div>
           <Fld label="Current Phase / Block"><RG options={PHASES} value={phase} onChange={setPhase} /></Fld>
-          <div style={{ display: "flex", gap: 12 }}>
-            <Fld label="Week Start"><Inp type="number" min="1" value={weekStart} onChange={(e) => setWeekStart(e.target.value)} placeholder="e.g. 1" /></Fld>
-            <Fld label="Week End"><Inp type="number" min="1" value={weekEnd} onChange={(e) => setWeekEnd(e.target.value)} placeholder="e.g. 4" /></Fld>
-          </div>
           <Fld label="Phase Note (what's the focus right now?)">
             <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Week 3 of accumulation — push volume on the lower body, hold loads on upper."
               style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical" }} />
           </Fld>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4, flexWrap: "wrap" }}>
-            <Btn onClick={save} disabled={saving || advancing || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
-            <Btn teal onClick={advance} disabled={saving || advancing || !phase || !client?.email}>{advancing ? "Advancing..." : "Advance to Next Phase"}</Btn>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
+            <Btn onClick={save} disabled={saving || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
           </div>
-          <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>"Save Phase" updates the label/week-range/note only. "Advance to Next Phase" regenerates the training plan for the selected phase.</div>
           <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
             <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Phase History</div>
             {history.length === 0 ? (
@@ -301,7 +232,6 @@ export function ProgramPhase({ clientId, client }) {
                   <div key={h.id} style={{ fontSize: 12, color: S.text, display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
                     <span style={{ color: S.muted, minWidth: 130 }}>{(h.changed_at || "").slice(0, 16).replace("T", " ")}</span>
                     <span style={{ fontWeight: 600 }}>{h.phase}</span>
-                    {(h.week_start || h.week_end) && <span style={{ color: S.muted }}>(weeks {h.week_start ?? "?"}-{h.week_end ?? "?"})</span>}
                     {h.changed_by && <span style={{ color: S.muted }}>· {h.changed_by}</span>}
                     {h.phase_note && <span style={{ color: S.muted }}>— {h.phase_note}</span>}
                   </div>
