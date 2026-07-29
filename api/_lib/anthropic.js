@@ -365,7 +365,6 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
     phase_changes: phaseHistory.map((h) => ({ phase: h.phase, date: h.changed_at?.slice(0, 10), note: h.phase_note })),
     structured_goal: goal,
   };
-  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 700,
@@ -374,7 +373,6 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
         role: "user",
         content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
 
-${bible}
 Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself.
 
 DATA (last 30 days): ${JSON.stringify(data)}
@@ -411,7 +409,6 @@ export async function generateGoalInsight({ profile = {}, goal = {}, scoreData =
     eta_date: scoreData.etaDate ? scoreData.etaDate.toISOString().slice(0, 10) : null,
     components: scoreData.components || {},
   };
-  const bible = await bibleBlock();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 700,
@@ -420,7 +417,6 @@ export async function generateGoalInsight({ profile = {}, goal = {}, scoreData =
         role: "user",
         content: `You are a supportive but honest performance coach. Write a short coaching insight for ${profile.name || "the client"}'s progress toward this goal: ${data.direction} ${data.goal_type} from ${data.baseline_value}${data.unit} to ${data.target_value}${data.unit} by ${data.target_date}.
 
-${bible}
 Use ONLY the data below — never invent numbers. If a component score or raw stat is missing (null), don't mention it.
 
 SCORES (0-100, already-computed component scores): ${JSON.stringify(data)}
