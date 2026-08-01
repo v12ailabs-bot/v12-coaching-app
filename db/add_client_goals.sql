@@ -12,11 +12,14 @@
 -- live from their own tables at scoring time — this table only stores the
 -- primary metric being targeted, not the whole picture.
 --
--- Coach-managed (mirrors programs/nutrition_plans): the coach sets the goal
--- during onboarding/review; the client reads it. Only one active goal per
--- client per metric_key is meaningful, but that's left as a UI convention
--- rather than a DB constraint, since a client may legitimately have a
--- superseded goal history worth keeping.
+-- Normally coach-managed (mirrors programs/nutrition_plans): the coach sets
+-- the goal during onboarding/review and the client reads it. Program-only
+-- (no-coach) clients have no coach touchpoint though, so they set their own
+-- goal from the self-service card on their Progress page
+-- (src/features/progress/ProgramProgressPage.jsx) -- the write policy below
+-- allows both. Only one active goal per client per metric_key is meaningful,
+-- but that's left as a UI convention rather than a DB constraint, since a
+-- client may legitimately have a superseded goal history worth keeping.
 --
 -- Idempotent; safe to re-run. Apply via the Supabase SQL Editor.
 do $$ begin
@@ -54,9 +57,11 @@ alter table client_goals enable row level security;
 -- Client reads their own; coach reads all.
 drop policy if exists goals_select on client_goals;
 create policy goals_select on client_goals for select using (client_id = auth.uid() or public.is_coach());
--- Coach sets/edits goals (same convention as programs/nutrition_plans).
+-- Coach sets/edits goals; client can also self-manage (program-only clients).
 drop policy if exists goals_write on client_goals;
-create policy goals_write on client_goals for all using (public.is_coach()) with check (public.is_coach());
+create policy goals_write on client_goals for all
+  using (client_id = auth.uid() or public.is_coach())
+  with check (client_id = auth.uid() or public.is_coach());
 
 -- AI-generated coaching insights layered on top of the computed score.
 -- Separate from client_summaries: that table's period is a monthly recap
