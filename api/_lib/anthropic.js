@@ -37,14 +37,19 @@ const MODEL = "claude-opus-4-8";
 // thousand tokens; 4000 truncated the JSON mid-string for larger clients.
 const MAX_TOKENS = 16000;
 
-// Parses model output as JSON, tolerating markdown code fences.
+// Parses model output as JSON, tolerating markdown code fences and any prose
+// the model adds before/after the JSON object despite being told not to
+// (e.g. "I need to design a program that..." preceding the actual object).
 function parseJson(text) {
   const cleaned = String(text || "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-  return JSON.parse(cleaned);
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  const jsonSlice = start !== -1 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+  return JSON.parse(jsonSlice);
 }
 
 export function clientProfileBlock(client) {
