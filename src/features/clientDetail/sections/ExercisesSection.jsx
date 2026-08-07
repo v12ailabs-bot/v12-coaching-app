@@ -117,8 +117,9 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
         })}
       </div>
       ) : (
+      <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr>{["Exercise","Day","Sets","Reps","Type","Phase","Block","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
+        <thead><tr>{["Exercise","Day","Sets","Reps","Type","Phase","Block","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border,...(h===""?{position:"sticky",right:0,background:S.surface}:{})}}>{h}</th>)}</tr></thead>
         <tbody>
           {dayExs.map(ex=>{
             const editing = editEx?.id===ex.id;
@@ -144,7 +145,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                       {d.block_type!=="straight_set"&&<input type="text" value={d.group_id} onChange={e=>setD("group_id",e.target.value)} placeholder="Group label e.g. A" style={{...eInp,width:150}}/>}
                     </td>
                     <td style={cell}><input type="text" value={d.notes} onChange={e=>setD("notes",e.target.value)} style={eInp}/></td>
-                    <td style={cell}>
+                    <td style={{...cell,position:"sticky",right:0,background:S.surface}}>
                       <div style={{display:"flex",gap:6}}>
                         <Btn sm teal onClick={saveEditEx}>Save</Btn>
                         <button onClick={()=>setEditEx(null)} style={{padding:"7px 10px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600}}>Cancel</button>
@@ -160,7 +161,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                     <td style={{...cell,color:S.muted}}>{ex.section||"—"}</td>
                     <td style={{...cell,color:S.muted}}>{ex.block_type&&ex.block_type!=="straight_set"?BLOCK_TYPE_LABEL[ex.block_type]:"—"}</td>
                     <td style={{...cell,color:S.muted,maxWidth:240}}>{ex.notes||"—"}</td>
-                    <td style={cell}>
+                    <td style={{...cell,position:"sticky",right:0,background:S.surface}}>
                       <div style={{display:"flex",gap:6}}>
                         <Btn sm teal onClick={()=>startEditEx(ex)}>Edit</Btn>
                         <Btn sm danger onClick={()=>delEx(ex.id)}>Remove</Btn>
@@ -173,6 +174,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
           })}
         </tbody>
       </table>
+      </div>
       )}
       </DayFolder>
       ))}
