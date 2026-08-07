@@ -1,7 +1,36 @@
 import { performance } from "node:perf_hooks";
 import Anthropic from "@anthropic-ai/sdk";
 
-const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+// TEMP: wraps the SDK's own fetch so every actual HTTP call to /v1/messages
+// is logged, including retries the SDK issues internally (default
+// maxRetries: 2, on 429/500/529/connection errors) that a single
+// `await anthropic.messages.create()` hides from application code. Without
+// this, "one call took 57s" is ambiguous between "one slow request" and
+// "3 requests + backoff delay" — this makes it unambiguous.
+let __httpSeq = 0;
+async function loggingFetch(url, init) {
+  const seq = ++__httpSeq;
+  const bodyStr = typeof init?.body === "string" ? init.body : "";
+  const kind = bodyStr.includes("hybrid-performance coaching AI")
+    ? "training"
+    : bodyStr.includes("sports-nutrition AI")
+      ? "nutrition"
+      : bodyStr.includes("supportive but honest performance coach")
+        ? "checkin/insight"
+        : "other";
+  const start = performance.now();
+  console.log(`[anthropic http] #${seq} (${kind}) -> POST ${url}`);
+  try {
+    const res = await globalThis.fetch(url, init);
+    console.log(`[anthropic http] #${seq} (${kind}) <- ${res.status} after ${(performance.now() - start).toFixed(0)}ms`);
+    return res;
+  } catch (err) {
+    console.log(`[anthropic http] #${seq} (${kind}) <- FAILED after ${(performance.now() - start).toFixed(0)}ms: ${err.message}`);
+    throw err;
+  }
+}
+
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, fetch: loggingFetch });
 
 const MODEL = "claude-opus-4-8";
 // A full 12-week, multi-day split (or a detailed meal plan) can exceed a few

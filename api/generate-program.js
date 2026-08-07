@@ -222,7 +222,14 @@ export default async function handler(req, res) {
       if (preservedIds.length) {
         await supabaseAdmin.from("exercises").update({ program_id: program.id }).in("id", preservedIds);
       }
+      mark("Delete/preserve existing exercises");
 
+      // No schema/shape validation exists on the AI's parsed response before
+      // this point — `training.weekly_split` is used as-is. This loop is the
+      // closest thing to "program validation": it's where a malformed shape
+      // (e.g. missing `day.exercises`) would surface, via `(day.exercises ||
+      // []).forEach`. Timed separately from the DB insert below to confirm
+      // this pure-JS step isn't where time is going.
       for (const day of training.weekly_split || []) {
         (day.exercises || []).forEach((ex, i) => {
           exercises.push({
@@ -244,11 +251,12 @@ export default async function handler(req, res) {
           });
         });
       }
+      mark("Build exercise rows from AI response (program validation)");
       if (exercises.length) {
         const { error } = await supabaseAdmin.from("exercises").insert(exercises);
         if (error) throw error;
       }
-      mark("Save exercises (delete/update/insert)");
+      mark("Save exercises (insert)");
     }
 
     // 8. Replace the active nutrition plan.
