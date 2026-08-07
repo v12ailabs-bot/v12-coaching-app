@@ -69,7 +69,11 @@ async function withTimeout(label, fn) {
 // Parses model output as JSON, tolerating markdown code fences and any prose
 // the model adds before/after the JSON object despite being told not to
 // (e.g. "I need to design a program that..." preceding the actual object).
-function parseJson(text) {
+// On a genuine JSON syntax error (as opposed to a prose preamble), logs the
+// actual malformed text around the reported position and includes it in the
+// thrown error's message, so the failure is diagnosable from the error
+// response alone instead of needing a follow-up round trip through logs.
+function parseJson(text, label = "response") {
   const cleaned = String(text || "")
     .trim()
     .replace(/^```(?:json)?\s*/i, "")
@@ -78,7 +82,15 @@ function parseJson(text) {
   const start = cleaned.indexOf("{");
   const end = cleaned.lastIndexOf("}");
   const jsonSlice = start !== -1 && end > start ? cleaned.slice(start, end + 1) : cleaned;
-  return JSON.parse(jsonSlice);
+  try {
+    return JSON.parse(jsonSlice);
+  } catch (err) {
+    const posMatch = /position (\d+)/.exec(err.message);
+    const pos = posMatch ? Number(posMatch[1]) : null;
+    const snippet = pos != null ? jsonSlice.slice(Math.max(0, pos - 200), pos + 200) : jsonSlice.slice(0, 400);
+    console.error(`[anthropic parse] ${label} FAILED to parse JSON: ${err.message}\n--- full response (${jsonSlice.length} chars) ---\n${jsonSlice}\n--- end ---`);
+    throw new Error(`${label}: ${err.message} — near: ...${snippet}...`);
+  }
 }
 
 export function clientProfileBlock(client) {
@@ -278,7 +290,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   );
   const __t1 = performance.now();
   console.log(`[anthropic timing] generateTrainingSkeleton: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
-  const result = parseJson(message.content[0].text);
+  const result = parseJson(message.content[0].text, "generateTrainingSkeleton");
   console.log(`[anthropic timing] generateTrainingSkeleton: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
 }
@@ -378,7 +390,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   );
   const __t1 = performance.now();
   console.log(`[anthropic timing] ${label}: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
-  const result = parseJson(message.content[0].text);
+  const result = parseJson(message.content[0].text, label);
   console.log(`[anthropic timing] ${label}: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
 }
@@ -530,7 +542,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   console.log(`[anthropic timing] generateNutritionPlan: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
 
   console.log(`[anthropic timing] generateNutritionPlan: before JSON parsing (elapsed: ${(performance.now() - __t0).toFixed(0)}ms)`);
-  const result = parseJson(message.content[0].text);
+  const result = parseJson(message.content[0].text, "generateNutritionPlan");
   console.log(`[anthropic timing] generateNutritionPlan: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
 }
