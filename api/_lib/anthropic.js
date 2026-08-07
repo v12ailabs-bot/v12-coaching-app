@@ -11,13 +11,15 @@ let __httpSeq = 0;
 async function loggingFetch(url, init) {
   const seq = ++__httpSeq;
   const bodyStr = typeof init?.body === "string" ? init.body : "";
-  const kind = bodyStr.includes("hybrid-performance coaching AI")
-    ? "training"
-    : bodyStr.includes("sports-nutrition AI")
-      ? "nutrition"
-      : bodyStr.includes("supportive but honest performance coach")
-        ? "checkin/insight"
-        : "other";
+  const kind = bodyStr.includes("design ONLY this week's high-level structure")
+    ? "training-skeleton"
+    : bodyStr.includes("filling in exercises for part of an already-structured")
+      ? "training-detail"
+      : bodyStr.includes("sports-nutrition AI")
+        ? "nutrition"
+        : bodyStr.includes("supportive but honest performance coach")
+          ? "checkin/insight"
+          : "other";
   const start = performance.now();
   console.log(`[anthropic http] #${seq} (${kind}) -> POST ${url}`);
   try {
@@ -223,61 +225,37 @@ NOT available — never program these, and substitute an equivalent movement tha
 
 // Generates a 12-week V12 weekly training split tailored to the client and the
 // coach-selected template.
-export async function generateTrainingPlan(client) {
+// Stage 1 of training generation: decide the week's shape (day names + each
+// day's V12-pillar focus) with NO exercises yet. Small output, so this
+// finishes in a few seconds and lets stage 2 run its detail calls in
+// parallel against a shared, already-agreed structure.
+async function generateTrainingSkeleton(client) {
   const __t0 = performance.now();
-  console.log(`[anthropic timing] generateTrainingPlan: before Anthropic request (elapsed: 0ms)`);
-  const message = await withTimeout("generateTrainingPlan", (signal) =>
+  console.log(`[anthropic timing] generateTrainingSkeleton: before Anthropic request (elapsed: 0ms)`);
+  const message = await withTimeout("generateTrainingSkeleton", (signal) =>
     anthropic.messages.create(
       {
-    model: MODEL,
-    max_tokens: MAX_TOKENS,
-    messages: [
-      {
-        role: "user",
-        content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI.
+        model: MODEL,
+        max_tokens: 1500,
+        messages: [
+          {
+            role: "user",
+            content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI.
 
 ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}
-${
+${equipmentBlock(client)}${constraintBlock(client)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
 }${
-  client.locked_exercises_text
-    ? `LOCKED-IN EXERCISES — these already exist in this client's program exactly as listed below and will remain unchanged (they have logged history that can't be discarded). Do NOT include them in your output, and do NOT invent a different exercise that duplicates the same movement pattern on the same day — design the rest of that day's work around them, accounting for the volume/phase they already cover:\n${client.locked_exercises_text}\n\n`
-    : ""
-}${
   client.program_template
-    ? `${client.program_template}\n\n` +
-      `Use this template as the framework. Replicate its WEEKLY SPLIT exactly — the ` +
-      `same training days and each day's focus — and within every session follow the ` +
-      `SESSION TEMPLATE slot order, filling each slot with the actual exercises that ` +
-      `best fit this client's assessment, goal, equipment, and injuries, using the ` +
-      `template's set×rep schemes. Apply the progression rule. Set each exercise's ` +
-      `"section" to its canonical workout phase (see PHASE ORDER below), mapped from ` +
-      `the template's session slot: primary/secondary lifts -> "Main Compound Lift"/` +
-      `"Secondary Compound Lift"; accessories/hypertrophy -> "Accessories" or ` +
-      `"Isolation"; conditioning/finishers -> "Conditioning" or "Finisher"; add ` +
-      `explosive/power work as "Power/Plyometrics" where the template calls for it. ` +
-      `Bias volume by the client's three-system assessment.\n`
-    : "No template provided — design the week from the V12 method and the assessment, and still label each exercise with a sensible \"section\" from the PHASE ORDER below.\n"
+    ? `${client.program_template}\n\nUse this template as the framework. Replicate its WEEKLY SPLIT exactly — the same training days and each day's focus.\n`
+    : "No template provided — design the week's days and each day's focus from the V12 method and the assessment.\n"
 }
-PHASE ORDER — every day's exercises must be assignable to exactly one of these, in this order: "Warm-Up", "Activation", "Power/Plyometrics", "Main Compound Lift", "Secondary Compound Lift", "Accessories", "Isolation", "Conditioning", "Finisher", "Cooldown". A day doesn't need every phase, but whichever phases it uses must appear in this order.
-
-Requirements for the output:
-- Each day's "focus" must name its primary V12 pillar(s), e.g. "Powerlifting — Lower" or "Hypertrophy + Conditioning".
-- Each exercise "category" must be one of: "Powerlifting", "Bodybuilding", "Power", or "Conditioning".
-- Each exercise "section" must be exactly one of the PHASE ORDER values above — this is the exercise's workout-ordering phase, e.g. a heavy back squat is "Main Compound Lift", a dynamic warm-up drill is "Warm-Up", core/single-joint work is "Isolation".
-- Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
-- Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
-- Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
-- Across the week, ALL THREE pillars must appear.
-- Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
-- Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
-- Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
+TASK: design ONLY this week's high-level structure — do NOT generate individual exercises yet, that happens in a later step. Across the week, all three V12 pillars (Powerlifting, Bodybuilding, Athletic/Conditioning) must appear across the days' focuses. days_per_week must match the client's "Training Days Per Week" above (or the template's day count, if a template is provided).
 
 OUTPUT FORMAT — respond with valid JSON only, no other text:
 {
@@ -288,7 +266,93 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   "weekly_split": [
     {
       "day": "Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday (must be exactly one of these 7)",
-      "focus": "string",
+      "focus": "string naming the day's primary V12 pillar(s), e.g. \\"Powerlifting — Lower\\" or \\"Hypertrophy + Conditioning\\""
+    }
+  ]
+}`,
+          },
+        ],
+      },
+      { signal }
+    )
+  );
+  const __t1 = performance.now();
+  console.log(`[anthropic timing] generateTrainingSkeleton: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
+  const result = parseJson(message.content[0].text);
+  console.log(`[anthropic timing] generateTrainingSkeleton: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
+  return result;
+}
+
+// Stage 2 of training generation: fill in the actual exercises for a subset
+// of the week's days (dayGroup), given the full skeleton as context so this
+// group's days stay consistent with the days other parallel calls are
+// covering. Multiple day groups run concurrently via Promise.all in
+// generateTrainingPlan, so wall-clock time is bounded by the slowest single
+// group instead of the whole week in one call.
+async function generateTrainingDayDetails(client, skeleton, dayGroup, groupIndex) {
+  const label = `generateTrainingDayDetails[${groupIndex}]`;
+  const dayNames = dayGroup.map((d) => d.day);
+  const __t0 = performance.now();
+  console.log(`[anthropic timing] ${label}: before Anthropic request for [${dayNames.join(", ")}] (elapsed: 0ms)`);
+  const message = await withTimeout(label, (signal) =>
+    anthropic.messages.create(
+      {
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        messages: [
+          {
+            role: "user",
+            content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI, filling in exercises for part of an already-structured training week.
+
+${V12_METHOD}
+
+${clientProfileBlock(client)}
+
+${equipmentBlock(client)}${constraintBlock(client)}${
+  client.coach_assessment
+    ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
+    : ""
+}${
+  client.locked_exercises_text
+    ? `LOCKED-IN EXERCISES — these already exist in this client's program exactly as listed below and will remain unchanged (they have logged history that can't be discarded). Do NOT include them in your output, and do NOT invent a different exercise that duplicates the same movement pattern on the same day — design the rest of that day's work around them, accounting for the volume/phase they already cover:\n${client.locked_exercises_text}\n\n`
+    : ""
+}${
+  client.program_template
+    ? `${client.program_template}\n\n` +
+      `Use this template's SESSION TEMPLATE slot order for every day below, filling each ` +
+      `slot with the actual exercises that best fit this client's assessment, goal, ` +
+      `equipment, and injuries, using the template's set×rep schemes. Apply the ` +
+      `progression rule. Set each exercise's "section" to its canonical workout phase ` +
+      `(see PHASE ORDER below), mapped from the template's session slot: ` +
+      `primary/secondary lifts -> "Main Compound Lift"/"Secondary Compound Lift"; ` +
+      `accessories/hypertrophy -> "Accessories" or "Isolation"; conditioning/finishers ` +
+      `-> "Conditioning" or "Finisher"; add explosive/power work as "Power/Plyometrics" ` +
+      `where the template calls for it. Bias volume by the client's three-system assessment.\n`
+    : "No template provided — design each day's exercises from the V12 method and the assessment, and label each exercise with a sensible \"section\" from the PHASE ORDER below.\n"
+}
+THIS WEEK'S FULL STRUCTURE (already decided in an earlier planning step — every day is listed for context so your days stay consistent in tone/volume with the rest of the week; do NOT change any day's name or focus):
+${skeleton.weekly_split.map((d) => `- ${d.day}: ${d.focus}`).join("\n")}
+
+YOUR TASK — generate the full list of exercises for ONLY these ${dayNames.length} day(s): ${dayNames.join(", ")}. Do not output any other day.
+
+PHASE ORDER — every day's exercises must be assignable to exactly one of these, in this order: "Warm-Up", "Activation", "Power/Plyometrics", "Main Compound Lift", "Secondary Compound Lift", "Accessories", "Isolation", "Conditioning", "Finisher", "Cooldown". A day doesn't need every phase, but whichever phases it uses must appear in this order.
+
+Requirements for the output:
+- Each exercise "category" must be one of: "Powerlifting", "Bodybuilding", "Power", or "Conditioning".
+- Each exercise "section" must be exactly one of the PHASE ORDER values above — this is the exercise's workout-ordering phase, e.g. a heavy back squat is "Main Compound Lift", a dynamic warm-up drill is "Warm-Up", core/single-joint work is "Isolation".
+- Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
+- Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
+- Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
+- Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
+- Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
+- Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
+
+OUTPUT FORMAT — respond with valid JSON only, no other text:
+{
+  "weekly_split": [
+    {
+      "day": "one of: ${dayNames.join(" | ")}",
+      "focus": "string (must match this day's focus given in THIS WEEK'S FULL STRUCTURE above)",
       "exercises": [
         {
           "name": "string",
@@ -306,19 +370,72 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
     }
   ]
 }`,
-      },
-    ],
+          },
+        ],
       },
       { signal }
     )
   );
   const __t1 = performance.now();
-  console.log(`[anthropic timing] generateTrainingPlan: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
-
-  console.log(`[anthropic timing] generateTrainingPlan: before JSON parsing (elapsed: ${(performance.now() - __t0).toFixed(0)}ms)`);
+  console.log(`[anthropic timing] ${label}: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
   const result = parseJson(message.content[0].text);
-  console.log(`[anthropic timing] generateTrainingPlan: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
+  console.log(`[anthropic timing] ${label}: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
+}
+
+// Each detail call's wall-clock time scales with how many days it covers.
+// Measured: 2 days/call ~31-42s (uncomfortably close to the 45s abort on a
+// 7-day week); 1 day/call ~20-29s (comfortable margin, ~35s total including
+// the skeleton, even for a 7-day week run as 7 fully parallel calls with no
+// rate-limit errors observed). Chunking at a fixed size — rather than always
+// splitting into exactly 2 groups — keeps each call's workload flat
+// regardless of days_per_week, instead of the largest group growing with it.
+const DETAIL_CHUNK_SIZE = 1;
+
+// Generates a 12-week V12 weekly training split tailored to the client and
+// the coach-selected template. Split into a fast structure-only "skeleton"
+// call followed by N parallel "detail" calls (one per chunk of days) so
+// wall-clock time is bounded by the slowest chunk instead of the whole week
+// generated in a single request — a single-request week was measured at
+// ~57s, right against Vercel's 60s function timeout.
+export async function generateTrainingPlan(client) {
+  const __t0 = performance.now();
+  const skeleton = await generateTrainingSkeleton(client);
+  const __tSkeleton = performance.now();
+  console.log(`[anthropic timing] generateTrainingPlan: skeleton done (${(__tSkeleton - __t0).toFixed(0)}ms), days_per_week=${skeleton.days_per_week}`);
+
+  const days = skeleton.weekly_split || [];
+  const groups = [];
+  for (let i = 0; i < days.length; i += DETAIL_CHUNK_SIZE) {
+    groups.push(days.slice(i, i + DETAIL_CHUNK_SIZE));
+  }
+
+  const detailResults = await Promise.all(
+    groups.map((group, i) => generateTrainingDayDetails(client, skeleton, group, i))
+  );
+  console.log(`[anthropic timing] generateTrainingPlan: all detail groups done (${(performance.now() - __tSkeleton).toFixed(0)}ms)`);
+
+  const exercisesByDay = new Map();
+  for (const result of detailResults) {
+    for (const day of result.weekly_split || []) {
+      exercisesByDay.set(day.day, day.exercises || []);
+    }
+  }
+
+  const weekly_split = days.map((d) => ({
+    day: d.day,
+    focus: d.focus,
+    exercises: exercisesByDay.get(d.day) || [],
+  }));
+
+  console.log(`[anthropic timing] generateTrainingPlan: TOTAL (${(performance.now() - __t0).toFixed(0)}ms)`);
+  return {
+    program_name: skeleton.program_name,
+    goal: skeleton.goal,
+    days_per_week: skeleton.days_per_week,
+    weeks: skeleton.weeks || 12,
+    weekly_split,
+  };
 }
 
 // Generates a daily nutrition plan personalized to the client's goal (from their
