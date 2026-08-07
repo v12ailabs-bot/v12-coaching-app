@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import { getClientFromNotion } from "./_lib/notion.js";
 import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
@@ -24,8 +25,20 @@ function normalizeDay(day) {
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
+  // TEMP: step-by-step timing to find where the 60s Vercel budget is going on
+  // 504s. Logs incrementally (not just at the end) so the data survives even
+  // if the function is killed mid-request. Remove once the bottleneck is found.
+  const t0 = performance.now();
+  let lastMark = t0;
+  const mark = (label) => {
+    const t = performance.now();
+    console.log(`[generate-program timing] ${label}: ${(t - lastMark).toFixed(0)}ms (total: ${(t - t0).toFixed(0)}ms)`);
+    lastMark = t;
+  };
+
   const user = await requireCoach(req, res);
   if (!user) return;
+  mark("Authentication");
 
   const { client_email, template_id, scope } = req.body || {};
   if (!client_email) return res.status(400).json({ error: "client_email is required" });
@@ -41,6 +54,7 @@ export default async function handler(req, res) {
     if (!client) {
       return res.status(404).json({ error: `No intake found for ${client_email} (checked Notion and in-app leads)` });
     }
+    mark("Fetch client data (Notion/leads)");
 
     // 2. Make sure the client has an app profile to attach the program to.
     //    Pull any stored assessment scores so coach overrides take priority.
@@ -55,6 +69,7 @@ export default async function handler(req, res) {
     if (!profile) {
       return res.status(404).json({ error: "Client has not signed up in the app yet" });
     }
+    mark("Fetch profile");
 
     // TRAINING is shared between linked partners: a client with a
     // shared_program_owner_id writes its program + exercises against the
@@ -69,6 +84,7 @@ export default async function handler(req, res) {
       .select("*")
       .eq("email", client_email.toLowerCase())
       .maybeSingle();
+    mark("Fetch coach assessment");
 
     // Resolve the V12 assessment: a coach-set profile score wins, then the
     // in-app coach assessment, then Notion.
@@ -115,6 +131,7 @@ export default async function handler(req, res) {
       }
     }
     const templateText = template?.frameworkText || null;
+    mark("Fetch program template");
 
     // 4. Full-scope only: find which of the client's current AI exercises
     //    already have logged history BEFORE generating the new plan, so the
@@ -139,9 +156,11 @@ export default async function handler(req, res) {
         lockedExercises = (aiExercises || []).filter((e) => loggedIds.has(e.id));
       }
     }
+    mark("Fetch exercise database (locked-exercise lookup)");
     const lockedExercisesText = lockedExercises.length
       ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
       : null;
+    mark("Progression/locked-exercise logic");
 
     // 5. Generate the plan(s). Nutrition-only skips the training generation;
     //    full mode runs both concurrently.
@@ -151,6 +170,7 @@ export default async function handler(req, res) {
           generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText }),
           generateNutritionPlan(assessed),
         ]);
+    mark("Generate training + nutrition plans (Anthropic, combined)");
 
     // 6. Save program metadata. Nutrition-only reuses the client's latest
     //    existing program (for the nutrition plan's program_id link) instead of
@@ -167,6 +187,7 @@ export default async function handler(req, res) {
         .limit(1)
         .maybeSingle();
       program = latest || null;
+      mark("Save program metadata (nutrition-only lookup)");
     } else {
       const { data: newProgram, error: progErr } = await supabaseAdmin
         .from("programs")
@@ -184,6 +205,7 @@ export default async function handler(req, res) {
         .single();
       if (progErr) throw progErr;
       program = newProgram;
+      mark("Save program metadata (insert)");
 
       // 7. Replace previously AI-generated exercises (coach-added ones are never
       //    touched), but PRESERVE any AI exercise that already has logged sets —
@@ -226,6 +248,7 @@ export default async function handler(req, res) {
         const { error } = await supabaseAdmin.from("exercises").insert(exercises);
         if (error) throw error;
       }
+      mark("Save exercises (delete/update/insert)");
     }
 
     // 8. Replace the active nutrition plan.
@@ -253,6 +276,7 @@ export default async function handler(req, res) {
       active: true,
     });
     if (nutErr) throw nutErr;
+    mark("Save nutrition plan");
 
     // 9. Mark onboarding complete, sync the goal, and persist the resolved
     //    assessment (coerced to 1-10 ints; non-numeric Notion values -> null).
@@ -270,6 +294,8 @@ export default async function handler(req, res) {
         })
         .eq("id", profile.id);
     }
+    mark("Update profile/onboarding");
+    console.log(`[generate-program timing] TOTAL: ${(performance.now() - t0).toFixed(0)}ms for ${client_email}`);
 
     return res.status(200).json({
       success: true,
@@ -282,7 +308,10 @@ export default async function handler(req, res) {
       calories: nutrition.daily_calories ?? null,
     });
   } catch (err) {
-    console.error("generate-program error:", err, "client_email:", client_email);
+    console.error(
+      `[generate-program timing] FAILED after ${(performance.now() - t0).toFixed(0)}ms —`,
+      "generate-program error:", err, "client_email:", client_email
+    );
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }

@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import Anthropic from "@anthropic-ai/sdk";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -162,6 +163,7 @@ NOT available — never program these, and substitute an equivalent movement tha
 // Generates a 12-week V12 weekly training split tailored to the client and the
 // coach-selected template.
 export async function generateTrainingPlan(client) {
+  const __t0 = performance.now();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -243,13 +245,18 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
       },
     ],
   });
+  const __t1 = performance.now();
+  console.log(`[anthropic timing] generateTrainingPlan API request: ${(__t1 - __t0).toFixed(0)}ms`);
 
-  return parseJson(message.content[0].text);
+  const result = parseJson(message.content[0].text);
+  console.log(`[anthropic timing] generateTrainingPlan parse response: ${(performance.now() - __t1).toFixed(0)}ms`);
+  return result;
 }
 
 // Generates a daily nutrition plan personalized to the client's goal (from their
 // Notion application) and aligned with the V12 method's energy-system demands.
 export async function generateNutritionPlan(client) {
+  const __t0 = performance.now();
   const message = await anthropic.messages.create({
     model: MODEL,
     max_tokens: MAX_TOKENS,
@@ -328,8 +335,12 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
       },
     ],
   });
+  const __t1 = performance.now();
+  console.log(`[anthropic timing] generateNutritionPlan API request: ${(__t1 - __t0).toFixed(0)}ms`);
 
-  return parseJson(message.content[0].text);
+  const result = parseJson(message.content[0].text);
+  console.log(`[anthropic timing] generateNutritionPlan parse response: ${(performance.now() - __t1).toFixed(0)}ms`);
+  return result;
 }
 
 // A short, encouraging plain-text recap of the client's last ~30 days, built from
