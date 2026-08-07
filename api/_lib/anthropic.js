@@ -37,6 +37,33 @@ const MODEL = "claude-opus-4-8";
 // thousand tokens; 4000 truncated the JSON mid-string for larger clients.
 const MAX_TOKENS = 16000;
 
+// Program generation runs inside Vercel's 60s function timeout (unraisable
+// on the Hobby plan). Abort the Anthropic call at 45s — well before Vercel
+// kills the whole function — so the caller gets a clear timeout error
+// instead of an opaque 504 with no response body. Passing our own signal
+// (rather than the SDK's per-attempt `timeout` option) means this is a true
+// wall-clock cutoff across any retries the SDK attempts internally, not a
+// per-attempt timer that resets on each retry.
+const ANTHROPIC_CALL_TIMEOUT_MS = 45000;
+
+// Runs an Anthropic call with a hard wall-clock abort at ANTHROPIC_CALL_TIMEOUT_MS.
+// On abort, throws a descriptive error instead of leaving the caller to hang
+// until Vercel's own timeout kills the function.
+async function withTimeout(label, fn) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), ANTHROPIC_CALL_TIMEOUT_MS);
+  try {
+    return await fn(controller.signal);
+  } catch (err) {
+    if (controller.signal.aborted) {
+      throw new Error(`${label} timed out after ${ANTHROPIC_CALL_TIMEOUT_MS / 1000}s (Anthropic API did not respond in time)`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // Parses model output as JSON, tolerating markdown code fences and any prose
 // the model adds before/after the JSON object despite being told not to
 // (e.g. "I need to design a program that..." preceding the actual object).
@@ -198,7 +225,10 @@ NOT available — never program these, and substitute an equivalent movement tha
 // coach-selected template.
 export async function generateTrainingPlan(client) {
   const __t0 = performance.now();
-  const message = await anthropic.messages.create({
+  console.log(`[anthropic timing] generateTrainingPlan: before Anthropic request (elapsed: 0ms)`);
+  const message = await withTimeout("generateTrainingPlan", (signal) =>
+    anthropic.messages.create(
+      {
     model: MODEL,
     max_tokens: MAX_TOKENS,
     messages: [
@@ -278,12 +308,16 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 }`,
       },
     ],
-  });
+      },
+      { signal }
+    )
+  );
   const __t1 = performance.now();
-  console.log(`[anthropic timing] generateTrainingPlan API request: ${(__t1 - __t0).toFixed(0)}ms`);
+  console.log(`[anthropic timing] generateTrainingPlan: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
 
+  console.log(`[anthropic timing] generateTrainingPlan: before JSON parsing (elapsed: ${(performance.now() - __t0).toFixed(0)}ms)`);
   const result = parseJson(message.content[0].text);
-  console.log(`[anthropic timing] generateTrainingPlan parse response: ${(performance.now() - __t1).toFixed(0)}ms`);
+  console.log(`[anthropic timing] generateTrainingPlan: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
 }
 
@@ -291,7 +325,10 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 // Notion application) and aligned with the V12 method's energy-system demands.
 export async function generateNutritionPlan(client) {
   const __t0 = performance.now();
-  const message = await anthropic.messages.create({
+  console.log(`[anthropic timing] generateNutritionPlan: before Anthropic request (elapsed: 0ms)`);
+  const message = await withTimeout("generateNutritionPlan", (signal) =>
+    anthropic.messages.create(
+      {
     model: MODEL,
     max_tokens: MAX_TOKENS,
     messages: [
@@ -368,12 +405,16 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 }`,
       },
     ],
-  });
+      },
+      { signal }
+    )
+  );
   const __t1 = performance.now();
-  console.log(`[anthropic timing] generateNutritionPlan API request: ${(__t1 - __t0).toFixed(0)}ms`);
+  console.log(`[anthropic timing] generateNutritionPlan: after Anthropic request (${(__t1 - __t0).toFixed(0)}ms)`);
 
+  console.log(`[anthropic timing] generateNutritionPlan: before JSON parsing (elapsed: ${(performance.now() - __t0).toFixed(0)}ms)`);
   const result = parseJson(message.content[0].text);
-  console.log(`[anthropic timing] generateNutritionPlan parse response: ${(performance.now() - __t1).toFixed(0)}ms`);
+  console.log(`[anthropic timing] generateNutritionPlan: after JSON parsing (${(performance.now() - __t1).toFixed(0)}ms)`);
   return result;
 }
 

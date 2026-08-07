@@ -171,6 +171,7 @@ export default async function handler(req, res) {
           generateNutritionPlan(assessed),
         ]);
     mark("Generate training + nutrition plans (Anthropic, combined)");
+    mark("Before database writes");
 
     // 6. Save program metadata. Nutrition-only reuses the client's latest
     //    existing program (for the nutrition plan's program_id link) instead of
@@ -303,6 +304,8 @@ export default async function handler(req, res) {
         .eq("id", profile.id);
     }
     mark("Update profile/onboarding");
+    mark("After database writes");
+    mark("Before response");
     console.log(`[generate-program timing] TOTAL: ${(performance.now() - t0).toFixed(0)}ms for ${client_email}`);
 
     return res.status(200).json({
