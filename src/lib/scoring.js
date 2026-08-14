@@ -1,4 +1,5 @@
 import { todayStr } from "../theme.jsx";
+import { computeGoalScore } from "./scoring/goalScoring.js";
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the
 // training-completion rate among those check-ins. Shared by client + coach views.
@@ -36,4 +37,63 @@ export function nutritionScoreFrom(checkins, days = 30) {
   if (!recent.length) return { score: null, n: 0 };
   const total = recent.reduce((s, c) => s + (DIET_SCORE[c.diet] ?? 50), 0);
   return { score: Math.round(total / recent.length), n: recent.length };
+}
+
+// One client's "needs attention" assessment: adherence/nutrition/goal/recovery
+// flags plus an overall risk level. This is the single source of truth behind
+// the coach's Needs Attention board (CoachHome) AND the client's own at-risk
+// summary on their Home page (ClientHome) — same signals, same thresholds, so
+// a client never sees a different picture than their coach does. Each flag
+// carries `action` (coach-facing: what the coach should do about it) and
+// `clientMessage` (client-facing: the coach talking directly to the client
+// about it) so the two views can reuse one flag list with different copy.
+export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, today = todayStr()) {
+  const daysSinceDate = (d) => Math.round((new Date(today) - new Date(d)) / 86400000);
+  const ch = dailyCheckins || [];
+  const adh = adherenceFrom(ch, 30);
+  const last = ch.length ? ch[ch.length - 1].date : null;
+  const since = last ? daysSinceDate(last) : null;
+
+  const flags = [];
+  if (since == null) flags.push({ label: "No activity yet", tone: "red", detail: "This client has never logged a daily check-in.", action: "Reach out to help them log their first check-in.", clientMessage: "You haven't logged a check-in yet — let's get your first one in today." });
+  else if (since > 7) flags.push({ label: `No activity ${since}d`, tone: "red", detail: `No daily check-in in ${since} days — worth reaching out to see what's going on.`, action: "Send a check-in message today.", clientMessage: `It's been ${since} days since your last check-in — let's get back on track, I'm here to help.` });
+  else if (since >= 3) flags.push({ label: `${since}d since check-in`, tone: "amber", detail: `Last logged a daily check-in ${since} days ago.`, action: "A light nudge before this becomes a longer gap.", clientMessage: `Last check-in was ${since} days ago — a light nudge before this becomes a longer gap.` });
+  if (adh.score < 50) flags.push({ label: `Adherence ${adh.score}%`, tone: "amber", detail: `Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`, action: "Simplify the check-in ask and address any stated barriers.", clientMessage: `You've checked in on ${adh.score}% of the last 30 days — let's aim for more consistency, even a quick one helps.` });
+  const nut = nutritionScoreFrom(ch, 30);
+  if (nut.score != null && nut.n >= 3 && nut.score < 50) flags.push({ label: `Nutrition ${nut.score}%`, tone: "amber", detail: `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`, action: "Revisit the nutrition plan for something more sustainable.", clientMessage: `Your nutrition has averaged ${nut.score}% over your last few check-ins — let's find something more sustainable together.` });
+
+  const weights = ch.filter((r) => r.weight != null);
+  let goalScore = null;
+  if (goal) {
+    goalScore = computeGoalScore(goal, weights.map((w) => ({ date: w.date, value: w.weight })), { nutrition: nut.score, training: adh.trainingRate });
+    if (goalScore.classification === "Off Track") flags.push({ label: "Goal off track", tone: "red", detail: `Goal score is ${goalScore.overallScore ?? "—"}/100 — trending the wrong way relative to the target.`, action: "Review the plan against this goal — the current approach isn't working.", clientMessage: `Your goal score is ${goalScore.overallScore ?? "—"}/100 and trending the wrong way — let's revisit the plan together.` });
+    else if (goalScore.classification === "Slightly Behind") flags.push({ label: "Goal slightly behind", tone: "amber", detail: `Goal score is ${goalScore.overallScore ?? "—"}/100 — behind the pace needed to hit the target date.`, action: "A small adjustment now could get this back on pace.", clientMessage: `Your goal score is ${goalScore.overallScore ?? "—"}/100 — a bit behind pace, but a small adjustment can get it back on track.` });
+    if (goal.direction !== "maintain" && goalScore.velocity != null && Math.abs(goalScore.velocity) < 0.05)
+      flags.push({ label: "Plateaued", tone: "amber", detail: "No meaningful weight movement toward the goal in the last 30 days.", action: "Consider a deload/refeed and review the program phase.", clientMessage: "There hasn't been much movement toward your goal in the last 30 days — might be time for a deload or a small plan tweak. Let's talk it through." });
+  } else if (weights.length >= 2) {
+    const delta = weights[weights.length - 1].weight - weights[0].weight;
+    const goalText = (client?.goal || "").toLowerCase();
+    const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goalText);
+    const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goalText);
+    if (wantsLoss && delta > 1) flags.push({ label: `Weight ▲ ${delta.toFixed(1)}lb`, tone: "red", detail: `Weight is up ${delta.toFixed(1)}lb over the tracked period, working against a fat-loss goal.`, action: "Set a structured goal to track this properly, and review nutrition adherence.", clientMessage: `Weight is up ${delta.toFixed(1)}lb recently, which is working against your fat-loss goal — let's dig into what's going on.` });
+    else if (wantsGain && delta < -1) flags.push({ label: `Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone: "red", detail: `Weight is down ${Math.abs(delta).toFixed(1)}lb over the tracked period, working against a muscle-gain goal.`, action: "Set a structured goal to track this properly, and review nutrition adherence.", clientMessage: `Weight is down ${Math.abs(delta).toFixed(1)}lb recently, which is working against your muscle-gain goal — let's dig into what's going on.` });
+  }
+
+  const wk = weeklyCheckins || [];
+  const recoveryOf = (w) => (w.sleep_quality != null || w.hydration_quality != null) ? ((w.sleep_quality || 0) + (w.hydration_quality || 0)) / ((w.sleep_quality != null) + (w.hydration_quality != null)) : null;
+  const recentWk = wk.filter((w) => daysSinceDate(w.date) <= 13).map(recoveryOf).filter((v) => v != null);
+  const priorWk = wk.filter((w) => daysSinceDate(w.date) > 13 && daysSinceDate(w.date) <= 27).map(recoveryOf).filter((v) => v != null);
+  if (recentWk.length && priorWk.length) {
+    const recentAvg = recentWk.reduce((s, v) => s + v, 0) / recentWk.length;
+    const priorAvg = priorWk.reduce((s, v) => s + v, 0) / priorWk.length;
+    if (priorAvg - recentAvg >= 1.5) flags.push({ label: "Recovery down", tone: "amber", detail: `Self-rated sleep/hydration averaged ${recentAvg.toFixed(1)}/10 the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 the 2 weeks before.`, action: "Check in on sleep and stress load.", clientMessage: `Your self-rated sleep/hydration has dipped to ${recentAvg.toFixed(1)}/10 over the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 before that — how are you feeling? Let's check in on that.` });
+  }
+
+  const last7 = ch.filter((r) => daysSinceDate(r.date) <= 6).length;
+  const prior7 = ch.filter((r) => daysSinceDate(r.date) > 6 && daysSinceDate(r.date) <= 13).length;
+  if (prior7 >= 4 && last7 <= prior7 - 3) flags.push({ label: "Logging slowing down", tone: "amber", detail: `Checked in ${last7}/7 days this week, down from ${prior7}/7 the week before.`, action: "Worth a quick check-in before this turns into a gap.", clientMessage: `You've logged ${last7}/7 days this week, down from ${prior7}/7 last week — a quick check-in now keeps your momentum before it turns into a gap.` });
+
+  const severity = flags.reduce((s, f) => s + (f.tone === "red" ? 2 : 1), 0);
+  const riskLevel = severity >= 4 ? "High" : severity >= 2 ? "Medium" : severity >= 1 ? "Low" : "On Track";
+  return { client, adh, last, since, flags, severity, riskLevel, goalScore };
 }

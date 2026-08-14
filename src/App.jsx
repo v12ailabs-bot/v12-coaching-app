@@ -4,11 +4,11 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 
 
 import { supabase } from "./supabaseClient.js";
-import { S, bS, TT, todayStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
+import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
 import { ClientSelector } from "./components/ClientSelector.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT } from "./lib/constants.js";
-import { adherenceFrom, nutritionScoreFrom } from "./lib/scoring.js";
+import { assessClientRisk } from "./lib/scoring.js";
 import { computeGoalScore } from "./lib/scoring/goalScoring.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
@@ -941,16 +941,24 @@ function ClientWelcome({ profile, onEnter }) {
 function ClientHome({ profile, setPage }) {
   const [checkins, setCheckins] = useState([]);
   const [weeklyDone, setWeeklyDone] = useState(true);
+  const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [riskOpen, setRiskOpen] = useState(false);
 
   useEffect(()=>{
     (async()=>{
       const {data:ci} = await supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date");
       setCheckins(ci||[]);
-      const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
+      const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return localDateStr(d);})();
       const {data:wc} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",ws).maybeSingle();
       setWeeklyDone(!!wc);
+      // Last 28 days of weekly check-ins, same window CoachHome uses for the
+      // recovery-trend flag in assessClientRisk.
+      const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-27);
+      const {data:wr} = await supabase.from("weekly_checkins").select("date,sleep_quality,hydration_quality")
+        .eq("client_id",profile.id).gte("date",localDateStr(wcutoff)).order("date");
+      setWeeklyRecent(wr||[]);
       const {data:g} = await supabase.from("client_goals").select("*").eq("client_id",profile.id).eq("status","active").eq("metric_key","bodyweight")
         .order("created_at",{ascending:false}).limit(1).maybeSingle();
       setGoal(g||null);
@@ -961,6 +969,9 @@ function ClientHome({ profile, setPage }) {
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
   const doneToday = checkins.some(c=>c.date===todayStr());
+  // Same assessClientRisk the coach's Needs Attention board uses — the client
+  // sees the same flags their coach does, phrased as the coach talking to them.
+  const risk = assessClientRisk(profile, checkins, weeklyRecent, goal);
   const r7 = checkins.slice(-7);
   const avgE = r7.length?(r7.reduce((s,c)=>s+c.energy,0)/r7.length).toFixed(1):"—";
   const avgS = r7.length?(r7.reduce((s,c)=>s+c.sleep,0)/r7.length).toFixed(1):"—";
@@ -992,6 +1003,27 @@ function ClientHome({ profile, setPage }) {
         <div style={{background:"rgba(0,201,167,.10)",border:"1px solid rgba(0,201,167,.28)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:20,flexWrap:"wrap"}}>
           <span style={{fontSize:13}}>Your weekly check-in is due this week — it's how your coach adjusts your plan.</span>
           <Btn sm teal onClick={()=>setPage("weekly")}>Start weekly</Btn>
+        </div>
+      )}
+      {risk.flags.length>0 && (
+        <div style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(risk.severity>=2?"#c0392b":"#f5a623"),marginBottom:20,overflow:"hidden"}}>
+          <div onClick={()=>setRiskOpen(o=>!o)} style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
+            <span style={{fontSize:11,color:S.accent,flexShrink:0,display:"inline-block",transition:"transform .15s",transform:riskOpen?"rotate(90deg)":"none"}}>▶</span>
+            <div style={{flex:1,minWidth:0,fontWeight:600,fontSize:14}}>How you're tracking</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"60%"}}>
+              <StatusBadge label={`${risk.riskLevel} Risk`} tone={risk.riskLevel==="High"?"red":risk.riskLevel==="Medium"?"amber":"neutral"}/>
+              {risk.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
+            </div>
+          </div>
+          {riskOpen && (
+            <div style={{padding:"0 18px 16px 43px"}}>
+              {risk.flags.map((f,i)=>(
+                <div key={i} style={{fontSize:12,color:S.text,padding:"6px 0",borderTop:i===0?"1px solid "+S.border:"none",paddingTop:i===0?12:6}}>
+                  <div><span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.clientMessage}</div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
       <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:22}}>
@@ -1095,7 +1127,7 @@ function DailyCheckin({ profile, onDone }) {
 }
 
 function WeeklyCheckin({ profile, onDone }) {
-  const weekStart = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return d.toISOString().split("T")[0];})();
+  const weekStart = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return localDateStr(d);})();
   const [form, setForm] = useState({
     bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
@@ -1927,74 +1959,16 @@ function CoachHome({ setPage, openClient }) {
 
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
-  const today = todayStr();
-  const daysSinceDate = (d)=> Math.round((new Date(today) - new Date(d)) / 86400000);
-
   const assessed = clients.map(c=>{
     // Program-only clients have no coach and no check-ins, so the check-in-based
     // attention flags don't apply — never surface them here.
     if(c.client_type==="program_only") return {client:c, adh:{score:0}, last:null, since:null, flags:[], severity:0, riskLevel:"On Track", goalScore:null, programOnly:true};
     const ch = byClient[c.id] || [];
-    const adh = adherenceFrom(ch, 30);
-    const last = ch.length ? ch[ch.length-1].date : null;
-    const since = last ? daysSinceDate(last) : null;
-    // Each flag carries a `detail` sentence and an optional `action` suggestion
-    // — the expanded per-client view in Needs Attention shows these instead of
-    // the raw dataset, so it stays scoped to "where they're lacking" and "what
-    // to do about it" rather than a full stats dump.
-    const flags = [];
-    if(since==null) flags.push({label:"No activity yet", tone:"red", detail:"This client has never logged a daily check-in.", action:"Reach out to help them log their first check-in."});
-    else if(since>7) flags.push({label:`No activity ${since}d`, tone:"red", detail:`No daily check-in in ${since} days — worth reaching out to see what's going on.`, action:"Send a check-in message today."});
-    else if(since>=3) flags.push({label:`${since}d since check-in`, tone:"amber", detail:`Last logged a daily check-in ${since} days ago.`, action:"A light nudge before this becomes a longer gap."});
-    if(adh.score<50) flags.push({label:`Adherence ${adh.score}%`, tone:"amber", detail:`Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`, action:"Simplify the check-in ask and address any stated barriers."});
-    const nut = nutritionScoreFrom(ch, 30);
-    if(nut.score!=null && nut.n>=3 && nut.score<50) flags.push({label:`Nutrition ${nut.score}%`, tone:"amber", detail:`Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`, action:"Revisit the nutrition plan for something more sustainable."});
-
-    // Goal-based signals, all from the SAME computeGoalScore GoalsSection/Progress
-    // use — no duplicate progress math. Falls back to the older free-text
-    // goal-vs-weight-trend heuristic only when the client has no structured goal.
-    const goal = goalsByClient[c.id] || null;
-    const weights = ch.filter(r=>r.weight!=null);
-    let goalScore = null;
-    if(goal){
-      goalScore = computeGoalScore(goal, weights.map(w=>({date:w.date,value:w.weight})), {nutrition:nut.score,training:adh.trainingRate});
-      if(goalScore.classification==="Off Track") flags.push({label:"Goal off track", tone:"red", detail:`Goal score is ${goalScore.overallScore ?? "—"}/100 — trending the wrong way relative to the target.`, action:"Review the plan against this goal — the current approach isn't working."});
-      else if(goalScore.classification==="Slightly Behind") flags.push({label:"Goal slightly behind", tone:"amber", detail:`Goal score is ${goalScore.overallScore ?? "—"}/100 — behind the pace needed to hit the target date.`, action:"A small adjustment now could get this back on pace."});
-      if(goal.direction!=="maintain" && goalScore.velocity!=null && Math.abs(goalScore.velocity)<0.05)
-        flags.push({label:"Plateaued", tone:"amber", detail:"No meaningful weight movement toward the goal in the last 30 days.", action:"Consider a deload/refeed and review the program phase."});
-    } else {
-      // No structured goal yet — fall back to the free-text goal vs. weight-trend heuristic.
-      if(weights.length>=2){
-        const delta = weights[weights.length-1].weight - weights[0].weight;
-        const goalText = (c.goal||"").toLowerCase();
-        const wantsLoss = /(loss|lean|cut|shred|fat)/.test(goalText);
-        const wantsGain = /(gain|muscle|bulk|mass|size|strength)/.test(goalText);
-        if(wantsLoss && delta>1) flags.push({label:`Weight ▲ ${delta.toFixed(1)}lb`, tone:"red", detail:`Weight is up ${delta.toFixed(1)}lb over the tracked period, working against a fat-loss goal.`, action:"Set a structured goal to track this properly, and review nutrition adherence."});
-        else if(wantsGain && delta<-1) flags.push({label:`Weight ▼ ${Math.abs(delta).toFixed(1)}lb`, tone:"red", detail:`Weight is down ${Math.abs(delta).toFixed(1)}lb over the tracked period, working against a muscle-gain goal.`, action:"Set a structured goal to track this properly, and review nutrition adherence."});
-      }
-    }
-
-    // Recovery trend: trailing 2-week avg of self-rated sleep/hydration vs. the
-    // prior 2 weeks, from weekly_checkins (28-day window fetched above).
     const wk = weeklyRecent.filter(w=>w.client_id===c.id);
-    const recoveryOf = (w)=> (w.sleep_quality!=null || w.hydration_quality!=null) ? ((w.sleep_quality||0)+(w.hydration_quality||0))/((w.sleep_quality!=null)+(w.hydration_quality!=null)) : null;
-    const recentWk = wk.filter(w=>daysSinceDate(w.date)<=13).map(recoveryOf).filter(v=>v!=null);
-    const priorWk = wk.filter(w=>daysSinceDate(w.date)>13 && daysSinceDate(w.date)<=27).map(recoveryOf).filter(v=>v!=null);
-    if(recentWk.length && priorWk.length){
-      const recentAvg = recentWk.reduce((s,v)=>s+v,0)/recentWk.length;
-      const priorAvg = priorWk.reduce((s,v)=>s+v,0)/priorWk.length;
-      if(priorAvg-recentAvg >= 1.5) flags.push({label:"Recovery down", tone:"amber", detail:`Self-rated sleep/hydration averaged ${recentAvg.toFixed(1)}/10 the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 the 2 weeks before.`, action:"Check in on sleep and stress load."});
-    }
-
-    // Consistency trend: check-in frequency dropping off, even before it
-    // triggers the blunter "days since last check-in" flag above.
-    const last7 = ch.filter(r=>daysSinceDate(r.date)<=6).length;
-    const prior7 = ch.filter(r=>daysSinceDate(r.date)>6 && daysSinceDate(r.date)<=13).length;
-    if(prior7>=4 && last7<=prior7-3) flags.push({label:"Logging slowing down", tone:"amber", detail:`Checked in ${last7}/7 days this week, down from ${prior7}/7 the week before.`, action:"Worth a quick check-in before this turns into a gap."});
-
-    const severity = flags.reduce((s,f)=>s+(f.tone==="red"?2:1),0);
-    const riskLevel = severity>=4 ? "High" : severity>=2 ? "Medium" : severity>=1 ? "Low" : "On Track";
-    return {client:c, adh, last, since, flags, severity, riskLevel, goalScore};
+    const goal = goalsByClient[c.id] || null;
+    // Same assessClientRisk the client's own Home page uses — one source of
+    // truth for risk flags shared between the coach and client views.
+    return assessClientRisk(c, ch, wk, goal);
   });
 
   const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
