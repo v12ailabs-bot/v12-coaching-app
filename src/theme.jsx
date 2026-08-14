@@ -50,8 +50,20 @@ export const TT = {
   itemStyle: { color: S.text },
 };
 
-// Today's date as YYYY-MM-DD.
-export const todayStr = () => new Date().toISOString().split("T")[0];
+// Today's date as YYYY-MM-DD, in the browser's local timezone. toISOString()
+// converts to UTC first, which rolls to "tomorrow" in the evening for any
+// timezone west of UTC (e.g. from ~4-8pm in US timezones) — that off-by-one
+// broke check-in dates for evening submissions, so this formats from local
+// getFullYear/getMonth/getDate instead.
+export const todayStr = () => localDateStr(new Date());
+
+// Formats a Date as YYYY-MM-DD using its local calendar fields (not UTC).
+export function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
 
 // True when the viewport is at the mobile breakpoint, so components can swap a
 // dense desktop table for a stacked card layout. Mirrors the 720px CSS query.
