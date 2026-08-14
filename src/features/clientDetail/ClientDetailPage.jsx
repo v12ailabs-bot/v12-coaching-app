@@ -263,8 +263,17 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
       block_type:newEx.block_type||"straight_set", group_id:newEx.group_id.trim()||null,
     });
     await loadEx(trainOwnerId);
-    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
-    setShowAdd(false);setSaving(false);
+    // A superset/circuit needs 2+ rows sharing the same block_type/group_id/day
+    // to log correctly — keep those three fields (and close nothing) so the
+    // coach can immediately add the next exercise into the same block instead
+    // of having to re-select block type and retype the group label from memory.
+    if (newEx.block_type !== "straight_set" && newEx.group_id.trim()) {
+      setNewEx(p=>({...p,name:"",category:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""}));
+    } else {
+      setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
+      setShowAdd(false);
+    }
+    setSaving(false);
   };
   const delEx = async(id)=>{
     // Deleting an exercise cascade-deletes its workout_logs. Warn the coach when

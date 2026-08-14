@@ -53,6 +53,11 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
               <Fld label="Group Label"><Inp type="text" value={newEx.group_id} onChange={e=>setNewEx(p=>({...p,group_id:e.target.value}))} placeholder="e.g. A — same label on every exercise in this block"/></Fld>
             )}
           </div>
+          {newEx.block_type!=="straight_set"&&newEx.group_id.trim()&&(
+            <div style={{color:S.accent2,fontSize:12,marginTop:4}}>
+              After you add this, the form will stay open with Group "{newEx.group_id.trim()}" ready — add the next exercise in this block, or Cancel when the block is complete.
+            </div>
+          )}
           <Fld label="Notes / loading guidance"><Inp type="text" value={newEx.notes} onChange={e=>setNewEx(p=>({...p,notes:e.target.value}))} placeholder="e.g. @80% 1RM, RPE 8, 3s eccentric"/></Fld>
           <div style={{display:"flex",gap:10,marginTop:8}}>
             <Btn sm onClick={addEx} disabled={saving}>{saving?"Saving...":"Add Exercise"}</Btn>
