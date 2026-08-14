@@ -46,6 +46,10 @@ export function GoalsSection({ client }) {
   const [form, setForm] = useState({ direction: "decrease", target_value: "", target_date: "" });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ direction: "decrease", target_value: "", target_date: "" });
+  const [savingEdit, setSavingEdit] = useState(false);
+  const [editMsg, setEditMsg] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -122,6 +126,25 @@ export function GoalsSection({ client }) {
     await load();
   };
 
+  const startEdit = () => {
+    setEditForm({ direction: goal.direction, target_value: String(goal.target_value), target_date: goal.target_date });
+    setEditMsg(null);
+    setEditing(true);
+  };
+  const saveEdit = async () => {
+    if (!editForm.target_value || !editForm.target_date) return;
+    setSavingEdit(true); setEditMsg(null);
+    const { error } = await supabase.from("client_goals").update({
+      direction: editForm.direction,
+      target_value: Number(editForm.target_value),
+      target_date: editForm.target_date,
+    }).eq("id", goal.id);
+    setSavingEdit(false);
+    if (error) { setEditMsg({ ok: false, text: error.message }); return; }
+    setEditing(false);
+    await load();
+  };
+
   const generateInsight = async () => {
     setGenerating(true); setGenErr(null);
     try {
@@ -167,14 +190,32 @@ export function GoalsSection({ client }) {
             <CardTitle>Goal — {goal.direction} to {goal.target_value}{goal.unit} by {goal.target_date}</CardTitle>
             <div style={{ fontSize: 11, color: S.muted }}>Baseline {goal.baseline_value}{goal.unit} on {goal.baseline_date}</div>
           </div>
-          {s.classification && <StatusBadge label={s.classification} tone={CLASSIFICATION_TONE[s.classification] || "neutral"} />}
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            {s.classification && <StatusBadge label={s.classification} tone={CLASSIFICATION_TONE[s.classification] || "neutral"} />}
+            {!editing && <Btn sm onClick={startEdit}>Edit</Btn>}
+          </div>
         </div>
-        <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
-          <MetricCard label="Goal Score" value={s.overallScore ?? "—"} unit={s.overallScore != null ? "/100" : ""} />
-          <MetricCard label="Est. Completion" value={etaText} unit="" />
-          <MetricCard label="Nutrition" value={s.components?.nutrition ?? "—"} unit={s.components?.nutrition != null ? "%" : ""} />
-          <MetricCard label="Training" value={s.components?.training ?? "—"} unit={s.components?.training != null ? "%" : ""} />
-        </div>
+        {editing ? (
+          <>
+            <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 8 }}>
+              <Fld label="Direction"><RG options={["decrease", "increase", "maintain"]} value={editForm.direction} onChange={v => setEditForm(p => ({ ...p, direction: v }))} cap /></Fld>
+              <Fld label="Target Weight (lb)"><Inp type="number" value={editForm.target_value} onChange={e => setEditForm(p => ({ ...p, target_value: e.target.value }))} placeholder="e.g. 180" /></Fld>
+              <Fld label="Target Date"><Inp type="date" value={editForm.target_date} onChange={e => setEditForm(p => ({ ...p, target_date: e.target.value }))} /></Fld>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+              <Btn onClick={saveEdit} disabled={savingEdit}>{savingEdit ? "Saving..." : "Save Changes"}</Btn>
+              <button onClick={() => setEditing(false)} style={{ padding: "7px 14px", fontSize: 10, background: "transparent", color: S.text, border: "1px solid " + S.border, cursor: "pointer", fontWeight: 600, letterSpacing: "1.5px", textTransform: "uppercase" }}>Cancel</button>
+            </div>
+            <Alert variant={editMsg?.ok ? "success" : "error"}>{editMsg?.text}</Alert>
+          </>
+        ) : (
+          <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+            <MetricCard label="Goal Score" value={s.overallScore ?? "—"} unit={s.overallScore != null ? "/100" : ""} />
+            <MetricCard label="Est. Completion" value={etaText} unit="" />
+            <MetricCard label="Nutrition" value={s.components?.nutrition ?? "—"} unit={s.components?.nutrition != null ? "%" : ""} />
+            <MetricCard label="Training" value={s.components?.training ?? "—"} unit={s.components?.training != null ? "%" : ""} />
+          </div>
+        )}
       </Card>
 
       <Card>
