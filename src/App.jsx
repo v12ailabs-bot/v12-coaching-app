@@ -1959,6 +1959,8 @@ function CoachHome({ setPage, openClient }) {
 
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
+  const daysSinceDate = (d)=> Math.round((new Date(todayStr()) - new Date(d)) / 86400000);
+
   const assessed = clients.map(c=>{
     // Program-only clients have no coach and no check-ins, so the check-in-based
     // attention flags don't apply — never surface them here.
