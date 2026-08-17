@@ -3,5 +3,8 @@
     "api/generate-program.js": { "maxDuration": 60 },
     "api/summary.js": { "maxDuration": 60 },
     "api/goal-insight.js": { "maxDuration": 60 }
-  }
+  },
+  "crons": [
+    { "path": "/api/checkin-digest", "schedule": "0 12 * * *" }
+  ]
 }
