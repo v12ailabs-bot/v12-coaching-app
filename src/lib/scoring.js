@@ -39,26 +39,52 @@ export function nutritionScoreFrom(checkins, days = 30) {
   return { score: Math.round(total / recent.length), n: recent.length };
 }
 
-// One client's "needs attention" assessment: adherence/nutrition/goal/recovery
-// flags plus an overall risk level. This is the single source of truth behind
-// the coach's Needs Attention board (CoachHome) AND the client's own at-risk
-// summary on their Home page (ClientHome) — same signals, same thresholds, so
-// a client never sees a different picture than their coach does. Each flag
-// carries `action` (coach-facing: what the coach should do about it) and
-// `clientMessage` (client-facing: the coach talking directly to the client
-// about it) so the two views can reuse one flag list with different copy.
-export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, today = todayStr()) {
+// Logging/engagement signals — how consistently the client is checking in,
+// independent of whether they're actually progressing. Kept separate from
+// the At-Risk flags below: a client can be progressing well toward their
+// goal while logging sparsely, and shouldn't land on the At-Risk board for
+// that. `loggingStatus` is the at-a-glance Good/Fair/Poor badge; `loggingFlags`
+// is the detail behind it, phrased the same way At-Risk flags are.
+export function loggingAssessment(dailyCheckins, today = todayStr()) {
   const daysSinceDate = (d) => Math.round((new Date(today) - new Date(d)) / 86400000);
   const ch = dailyCheckins || [];
   const adh = adherenceFrom(ch, 30);
   const last = ch.length ? ch[ch.length - 1].date : null;
   const since = last ? daysSinceDate(last) : null;
 
+  const loggingFlags = [];
+  if (since == null) loggingFlags.push({ label: "No activity yet", tone: "red", detail: "This client has never logged a daily check-in.", action: "Reach out to help them log their first check-in.", clientMessage: "You haven't logged a check-in yet — let's get your first one in today." });
+  else if (since > 7) loggingFlags.push({ label: `No activity ${since}d`, tone: "red", detail: `No daily check-in in ${since} days — worth reaching out to see what's going on.`, action: "Send a check-in message today.", clientMessage: `It's been ${since} days since your last check-in — let's get back on track, I'm here to help.` });
+  else if (since >= 3) loggingFlags.push({ label: `${since}d since check-in`, tone: "amber", detail: `Last logged a daily check-in ${since} days ago.`, action: "A light nudge before this becomes a longer gap.", clientMessage: `Last check-in was ${since} days ago — a light nudge before this becomes a longer gap.` });
+  if (adh.score < 50) loggingFlags.push({ label: `Adherence ${adh.score}%`, tone: "amber", detail: `Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`, action: "Simplify the check-in ask and address any stated barriers.", clientMessage: `You've checked in on ${adh.score}% of the last 30 days — let's aim for more consistency, even a quick one helps.` });
+
+  const last7 = ch.filter((r) => daysSinceDate(r.date) <= 6).length;
+  const prior7 = ch.filter((r) => daysSinceDate(r.date) > 6 && daysSinceDate(r.date) <= 13).length;
+  if (prior7 >= 4 && last7 <= prior7 - 3) loggingFlags.push({ label: "Logging slowing down", tone: "amber", detail: `Checked in ${last7}/7 days this week, down from ${prior7}/7 the week before.`, action: "Worth a quick check-in before this turns into a gap.", clientMessage: `You've logged ${last7}/7 days this week, down from ${prior7}/7 last week — a quick check-in now keeps your momentum before it turns into a gap.` });
+
+  const level = (since == null || since > 7 || adh.score < 50) ? "poor" : (since >= 3 || adh.score < 70) ? "fair" : "good";
+  const label = level === "poor" ? "Poor logging" : level === "fair" ? "Fair logging" : "Good logging";
+  const loggingStatus = { level, label };
+
+  return { adh, last, since, loggingFlags, loggingStatus };
+}
+
+// One client's "needs attention" assessment: nutrition/goal/recovery flags
+// plus an overall risk level, based purely on progress toward their goal —
+// NOT on how consistently they log (see loggingAssessment for that). This is
+// the single source of truth behind the coach's Needs Attention board
+// (CoachHome) AND the client's own at-risk summary on their Home page
+// (ClientHome) — same signals, same thresholds, so a client never sees a
+// different picture than their coach does. Each flag carries `action`
+// (coach-facing: what the coach should do about it) and `clientMessage`
+// (client-facing: the coach talking directly to the client about it) so the
+// two views can reuse one flag list with different copy.
+export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, today = todayStr()) {
+  const daysSinceDate = (d) => Math.round((new Date(today) - new Date(d)) / 86400000);
+  const ch = dailyCheckins || [];
+  const { adh, last, since, loggingFlags, loggingStatus } = loggingAssessment(ch, today);
+
   const flags = [];
-  if (since == null) flags.push({ label: "No activity yet", tone: "red", detail: "This client has never logged a daily check-in.", action: "Reach out to help them log their first check-in.", clientMessage: "You haven't logged a check-in yet — let's get your first one in today." });
-  else if (since > 7) flags.push({ label: `No activity ${since}d`, tone: "red", detail: `No daily check-in in ${since} days — worth reaching out to see what's going on.`, action: "Send a check-in message today.", clientMessage: `It's been ${since} days since your last check-in — let's get back on track, I'm here to help.` });
-  else if (since >= 3) flags.push({ label: `${since}d since check-in`, tone: "amber", detail: `Last logged a daily check-in ${since} days ago.`, action: "A light nudge before this becomes a longer gap.", clientMessage: `Last check-in was ${since} days ago — a light nudge before this becomes a longer gap.` });
-  if (adh.score < 50) flags.push({ label: `Adherence ${adh.score}%`, tone: "amber", detail: `Only checked in on ${adh.score}% of the last 30 days (aim for 70%+).`, action: "Simplify the check-in ask and address any stated barriers.", clientMessage: `You've checked in on ${adh.score}% of the last 30 days — let's aim for more consistency, even a quick one helps.` });
   const nut = nutritionScoreFrom(ch, 30);
   if (nut.score != null && nut.n >= 3 && nut.score < 50) flags.push({ label: `Nutrition ${nut.score}%`, tone: "amber", detail: `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`, action: "Revisit the nutrition plan for something more sustainable.", clientMessage: `Your nutrition has averaged ${nut.score}% over your last few check-ins — let's find something more sustainable together.` });
 
@@ -89,11 +115,7 @@ export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, to
     if (priorAvg - recentAvg >= 1.5) flags.push({ label: "Recovery down", tone: "amber", detail: `Self-rated sleep/hydration averaged ${recentAvg.toFixed(1)}/10 the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 the 2 weeks before.`, action: "Check in on sleep and stress load.", clientMessage: `Your self-rated sleep/hydration has dipped to ${recentAvg.toFixed(1)}/10 over the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 before that — how are you feeling? Let's check in on that.` });
   }
 
-  const last7 = ch.filter((r) => daysSinceDate(r.date) <= 6).length;
-  const prior7 = ch.filter((r) => daysSinceDate(r.date) > 6 && daysSinceDate(r.date) <= 13).length;
-  if (prior7 >= 4 && last7 <= prior7 - 3) flags.push({ label: "Logging slowing down", tone: "amber", detail: `Checked in ${last7}/7 days this week, down from ${prior7}/7 the week before.`, action: "Worth a quick check-in before this turns into a gap.", clientMessage: `You've logged ${last7}/7 days this week, down from ${prior7}/7 last week — a quick check-in now keeps your momentum before it turns into a gap.` });
-
   const severity = flags.reduce((s, f) => s + (f.tone === "red" ? 2 : 1), 0);
   const riskLevel = severity >= 4 ? "High" : severity >= 2 ? "Medium" : severity >= 1 ? "Low" : "On Track";
-  return { client, adh, last, since, flags, severity, riskLevel, goalScore };
+  return { client, adh, last, since, flags, loggingFlags, loggingStatus, severity, riskLevel, goalScore };
 }

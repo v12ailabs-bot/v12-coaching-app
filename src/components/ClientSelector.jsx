@@ -8,7 +8,12 @@ import { S, avatarFrom, COLORS } from "../theme.jsx";
 // be controlled (pass `archived`+`onToggleArchived`) when the parent already
 // tracks that state for other logic (e.g. keeping the selection valid), or
 // left uncontrolled for a simple drop-in.
-export function ClientSelector({ clients, selectedId, onSelect, showArchivedToggle = true, archived, onToggleArchived }) {
+const LOGGING_COLOR = { good: "#00c9a7", fair: "#f5a623", poor: "#ff6b5b" };
+
+// Optional `badgeFor(client)` renders a small status badge (e.g. logging
+// consistency) to the right of each row — returns null/undefined to skip it
+// for a given client (e.g. program-only clients with no check-in data).
+export function ClientSelector({ clients, selectedId, onSelect, showArchivedToggle = true, archived, onToggleArchived, badgeFor }) {
   const [query, setQuery] = useState("");
   const [internalArchived, setInternalArchived] = useState(false);
   const isControlled = archived !== undefined;
@@ -71,6 +76,11 @@ export function ClientSelector({ clients, selectedId, onSelect, showArchivedTogg
                   {c.goal || "No goal set"}
                 </div>
               </div>
+              {badgeFor && badgeFor(c) && (
+                <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", color: LOGGING_COLOR[badgeFor(c).level] || S.muted, flexShrink: 0, whiteSpace: "nowrap" }}>
+                  {badgeFor(c).label}
+                </span>
+              )}
               {c.archived && (
                 <span style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, flexShrink: 0 }}>Archived</span>
               )}

@@ -1999,7 +1999,8 @@ function CoachHome({ setPage, openClient }) {
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
 
       <CollapsibleSection title="All Clients" summary={`${coached.length} total`}>
-        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={openClient} showArchivedToggle={false}/>
+        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={openClient} showArchivedToggle={false}
+          badgeFor={(c)=>{ const a=coached.find(x=>x.client.id===c.id); return a?.loggingStatus; }}/>
       </CollapsibleSection>
 
       {messages.length>0 && (
