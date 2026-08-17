@@ -40,20 +40,22 @@ export default async function handler(req, res) {
       .single();
     if (error) throw error;
 
-    // Fire-and-forget: a Notion failure never fails the applicant's submission.
+    // Awaited (but never fails the applicant's submission on error) — Vercel
+    // can freeze the function as soon as the response is sent, which silently
+    // kills any still-in-flight fire-and-forget calls. Awaiting here keeps the
+    // function alive until both finish, while Promise.allSettled ensures a
+    // Notion or email failure still can't fail the submission itself.
     const injuries = [
       ...currentInjuries.map((v) => `Current: ${v}`),
       ...previousInjuries.map((v) => `Previous: ${v}`),
       ...painTriggers.map((v) => `Trigger: ${v}`),
     ].join("; ");
-    createNotionApplication({ ...fields, email, injuries }).catch((e) =>
-      console.error("submit-application: Notion sync failed:", e)
-    );
-
-    // Fire-and-forget: an email failure never fails the applicant's submission.
-    sendApplicationNotificationEmail({ ...fields, email }).catch((e) =>
-      console.error("submit-application: notification email failed:", e)
-    );
+    const [notionResult, emailResult] = await Promise.allSettled([
+      createNotionApplication({ ...fields, email, injuries }),
+      sendApplicationNotificationEmail({ ...fields, email }),
+    ]);
+    if (notionResult.status === "rejected") console.error("submit-application: Notion sync failed:", notionResult.reason);
+    if (emailResult.status === "rejected") console.error("submit-application: notification email failed:", emailResult.reason);
 
     return res.status(200).json({ success: true, lead_id: lead.id });
   } catch (err) {
