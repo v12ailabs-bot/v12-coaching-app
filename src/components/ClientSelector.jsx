@@ -63,7 +63,7 @@ export function ClientSelector({ clients, selectedId, onSelect, showArchivedTogg
             <button key={c.id} onClick={() => onSelect(c.id)}
               style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", border: "none",
                 borderBottom: i < filtered.length - 1 ? "1px solid " + S.border : "none",
-                background: isSel ? "rgba(255,77,0,.08)" : "transparent", cursor: "pointer", textAlign: "left" }}>
+                background: isSel ? "rgba(255,106,0,.08)" : "transparent", cursor: "pointer", textAlign: "left" }}>
               <div style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, background: COLORS[i % COLORS.length],
                 color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
                 {avatarFrom(c.name || c.email)}

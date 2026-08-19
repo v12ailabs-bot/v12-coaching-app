@@ -10,7 +10,7 @@ function MultiSelectChips({ label, options, values, onChange }) {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {options.map((opt) => (
           <button key={opt} type="button" onClick={() => toggle(opt)}
-            style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid " + (values.includes(opt) ? S.accent : S.border), background: values.includes(opt) ? "rgba(255,77,0,.1)" : "transparent", color: values.includes(opt) ? S.accent : S.muted }}>
+            style={{ padding: "6px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", border: "1px solid " + (values.includes(opt) ? S.accent : S.border), background: values.includes(opt) ? "rgba(255,106,0,.1)" : "transparent", color: values.includes(opt) ? S.accent : S.muted }}>
             {opt}
           </button>
         ))}

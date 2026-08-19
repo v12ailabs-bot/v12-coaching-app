@@ -6,10 +6,11 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, L
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
-import { ClientSelector } from "./components/ClientSelector.jsx";
+import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
+import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
+import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
+import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT } from "./lib/constants.js";
-import { assessClientRisk } from "./lib/scoring.js";
-import { computeGoalScore } from "./lib/scoring/goalScoring.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -593,26 +594,37 @@ function TopBar({ profile, isCoach, onLogout }) {
   );
 }
 
+// Pages grouped behind the "Check-In" and "More" nav tabs — used only to
+// decide which nav item highlights when the client is on one of the pages
+// it groups (e.g. still highlight "More" while on the Nutrition page).
+const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
+const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources"];
+
 function Sidebar({ isCoach, programOnly, page, setPage }) {
   const isMobile = useIsMobile();
-  // Program-only clients get the self-guided portal: their plan, nutrition,
-  // workout logging, a solo habit tracker + progress view, and the resource hub —
-  // no coach touchpoints and no check-in prompts.
-  // `short` labels are used in the cramped mobile bottom bar (clients have 9 tabs;
-  // the full labels overlap at that width).
+  // Client nav is deliberately short — 5 tabs (4 for program-only, who have
+  // no check-in flow) so it fits a mobile bottom bar without crowding.
+  // Everything else (Program, Nutrition, Habits, Library) lives behind
+  // "More" (see MoreMenu); Daily/Weekly check-in live behind "Check-In"
+  // (see CheckInHome). Both are reachable directly too (e.g. dashboard
+  // reminders deep-link straight to "daily") — the nav is just the entry point.
   const clientNav = programOnly
-    ? [{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
-    : [{id:"dashboard",icon:"⚡",label:"Dashboard",short:"Home"},{id:"program",icon:"📋",label:"Training Plan",short:"Plan"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Meals"},{id:"daily",icon:"✅",label:"Daily Check-In",short:"Daily"},{id:"weekly",icon:"🔥",label:"Weekly Check-In",short:"Weekly"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"resources",icon:"📚",label:"Library",short:"Library"}];
+    ? [{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
+    : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
+  const activeId = nav.some((n) => n.id === page) ? page
+    : CHECKIN_GROUP.includes(page) ? "checkin"
+    : MORE_GROUP.includes(page) ? "more"
+    : page;
   return (
     <nav className="sidebar" style={{width:216,background:S.surface,borderRight:"1px solid "+S.border,padding:"20px 0",flexShrink:0,position:"sticky",top:54,height:"calc(100vh - 54px)",overflowY:"auto"}}>
       <div className="sidebar-inner" style={{padding:"0 14px"}}>
         <div className="sidebar-heading" style={{fontSize:9,letterSpacing:"2.5px",textTransform:"uppercase",color:S.muted,padding:"0 10px",marginBottom:6}}>{isCoach?"Coach":"Training"}</div>
         {nav.map(item=>(
           <div key={item.id} className="sidebar-item" onClick={()=>setPage(item.id)}
-            style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",fontSize:13,fontWeight:500,color:page===item.id?S.accent:S.muted,cursor:"pointer",borderRadius:3,marginBottom:1,background:page===item.id?"rgba(255,77,0,.12)":"transparent"}}>
+            style={{display:"flex",alignItems:"center",gap:10,padding:"9px 10px",fontSize:13,fontWeight:500,color:activeId===item.id?S.accent:S.muted,cursor:"pointer",borderRadius:3,marginBottom:1,background:activeId===item.id?"rgba(255,106,0,.12)":"transparent"}}>
             <span style={{fontSize:15,width:20,textAlign:"center"}}>{item.icon}</span>
             <span className="sidebar-label">{isMobile&&item.short?item.short:item.label}</span>
           </div>
@@ -622,167 +634,6 @@ function Sidebar({ isCoach, programOnly, page, setPage }) {
   );
 }
 
-// Client-visible coach messages (coach_messages table) with real history and
-// read-state. The oldest unacknowledged message shows as a banner; clicking
-// "Got it" acknowledges it (permanently — it never reappears) and reveals the
-// next one, if any. Everything acknowledged lives in a collapsed history
-// list below. Placed at the top of the Dashboard and the Training Plan.
-function CoachMessage({ profile }) {
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [showHistory, setShowHistory] = useState(false);
-  const [acking, setAcking] = useState(false);
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("coach_messages").select("*").eq("client_id", profile.id).order("created_at", { ascending: false });
-    setMessages(data || []);
-    setLoading(false);
-  }, [profile.id]);
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return null;
-
-  const unacknowledged = [...messages].filter(m => !m.acknowledged_at).sort((a, b) => (a.created_at < b.created_at ? -1 : 1))[0];
-  const history = messages.filter(m => m.id !== unacknowledged?.id);
-
-  const acknowledge = async () => {
-    if (!unacknowledged) return;
-    setAcking(true);
-    await supabase.from("coach_messages").update({ acknowledged_at: new Date().toISOString() }).eq("id", unacknowledged.id);
-    setAcking(false);
-    load();
-  };
-
-  if (!unacknowledged && history.length === 0) return null;
-
-  return (
-    <div style={{ marginBottom: 20 }}>
-      {unacknowledged && (
-        <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: history.length ? 10 : 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-            <span>💬</span> Message from your coach
-          </div>
-          <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap", marginBottom: 14 }}>{unacknowledged.body}</div>
-          <Btn sm teal onClick={acknowledge} disabled={acking}>{acking ? "..." : "Got it"}</Btn>
-        </Card>
-      )}
-      {history.length > 0 && (
-        <>
-          <button onClick={() => setShowHistory(v => !v)}
-            style={{ background: "none", border: "none", color: S.muted, fontSize: 11, fontWeight: 600, cursor: "pointer", padding: "4px 0" }}>
-            {showHistory ? "Hide" : "View"} message history ({history.length})
-          </button>
-          {showHistory && history.map(m => (
-            <div key={m.id} style={{ background: S.surface, border: "1px solid " + S.border, padding: "12px 14px", marginTop: 8 }}>
-              <div style={{ fontSize: 10, color: S.muted, marginBottom: 6 }}>{(m.created_at || "").slice(0, 10)}</div>
-              <div style={{ fontSize: 13, lineHeight: 1.6, color: S.text, whiteSpace: "pre-wrap" }}>{m.body}</div>
-            </div>
-          ))}
-        </>
-      )}
-    </div>
-  );
-}
-
-// Client-visible surface for a coach-generated AI goal insight
-// (client_goal_insights) — same read-state pattern as CoachMessage above:
-// the newest unacknowledged insight shows as a banner on Home with a "Got
-// it" button, then never reappears here (it stays viewable under Progress ->
-// Goals for as long as the goal is active).
-function GoalInsightBanner({ profile }) {
-  const [insight, setInsight] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [acking, setAcking] = useState(false);
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("client_goal_insights").select("*").eq("client_id", profile.id)
-      .is("acknowledged_at", null).order("created_at", { ascending: false }).limit(1).maybeSingle();
-    setInsight(data || null);
-    setLoading(false);
-  }, [profile.id]);
-  useEffect(() => { load(); }, [load]);
-
-  if (loading || !insight) return null;
-
-  const acknowledge = async () => {
-    setAcking(true);
-    await supabase.from("client_goal_insights").update({ acknowledged_at: new Date().toISOString() }).eq("id", insight.id);
-    setAcking(false);
-    load();
-  };
-
-  return (
-    <Card style={{ borderLeft: "3px solid " + S.accent, marginBottom: 20 }}>
-      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <span>🎯</span> New Coaching Insight
-      </div>
-      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, whiteSpace: "pre-wrap", marginBottom: 14 }}>{insight.insight_text}</div>
-      <Btn sm teal onClick={acknowledge} disabled={acking}>{acking ? "..." : "Got it"}</Btn>
-    </Card>
-  );
-}
-
-const SUMMARY_MONTH_NAMES = ["January","February","March","April","May","June","July","August","September","October","November","December"];
-const summaryMonthLabel = (period) => { const [y,m] = (period||"").split("-"); return m ? `${SUMMARY_MONTH_NAMES[+m-1]} ${y}` : period; };
-
-// Client-visible "new recap ready" banner for the AI monthly summary
-// (client_summaries) — same read-state pattern as CoachMessage/
-// GoalInsightBanner above: the newest unacknowledged recap shows as a banner
-// on Home, and "View Recap" both acknowledges it and sends the client to
-// Progress, where the full recap lives (read-only, in AISummarySection.jsx).
-function NewSummaryBanner({ profile, setPage }) {
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [acking, setAcking] = useState(false);
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("client_summaries").select("id,period").eq("client_id", profile.id)
-      .is("acknowledged_at", null).order("period", { ascending: false }).limit(1).maybeSingle();
-    setSummary(data || null);
-    setLoading(false);
-  }, [profile.id]);
-  useEffect(() => { load(); }, [load]);
-
-  if (loading || !summary) return null;
-
-  const view = async () => {
-    setAcking(true);
-    await supabase.from("client_summaries").update({ acknowledged_at: new Date().toISOString() }).eq("id", summary.id);
-    setAcking(false);
-    setPage("progress");
-  };
-
-  return (
-    <Card style={{ borderLeft: "3px solid " + S.accent2, marginBottom: 20 }}>
-      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent2, marginBottom: 10, display: "flex", alignItems: "center", gap: 8 }}>
-        <span>📊</span> New Monthly Recap
-      </div>
-      <div style={{ fontSize: 14, lineHeight: 1.65, color: S.text, marginBottom: 14 }}>Your recap for {summaryMonthLabel(summary.period)} is ready to view.</div>
-      <Btn sm teal onClick={view} disabled={acking}>{acking ? "..." : "View Recap"}</Btn>
-    </Card>
-  );
-}
-
-// Client-side surface for the manual PayPal invoice link the coach pastes in
-// after Accept (CRMPanel) -- shown until the coach marks the lead paid.
-function InvoiceCard({ profile }) {
-  const [lead, setLead] = useState(null);
-  useEffect(() => {
-    supabase.from("leads").select("invoice_link,paid").eq("client_id", profile.id)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => setLead(data));
-  }, [profile.id]);
-  if (!lead?.invoice_link || lead.paid) return null;
-  return (
-    <Card style={{ borderLeft: "3px solid " + S.accent }}>
-      <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.accent, marginBottom: 10 }}>Complete Your Enrollment</div>
-      <div style={{ fontSize: 13, color: S.text, marginBottom: 12, lineHeight: 1.6 }}>Finish signing up by completing payment below.</div>
-      <a href={lead.invoice_link} target="_blank" rel="noreferrer" style={{ textDecoration: "none" }}>
-        <button style={{ ...bS({ padding: "10px 22px" }), background: S.accent, color: "white" }}>Pay Now →</button>
-      </a>
-    </Card>
-  );
-}
 const TEMPLATE_CATEGORIES = ["Hybrid", "Fat Loss", "Muscle", "Strength", "Athletic", "Beginner", "Home", "General"];
 const RESOURCE_KINDS = ["recipe", "article", "video", "pdf"];
 // Library is organized into these fixed collapsible folders. The coach files each
@@ -857,7 +708,7 @@ function ClientWelcome({ profile, onEnter }) {
     <div style={{ position: "relative" }}>
       {/* Hero */}
       <div style={{ position: "relative", overflow: "hidden", border: "1px solid " + S.border, background: S.surface, padding: "56px 40px", marginBottom: 24 }}>
-        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 20% 0%, rgba(198,255,0,.14) 0%, transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(255,77,0,.10) 0%, transparent 50%)" }} />
+        <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse at 20% 0%, rgba(198,255,0,.14) 0%, transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(255,106,0,.10) 0%, transparent 50%)" }} />
         <div style={{ position: "relative" }}>
           <div style={{ fontSize: 10, letterSpacing: 4, textTransform: "uppercase", color: S.neon, marginBottom: 14 }}>V12 Performance Systems · Private Client</div>
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 68, lineHeight: 0.95, letterSpacing: 1 }}>
@@ -934,141 +785,6 @@ function ClientWelcome({ profile, onEnter }) {
           <Btn onClick={onEnter}>Enter your portal →</Btn>
         </div>
       </Card>
-    </div>
-  );
-}
-
-function ClientHome({ profile, setPage }) {
-  const [checkins, setCheckins] = useState([]);
-  const [weeklyDone, setWeeklyDone] = useState(true);
-  const [weeklyRecent, setWeeklyRecent] = useState([]);
-  const [goal, setGoal] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [riskOpen, setRiskOpen] = useState(false);
-
-  useEffect(()=>{
-    (async()=>{
-      const {data:ci} = await supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date");
-      setCheckins(ci||[]);
-      const ws = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return localDateStr(d);})();
-      const {data:wc} = await supabase.from("weekly_checkins").select("id").eq("client_id",profile.id).eq("date",ws).maybeSingle();
-      setWeeklyDone(!!wc);
-      // Last 28 days of weekly check-ins, same window CoachHome uses for the
-      // recovery-trend flag in assessClientRisk.
-      const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-27);
-      const {data:wr} = await supabase.from("weekly_checkins").select("date,sleep_quality,hydration_quality")
-        .eq("client_id",profile.id).gte("date",localDateStr(wcutoff)).order("date");
-      setWeeklyRecent(wr||[]);
-      const {data:g} = await supabase.from("client_goals").select("*").eq("client_id",profile.id).eq("status","active").eq("metric_key","bodyweight")
-        .order("created_at",{ascending:false}).limit(1).maybeSingle();
-      setGoal(g||null);
-      setLoading(false);
-    })();
-  },[profile.id]);
-
-  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
-
-  const doneToday = checkins.some(c=>c.date===todayStr());
-  // Same assessClientRisk the coach's Needs Attention board uses — the client
-  // sees the same flags their coach does, phrased as the coach talking to them.
-  const risk = assessClientRisk(profile, checkins, weeklyRecent, goal);
-  const r7 = checkins.slice(-7);
-  const avgE = r7.length?(r7.reduce((s,c)=>s+c.energy,0)/r7.length).toFixed(1):"—";
-  const avgS = r7.length?(r7.reduce((s,c)=>s+c.sleep,0)/r7.length).toFixed(1):"—";
-  const lastW = checkins.length?checkins[checkins.length-1].weight:"—";
-  const streak = (()=>{let s=0;for(let i=checkins.length-1;i>=0;i--){if(checkins[i].workout==="completed")s++;else break;}return s;})();
-  // Same computeGoalScore GoalsSection/Progress use — one source of truth.
-  const weightSeries = checkins.filter(c=>c.weight!=null).map(c=>({date:c.date,value:c.weight}));
-  const goalScore = goal ? computeGoalScore(goal, weightSeries, {}) : null;
-  const daysRemaining = goal ? Math.max(0,Math.ceil((new Date(goal.target_date+"T00:00:00Z") - new Date()) / 86400000)) : null;
-  const tickEvery = (n) => Math.max(1, Math.floor(n / 8));
-
-  return (
-    <div>
-      <PageTitle title={"Welcome back, "+((profile.name||"").split(" ")[0]||"Athlete")+"."} sub={profile.goal||"Keep pushing."}/>
-      <CoachMessage profile={profile} />
-      <GoalInsightBanner profile={profile} />
-      <NewSummaryBanner profile={profile} setPage={setPage} />
-      <CollapsibleSection title="Habits">
-        <Habits profile={profile} />
-      </CollapsibleSection>
-      <InvoiceCard profile={profile} />
-      {!doneToday && (
-        <div style={{background:"rgba(255,77,0,.09)",border:"1px solid rgba(255,77,0,.25)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12,flexWrap:"wrap"}}>
-          <span style={{fontSize:13}}>Reminder: Daily check-in not done yet.</span>
-          <Btn sm onClick={()=>setPage("daily")}>Do it now</Btn>
-        </div>
-      )}
-      {!weeklyDone && (
-        <div style={{background:"rgba(0,201,167,.10)",border:"1px solid rgba(0,201,167,.28)",padding:"13px 18px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:20,flexWrap:"wrap"}}>
-          <span style={{fontSize:13}}>Your weekly check-in is due this week — it's how your coach adjusts your plan.</span>
-          <Btn sm teal onClick={()=>setPage("weekly")}>Start weekly</Btn>
-        </div>
-      )}
-      {risk.flags.length>0 && (
-        <div style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(risk.severity>=2?"#c0392b":"#f5a623"),marginBottom:20,overflow:"hidden"}}>
-          <div onClick={()=>setRiskOpen(o=>!o)} style={{padding:"14px 18px",display:"flex",alignItems:"center",gap:14,cursor:"pointer"}}>
-            <span style={{fontSize:11,color:S.accent,flexShrink:0,display:"inline-block",transition:"transform .15s",transform:riskOpen?"rotate(90deg)":"none"}}>▶</span>
-            <div style={{flex:1,minWidth:0,fontWeight:600,fontSize:14}}>How you're tracking</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"60%"}}>
-              <StatusBadge label={`${risk.riskLevel} Risk`} tone={risk.riskLevel==="High"?"red":risk.riskLevel==="Medium"?"amber":"neutral"}/>
-              {risk.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
-            </div>
-          </div>
-          {riskOpen && (
-            <div style={{padding:"0 18px 16px 43px"}}>
-              {risk.flags.map((f,i)=>(
-                <div key={i} style={{fontSize:12,color:S.text,padding:"6px 0",borderTop:i===0?"1px solid "+S.border:"none",paddingTop:i===0?12:6}}>
-                  <div><span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.clientMessage}</div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-      <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:22}}>
-        <Stat label="Current Weight" value={lastW} unit="lb"/>
-        <Stat label="Workout Streak" value={streak} unit="days"/>
-        <Stat label="Avg Sleep" value={avgS} unit="/10"/>
-        <Stat label="Avg Energy" value={avgE} unit="/10"/>
-        {goal && <Stat label="Goal Progress" value={goalScore?.overallScore??"—"} unit={goalScore?.overallScore!=null?"%":""}/>}
-        {goal && <Stat label="Days Remaining" value={daysRemaining} unit="days"/>}
-      </div>
-      {checkins.length>1?(
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Bodyweight Trend" sub={goal?`Full history · target ${goal.target_value}${goal.unit}`:"Full history"}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={checkins}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(checkins.length)}/>
-                <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT}/>
-                {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
-                <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={false}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CC>
-          <CC title="Energy and Sleep" sub="Full history">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={checkins}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(checkins.length)}/>
-                <YAxis domain={[0,10]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT}/>
-                <Line type="monotone" dataKey="energy" stroke={S.accent} strokeWidth={2} dot={false} name="Energy"/>
-                <Line type="monotone" dataKey="sleep" stroke={S.accent2} strokeWidth={2} dot={false} name="Sleep"/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CC>
-        </div>
-      ):(
-        <Card style={{textAlign:"center",padding:48}}>
-          <div style={{fontSize:32,marginBottom:12}}>📋</div>
-          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24,marginBottom:8}}>No check-ins yet</div>
-          <div style={{color:S.muted,fontSize:13,marginBottom:20}}>Log your first daily check-in to start tracking.</div>
-          <Btn onClick={()=>setPage("daily")}>Start Now</Btn>
-        </Card>
-      )}
     </div>
   );
 }
@@ -1729,7 +1445,7 @@ function Workouts({ profile, readOnly, embedded }) {
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                   {dayExs.map(ex=>(
                     <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
-                      style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,77,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
+                      style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,106,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
                       {ex.name}{BLOCK_TYPE_SHORT[ex.block_type]&&<span style={{marginLeft:6,fontSize:9,color:S.accent2}}>{BLOCK_TYPE_SHORT[ex.block_type]}</span>}
                     </button>
                   ))}
@@ -1899,210 +1615,7 @@ function Workouts({ profile, readOnly, embedded }) {
   );
 }
 
-// Coach priority dashboard: surfaces clients who need attention based on missed
-// check-ins, low adherence, no recent activity, or a wrong-direction weight trend.
-function CoachHome({ setPage, openClient }) {
-  const [clients, setClients] = useState([]);
-  const [byClient, setByClient] = useState({});
-  const [weeklyRecent, setWeeklyRecent] = useState([]);
-  const [goalsByClient, setGoalsByClient] = useState({});
-  const [upgrades, setUpgrades] = useState([]);
-  const [loading, setLoading] = useState(true);
-  // Session-only expand state — collapsed by default. Needs Attention itself
-  // always stays visible (per the dashboard's whole purpose); only the
-  // per-client rows inside it expand/collapse, tracked separately.
-  const [expandedNeeds, setExpandedNeeds] = useState(() => new Set());
-  const toggleNeeds = (id) => setExpandedNeeds(prev => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-
-  useEffect(()=>{
-    (async()=>{
-      const {data:cl} = await supabase.from("profiles").select("*").neq("email",COACH_EMAIL).neq("archived",true);
-      const list = cl||[];
-      // Coaching signals (check-ins, goals) only ever apply to coaching
-      // clients — program-only clients self-track outside any coach
-      // relationship, so they're excluded from these fetches at the source
-      // rather than relying on the per-client early-return below to ignore them.
-      const coachedIds = list.filter(c=>c.client_type!=="program_only").map(c=>c.id);
-      const grouped = {};
-      let weeklies = [];
-      // Pending upgrade requests from program-only clients.
-      const {data:ur} = await supabase.from("upgrade_requests").select("*").eq("status","pending").order("created_at",{ascending:false});
-      setUpgrades(ur||[]);
-      if(coachedIds.length){
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate()-29);
-        const cut = cutoff.toISOString().split("T")[0];
-        const {data:ch} = await supabase.from("daily_checkins")
-          .select("client_id,date,weight,workout,diet").in("client_id",coachedIds).gte("date",cut).order("date");
-        (ch||[]).forEach(r=>{ (grouped[r.client_id]=grouped[r.client_id]||[]).push(r); });
-        // Weekly check-ins over a 28-day window: the last 14 days feed the
-        // "Client Messages & Flags" card (filtered further below), while the
-        // full 28 gives the recovery-trend flag a prior-2-weeks baseline to
-        // compare against.
-        const wcutoff = new Date(); wcutoff.setDate(wcutoff.getDate()-27);
-        const wcut = wcutoff.toISOString().split("T")[0];
-        const {data:wc} = await supabase.from("weekly_checkins")
-          .select("client_id,date,coach_questions,adjustments,confidence_level,felt_weaker,biggest_challenge,mental_blocks,sleep_quality,hydration_quality")
-          .in("client_id",coachedIds).gte("date",wcut).order("date");
-        weeklies = wc||[];
-      }
-      // Each coached client's active bodyweight goal — same client_goals rows
-      // GoalsSection/Progress read, reused here instead of a duplicate signal.
-      const {data:cg} = coachedIds.length ? await supabase.from("client_goals").select("*").in("client_id",coachedIds).eq("status","active").eq("metric_key","bodyweight") : {data:[]};
-      const goalsMap = {}; (cg||[]).forEach(g=>{goalsMap[g.client_id]=g;});
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setLoading(false);
-    })();
-  },[]);
-
-  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
-
-  const daysSinceDate = (d)=> Math.round((new Date(todayStr()) - new Date(d)) / 86400000);
-
-  const assessed = clients.map(c=>{
-    // Program-only clients have no coach and no check-ins, so the check-in-based
-    // attention flags don't apply — never surface them here.
-    if(c.client_type==="program_only") return {client:c, adh:{score:0}, last:null, since:null, flags:[], severity:0, riskLevel:"On Track", goalScore:null, programOnly:true};
-    const ch = byClient[c.id] || [];
-    const wk = weeklyRecent.filter(w=>w.client_id===c.id);
-    const goal = goalsByClient[c.id] || null;
-    // Same assessClientRisk the client's own Home page uses — one source of
-    // truth for risk flags shared between the coach and client views.
-    return assessClientRisk(c, ch, wk, goal);
-  });
-
-  const needs = assessed.filter(a=>a.flags.length>0).sort((a,b)=>b.severity-a.severity);
-  const coached = assessed.filter(a=>!a.programOnly);
-  const avgAdh = coached.length ? Math.round(coached.reduce((s,a)=>s+a.adh.score,0)/coached.length) : 0;
-  const withGoalScore = coached.filter(a=>a.goalScore?.overallScore!=null);
-  const avgGoalProgress = withGoalScore.length ? Math.round(withGoalScore.reduce((s,a)=>s+a.goalScore.overallScore,0)/withGoalScore.length) : null;
-
-  // Weekly check-in messages/flags the coach should respond to, newest first.
-  const nameOf = (id)=>{ const c=clients.find(x=>x.id===id); return c?(c.name||c.email):"Client"; };
-  const markHandled = async(id)=>{
-    setUpgrades(prev=>prev.filter(u=>u.id!==id));
-    await supabase.from("upgrade_requests").update({status:"handled"}).eq("id",id);
-  };
-  const messages = weeklyRecent.filter(w=>daysSinceDate(w.date)<=13).map(w=>{
-    const items=[];
-    if((w.coach_questions||"").trim()) items.push({label:"Question",tone:"red",text:w.coach_questions});
-    if((w.adjustments||"").trim()) items.push({label:"Wants adjusted",tone:"amber",text:w.adjustments});
-    if(w.confidence_level!=null && w.confidence_level<=4) items.push({label:`Low confidence ${w.confidence_level}/10`,tone:"amber",text:w.biggest_challenge||w.mental_blocks||""});
-    if((w.felt_weaker||"").trim()) items.push({label:"Felt weaker",tone:"amber",text:w.felt_weaker});
-    return items.length?{id:w.client_id,date:w.date,items}:null;
-  }).filter(Boolean).sort((a,b)=>a.date<b.date?1:-1);
-
-  return (
-    <div>
-      <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview"/>
-
-      <CollapsibleSection title="All Clients" summary={`${coached.length} total`}>
-        <ClientSelector clients={coached.map(a=>a.client)} selectedId={null} onSelect={openClient} showArchivedToggle={false}
-          badgeFor={(c)=>{ const a=coached.find(x=>x.client.id===c.id); return a?.loggingStatus; }}/>
-      </CollapsibleSection>
-
-      {messages.length>0 && (
-        <CollapsibleSection title="💬 Client Messages & Flags" summary={`${messages.length} this period`}>
-          <Card>
-            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
-            {messages.map((m,i)=>(
-              <div key={i} onClick={()=>openClient(m.id)}
-                style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(m.items.some(x=>x.tone==="red")?"#c0392b":"#f5a623"),padding:"14px 18px",cursor:"pointer",marginBottom:10}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:12,marginBottom:8}}>
-                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(m.id)}</div>
-                  <div style={{fontSize:11,color:S.muted}}>Week of {m.date}</div>
-                </div>
-                {m.items.map((it,j)=>(
-                  <div key={j} style={{marginBottom:6}}>
-                    <span style={{padding:"2px 8px",fontSize:10,fontWeight:600,marginRight:8,background:it.tone==="red"?"rgba(192,57,43,.16)":"rgba(245,158,11,.14)",color:it.tone==="red"?"#ff6b5b":"#f5a623"}}>{it.label}</span>
-                    {it.text && <span style={{fontSize:13,color:S.text}}>{it.text.length>160?it.text.slice(0,160)+"…":it.text}</span>}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </Card>
-        </CollapsibleSection>
-      )}
-
-      <div className="g4" style={{display:"grid",gridTemplateColumns:avgGoalProgress!=null?"repeat(5,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
-        <Stat label="Total Clients" value={coached.length} unit=""/>
-        <Stat label="Need Attention" value={needs.length} unit=""/>
-        <Stat label="On Track" value={coached.length-needs.length} unit=""/>
-        <Stat label="Avg Adherence" value={avgAdh} unit="%"/>
-        {avgGoalProgress!=null && <Stat label="Avg Goal Progress" value={avgGoalProgress} unit="%"/>}
-      </div>
-
-      {upgrades.length>0 && (
-        <CollapsibleSection title="💎 Upgrade Requests" summary={`${upgrades.length} pending`}>
-          <Card style={{borderLeft:"3px solid "+S.neon}}>
-            <div style={{fontSize:11,color:S.muted,marginBottom:14}}>Program-only clients who want to move to full coaching. Reach out, then mark handled.</div>
-            {upgrades.map(u=>(
-              <div key={u.id} style={{background:S.surface,border:"1px solid "+S.border,padding:"14px 18px",display:"flex",alignItems:"center",gap:16,marginBottom:10,flexWrap:"wrap"}}>
-                <div style={{width:44,height:44,borderRadius:"50%",background:S.neon,color:"#0A0A0B",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-                  {avatarFrom(nameOf(u.client_id))}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:14}}>{nameOf(u.client_id)}</div>
-                  <div style={{fontSize:12,color:S.muted}}>Wants to upgrade to coaching · {(u.created_at||"").slice(0,10)}</div>
-                </div>
-                <div style={{display:"flex",gap:8,flexShrink:0}}>
-                  <Btn sm teal onClick={()=>openClient(u.client_id)}>Open Client</Btn>
-                  <Btn sm onClick={()=>markHandled(u.id)}>Mark handled</Btn>
-                </div>
-              </div>
-            ))}
-          </Card>
-        </CollapsibleSection>
-      )}
-
-      <Card>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-          <CardTitle>⚠ Needs Attention</CardTitle>
-          <Btn sm teal onClick={()=>setPage("clients")}>Manage Clients</Btn>
-        </div>
-        {coached.length===0 && <div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No coaching clients yet. Share the app URL with your clients.</div>}
-        {coached.length>0 && needs.length===0 && <div style={{color:S.accent2,fontSize:13,padding:"8px 0"}}>All clients are on track. Nice work.</div>}
-        {needs.map(a=>{
-          const open = expandedNeeds.has(a.client.id);
-          return (
-            <div key={a.client.id} style={{background:S.surface,border:"1px solid "+S.border,borderLeft:"3px solid "+(a.severity>=2?"#c0392b":"#f5a623"),marginBottom:10,overflow:"hidden"}}>
-              <div onClick={()=>toggleNeeds(a.client.id)}
-                style={{padding:"16px 18px",display:"flex",alignItems:"center",gap:16,cursor:"pointer"}}>
-                <span style={{fontSize:11,color:S.accent,flexShrink:0,display:"inline-block",transition:"transform .15s",transform:open?"rotate(90deg)":"none"}}>▶</span>
-                <div style={{width:44,height:44,borderRadius:"50%",background:S.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:700,flexShrink:0}}>
-                  {avatarFrom(a.client.name||a.client.email)}
-                </div>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontWeight:600,fontSize:14}}>{a.client.name||a.client.email}</div>
-                  <div style={{fontSize:12,color:S.muted}}>{a.client.goal||"No goal set"} · {a.last?`last check-in ${a.last}`:"never checked in"}</div>
-                </div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end",maxWidth:"55%"}}>
-                  <StatusBadge label={`${a.riskLevel} Risk`} tone={a.riskLevel==="High"?"red":a.riskLevel==="Medium"?"amber":"neutral"}/>
-                  {a.flags.map((f,i)=><StatusBadge key={i} label={f.label} tone={f.tone==="red"?"red":"amber"}/>)}
-                </div>
-              </div>
-              {open && (
-                <div style={{padding:"0 18px 16px 74px"}}>
-                  {a.flags.map((f,i)=>(
-                    <div key={i} style={{fontSize:12,color:S.text,padding:"6px 0",borderTop:i===0?"1px solid "+S.border:"none",paddingTop:i===0?12:6}}>
-                      <div><span style={{fontWeight:600,color:f.tone==="red"?"#ff6b5b":"#f5a623"}}>{f.label}.</span> {f.detail}</div>
-                      {f.action && <div style={{color:S.muted,marginTop:2}}>→ {f.action}</div>}
-                    </div>
-                  ))}
-                  <div style={{marginTop:10}}><Btn sm teal onClick={()=>openClient(a.client.id)}>Open in Clients →</Btn></div>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </Card>
-
-    </div>
-  );
-}
-
+// CoachHome now lives in src/features/coachDashboard/CoachHome.jsx.
 // ClientsPanel and CoachProgress were merged into ClientDetailPage
 // (src/features/clientDetail/ClientDetailPage.jsx) — one unified page instead
 // of two separate nav tabs with independent client-selection state.
@@ -2433,7 +1946,7 @@ function TemplatesPanel() {
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
           {["All",...TEMPLATE_CATEGORIES].map(c=>(
             <button key={c} onClick={()=>setCatFilter(c)}
-              style={{padding:"5px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+(catFilter===c?S.accent:S.border),background:catFilter===c?"rgba(255,77,0,.08)":"transparent",color:catFilter===c?S.accent:S.muted}}>
+              style={{padding:"5px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+(catFilter===c?S.accent:S.border),background:catFilter===c?"rgba(255,106,0,.08)":"transparent",color:catFilter===c?S.accent:S.muted}}>
               {c}
             </button>
           ))}
@@ -2767,6 +2280,7 @@ function ClientProgram({ profile }) {
   const [exercises, setExercises] = useState([]);
   const [program, setProgram] = useState(null);
   const [phaseHistory, setPhaseHistory] = useState([]);
+  const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2781,12 +2295,16 @@ function ClientProgram({ profile }) {
       });
     supabase
       .from("programs")
-      .select("name,phase,phase_note")
+      .select("id,name,phase,phase_note")
       .eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle()
-      .then(({ data }) => setProgram(data || null));
+      .then(({ data }) => {
+        setProgram(data || null);
+        if (data) supabase.from("program_phases").select("*").eq("program_id", data.id).order("order_index")
+          .then(({ data: planned }) => setRoadmap(planned || []));
+      });
     supabase
       .from("program_phase_history")
       .select("*")
@@ -2820,6 +2338,11 @@ function ClientProgram({ profile }) {
             <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase}</span>
           </div>
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
+          {roadmap.length > 0 && (
+            <div style={{ marginTop: 18 }}>
+              <ProgramRoadmap phases={roadmap} currentPhase={program.phase} />
+            </div>
+          )}
           {phaseHistory.length > 0 && (
             <CollapsibleSection title="Phase History" summary={`${phaseHistory.length} change${phaseHistory.length > 1 ? "s" : ""}`}>
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -3035,6 +2558,85 @@ function Shell({ profile, isCoach, logout, page, setPage, children }) {
   );
 }
 
+// Unified "Check-In" tab: a small landing that shows today's daily status
+// and this week's weekly status side by side, then drills into the existing
+// DailyCheckin/WeeklyCheckin forms unchanged — the two flows aren't merged
+// into one form, just reachable from one nav destination instead of two.
+function CheckInHome({ profile, setPage }) {
+  const [view, setView] = useState("menu");
+  const [doneToday, setDoneToday] = useState(null);
+  const [weeklyDone, setWeeklyDone] = useState(null);
+
+  useEffect(() => {
+    supabase.from("daily_checkins").select("id").eq("client_id", profile.id).eq("date", todayStr()).maybeSingle()
+      .then(({ data }) => setDoneToday(!!data));
+    const ws = (() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return localDateStr(d); })();
+    supabase.from("weekly_checkins").select("id").eq("client_id", profile.id).eq("date", ws).maybeSingle()
+      .then(({ data }) => setWeeklyDone(!!data));
+  }, [profile.id]);
+
+  if (view === "daily") return <DailyCheckin profile={profile} onDone={() => setView("menu")} />;
+  if (view === "weekly") return <WeeklyCheckin profile={profile} onDone={() => setView("menu")} />;
+
+  return (
+    <div>
+      <PageTitle title="Check-In" sub="Daily and weekly check-ins" />
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+        <Card>
+          <CardTitle>Daily Check-In</CardTitle>
+          <div style={{ fontSize: 13, color: S.text, marginBottom: 14 }}>
+            {doneToday == null ? "Loading..." : doneToday ? "Completed today. Nice work." : "Not done yet today."}
+          </div>
+          <Btn onClick={() => setView("daily")}>{doneToday ? "Update Today's Check-In" : "Complete Check-In"}</Btn>
+        </Card>
+        <Card>
+          <CardTitle>Weekly Check-In</CardTitle>
+          <div style={{ fontSize: 13, color: S.text, marginBottom: 14 }}>
+            {weeklyDone == null ? "Loading..." : weeklyDone ? "Completed this week." : "Due this week — it's how your coach adjusts your plan."}
+          </div>
+          <Btn teal onClick={() => setView("weekly")}>{weeklyDone ? "Update Weekly Check-In" : "Start Weekly Check-In"}</Btn>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+// "More" landing for everything that doesn't fit the primary bottom-nav/
+// sidebar tabs. Each row just navigates to an existing page — no new pages
+// were invented to fill this out (Messages/Settings aren't listed because
+// there's no dedicated route for either yet).
+function MoreMenu({ programOnly, setPage }) {
+  const items = programOnly
+    ? [
+        { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Your fuel plan" },
+        { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
+      ]
+    : [
+        { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
+        { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
+        { id: "habits", icon: "✅", label: "Habits", sub: "Daily habit tracker" },
+        { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
+      ];
+  return (
+    <div>
+      <PageTitle title="More" />
+      <Card style={{ padding: 0 }}>
+        {items.map((it, i) => (
+          <div key={it.id} onClick={() => setPage(it.id)}
+            style={{ display: "flex", alignItems: "center", gap: 14, padding: "16px 20px", cursor: "pointer", borderBottom: i < items.length - 1 ? "1px solid " + S.border : "none" }}>
+            <span style={{ fontSize: 20 }}>{it.icon}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{it.label}</div>
+              <div style={{ fontSize: 11, color: S.muted }}>{it.sub}</div>
+            </div>
+            <span style={{ color: S.muted }}>›</span>
+          </div>
+        ))}
+      </Card>
+    </div>
+  );
+}
+
 function ClientDashboard({ profile, logout }) {
   const programOnly = profile.client_type === "program_only";
   const [page, setPage] = useState(programOnly ? "program" : "dashboard");
@@ -3083,12 +2685,17 @@ function ClientDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
       {page === "dashboard" && !programOnly && <ClientHome profile={profile} setPage={setPage} />}
       {page === "program" && <ClientProgram profile={profile} />}
+      {page === "checkin" && !programOnly && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
+      {page === "habits" && !programOnly && (
+        <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
+      )}
       {page === "resources" && <Resources />}
+      {page === "more" && <MoreMenu programOnly={programOnly} setPage={setPage} />}
     </Shell>
   );
 }
@@ -3232,7 +2839,7 @@ function CRMPanel() {
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
         {["all", ...LEAD_STATUSES].map((s) => (
           <button key={s} onClick={() => setFilter(s)}
-            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (filter === s ? S.accent : S.border), background: filter === s ? "rgba(255,77,0,.08)" : "transparent", color: filter === s ? S.accent : S.muted }}>
+            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (filter === s ? S.accent : S.border), background: filter === s ? "rgba(255,106,0,.08)" : "transparent", color: filter === s ? S.accent : S.muted }}>
             {s === "all" ? "All" : LEAD_STATUS_LABEL[s]} {s !== "all" && `(${leads.filter((l) => l.status === s).length})`}
           </button>
         ))}

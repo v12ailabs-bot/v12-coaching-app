@@ -9,7 +9,7 @@ import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
 import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
-import { ProgramPhase, ProgramVersions, createProgramVersion } from "./sections/ProgramSection.jsx";
+import { ProgramPhase, ProgramRoadmapPlanner, ProgramVersions, createProgramVersion } from "./sections/ProgramSection.jsx";
 import { CoachNutrition } from "./sections/NutritionSection.jsx";
 import { CoachHabits } from "./sections/DailyHabitsSection.jsx";
 import { CoachNotes } from "./sections/CoachNotesSection.jsx";
@@ -370,6 +370,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
     )},
     { key: "nutrition", title: "Nutrition", node: <CoachNutrition clientId={client.id} refreshKey={progTick} /> },
     { key: "program-phase", title: "Program Phase", node: <ProgramPhase clientId={trainOwnerId} /> },
+    { key: "program-roadmap", title: "Program Roadmap", node: <ProgramRoadmapPlanner clientId={trainOwnerId} /> },
     { key: "program-history", title: "Program History", node: (
         <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
     )},

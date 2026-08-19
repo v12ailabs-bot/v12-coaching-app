@@ -1,10 +1,10 @@
 import { S } from "../../theme.jsx";
 
 const TONES = {
-  red: { bg: "rgba(192,57,43,.16)", fg: "#ff6b5b" },
-  amber: { bg: "rgba(245,158,11,.14)", fg: "#f5a623" },
-  green: { bg: "rgba(0,201,167,.14)", fg: S.accent2 },
-  accent: { bg: "rgba(255,77,0,.12)", fg: S.accent },
+  red: { bg: "rgba(239,68,68,.16)", fg: S.danger },
+  amber: { bg: "rgba(250,204,21,.14)", fg: S.warning },
+  green: { bg: "rgba(34,197,94,.14)", fg: S.success },
+  accent: { bg: "rgba(255,106,0,.12)", fg: S.accent },
   neutral: { bg: S.surface2, fg: S.muted },
 };
 

@@ -6,25 +6,29 @@ import { useState, useEffect } from "react";
 
 // Color palette used across the whole app.
 export const S = {
-  bg: "#0A0A0B",
-  surface: "#141416",
+  bg: "#0B0B0D",
+  surface: "#141417",
   surface2: "#1C1C20",
-  border: "#2A2A30",
-  text: "#F5F5F7",
-  muted: "#666670",
-  accent: "#FF4D00",
+  border: "#242427",
+  text: "#FFFFFF",
+  muted: "#A1A1AA",
+  accent: "#FF6A00",
   accent2: "#00C9A7",
   neon: "#C6FF00",
+  success: "#22C55E",
+  warning: "#FACC15",
+  danger: "#EF4444",
 };
 
 // Avatar colors, cycled by index.
-export const COLORS = ["#FF4D00", "#00C9A7", "#8B5CF6", "#3B82F6", "#F59E0B", "#EF4444"];
+export const COLORS = ["#FF6A00", "#00C9A7", "#8B5CF6", "#3B82F6", "#F59E0B", "#EF4444"];
 
-// Spacing/elevation scale — softer corners and a subtle shadow instead of the
-// flat bordered rectangles used everywhere, without touching the black/
-// charcoal/orange palette above.
-export const RADIUS = { sm: 8, md: 12, lg: 16 };
+// Every card/button/input in the design system shares one 12px radius.
+export const RADIUS = { sm: 12, md: 12, lg: 12 };
 export const SHADOW = { card: "0 1px 3px rgba(0,0,0,.3)" };
+
+// Spacing scale used by new components (existing inline styles are untouched).
+export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32, huge: 40 };
 
 // Base button style; pass overrides that are merged on top.
 export const bS = (o = {}) => ({

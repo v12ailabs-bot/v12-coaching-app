@@ -11,6 +11,7 @@ export { DayFolder } from "./DayFolder.jsx";
 export { CollapsibleSection } from "./CollapsibleSection.jsx";
 export { StatusBadge } from "./StatusBadge.jsx";
 export { MetricCard } from "./MetricCard.jsx";
+export { ProgressRing } from "./ProgressRing.jsx";
 export { EmptyState } from "./EmptyState.jsx";
 export { Alert } from "./Alert.jsx";
 export { SectionHeader } from "./SectionHeader.jsx";
