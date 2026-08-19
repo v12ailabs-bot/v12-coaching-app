@@ -8,7 +8,7 @@ const todayWeekday = () => new Date().toLocaleDateString("en-US", { weekday: "lo
 
 // Slim preview of today's exercises, pulled from the same `exercises` rows
 // the full Workout Log reads — no separate "today's workout" data anywhere.
-export function TodayWorkoutPreview({ profile, setPage }) {
+export function TodayWorkoutPreview({ profile, onViewFull }) {
   const [exercises, setExercises] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -40,7 +40,7 @@ export function TodayWorkoutPreview({ profile, setPage }) {
             </div>
           ))}
           {todays.length > 5 && <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>+{todays.length - 5} more</div>}
-          <div style={{ marginTop: 16 }}><Btn sm onClick={() => setPage("workouts")}>View Full Workout</Btn></div>
+          <div style={{ marginTop: 16 }}><Btn sm onClick={onViewFull}>View Full Workout</Btn></div>
         </>
       )}
     </Card>

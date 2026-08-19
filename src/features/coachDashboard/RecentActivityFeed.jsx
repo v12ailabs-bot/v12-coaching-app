@@ -4,6 +4,9 @@ import { S } from "../../theme.jsx";
 import { Card } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
 
+const WINDOW_HOURS = 48;
+const SCROLL_AFTER = 8;
+
 const relTime = (iso) => {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
   if (mins < 60) return mins + "m ago";
@@ -12,14 +15,15 @@ const relTime = (iso) => {
   return Math.round(hrs / 24) + "d ago";
 };
 
-// Merges the most recent rows across the tables clients actually write to
-// (daily_checkins, weekly_checkins, workout_logs, progress_photos) into one
-// feed — no separate "activity log" table, just a client-side merge sorted
-// by created_at. `clientIds` restricts this to coaching clients — program-
-// only clients have their own Program Subscribers section, not this feed.
-// A single workout save can insert several workout_logs rows (one per set)
-// sharing the exact same created_at — deduped below so one gym session
-// doesn't show up as several identical-looking lines.
+// Merges rows across the tables clients actually write to (daily_checkins,
+// weekly_checkins, workout_logs, progress_photos) from the last 48 hours
+// into one feed — no separate "activity log" table, just a client-side
+// merge sorted by created_at. `clientIds` restricts this to coaching
+// clients — program-only clients have their own Program Subscribers
+// section, not this feed. A single workout save can insert several
+// workout_logs rows (one per set) sharing the exact same created_at —
+// deduped below so one gym session doesn't show up as several
+// identical-looking lines.
 export function RecentActivityFeed({ nameOf, clientIds }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -27,15 +31,12 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
   useEffect(() => {
     if (!clientIds || clientIds.length === 0) { setEvents([]); setLoading(false); return; }
     (async () => {
-      // Fetched a little deeper than the final 8 shown, since deduping
-      // same-timestamp workout_logs rows can otherwise leave fewer than 8
-      // distinct events even though more real ones exist further back.
-      const LIMIT = 20;
+      const cutoff = new Date(Date.now() - WINDOW_HOURS * 3600000).toISOString();
       const [{ data: dc }, { data: wc }, { data: wl }, { data: pp }] = await Promise.all([
-        supabase.from("daily_checkins").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
-        supabase.from("weekly_checkins").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
-        supabase.from("workout_logs").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
-        supabase.from("progress_photos").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
+        supabase.from("daily_checkins").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
+        supabase.from("weekly_checkins").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
+        supabase.from("workout_logs").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
+        supabase.from("progress_photos").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
       ]);
       const seen = new Set();
       const merged = [
@@ -48,7 +49,7 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
         if (seen.has(key)) return false;
         seen.add(key);
         return true;
-      }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8);
+      }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
       setEvents(merged);
       setLoading(false);
     })();
@@ -56,18 +57,20 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
 
   return (
     <Card>
-      <SectionTitle>Recent Activity</SectionTitle>
+      <SectionTitle>Recent Activity <span style={{ fontSize: 11, color: S.muted, fontWeight: 400, marginLeft: 6 }}>Last 48h</span></SectionTitle>
       {loading ? (
         <div className="spinner" style={{ margin: "20px auto" }} />
       ) : events.length === 0 ? (
-        <div style={{ color: S.muted, fontSize: 13 }}>No activity yet.</div>
+        <div style={{ color: S.muted, fontSize: 13 }}>No activity in the last 48 hours.</div>
       ) : (
-        events.map((e, i) => (
-          <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 0", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 12.5 }}>
-            <span><strong>{nameOf(e.client_id)}</strong> {e.text}</span>
-            <span style={{ color: S.muted, whiteSpace: "nowrap" }}>{relTime(e.created_at)}</span>
-          </div>
-        ))
+        <div style={{ maxHeight: events.length > SCROLL_AFTER ? 360 : "none", overflowY: "auto" }}>
+          {events.map((e, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 2px", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 12.5 }}>
+              <span><strong>{nameOf(e.client_id)}</strong> {e.text}</span>
+              <span style={{ color: S.muted, whiteSpace: "nowrap" }}>{relTime(e.created_at)}</span>
+            </div>
+          ))}
+        </div>
       )}
     </Card>
   );

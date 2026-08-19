@@ -8,7 +8,7 @@ import { DAY_ORDER } from "../../lib/constants.js";
 // preview and full program read), plus the next check-in due — both derived
 // from real data. No coaching-call entry: there's no scheduling data
 // anywhere in the app yet, so that row is intentionally left out.
-export function UpcomingCard({ profile, doneToday, weeklyDone, setPage }) {
+export function UpcomingCard({ profile, doneToday, weeklyDone, setPage, goToWorkouts }) {
   const [days, setDays] = useState(new Set());
 
   useEffect(() => {
@@ -32,7 +32,7 @@ export function UpcomingCard({ profile, doneToday, weeklyDone, setPage }) {
     <Card>
       <CardTitle>Upcoming</CardTitle>
       {rows.map((r, i) => (
-        <div key={i} onClick={() => setPage(r.sub === "Next workout" ? "workouts" : r.sub.includes("Weekly") ? "weekly" : "daily")}
+        <div key={i} onClick={() => r.sub === "Next workout" ? goToWorkouts("next") : setPage(r.sub.includes("Weekly") ? "weekly" : "daily")}
           style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px", borderBottom: i < rows.length - 1 ? "1px solid " + S.border : "none", cursor: "pointer" }}>
           <span style={{ fontSize: 18 }}>{r.icon}</span>
           <div>

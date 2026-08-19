@@ -1334,7 +1334,7 @@ function RoadmapSection() {
   );
 }
 
-function Workouts({ profile, readOnly, embedded }) {
+function Workouts({ profile, readOnly, embedded, targetDay, onTargetConsumed }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -1362,20 +1362,26 @@ function Workouts({ profile, readOnly, embedded }) {
     const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile));
     setExercises(data||[]);
     if(data&&data.length>0&&!selected){
-      // Default to the client's actual next scheduled day (same "day after
-      // today, cycling through the week" the Home page's Upcoming card uses
-      // for "Next Workout") instead of whichever exercise happens to be
-      // data[0] — that was always Day 1's first exercise, regardless of
-      // where the client actually is in their split.
+      // Default selection depends on how the client got here:
+      //  - targetDay==="next" (Home's "Next Workout" row): always the next
+      //    scheduled day after today, even if today itself has one — that's
+      //    the whole point of "next".
+      //  - targetDay==="today" (Home's "Today" card's "View Full Workout"),
+      //    or no explicit intent at all (the bottom-nav Workouts tab): prefer
+      //    today's own scheduled day, falling back to the next one if today
+      //    is a rest day. Previously this always skipped to the next day
+      //    regardless of intent, which is what sent "today" clicks to
+      //    tomorrow's workout instead.
       const groups = groupByDay(data);
       const todayIdx = DAY_ORDER.indexOf(new Date().toLocaleDateString("en-US",{weekday:"long"}));
-      let target = null;
+      let target = targetDay === "next" ? null : groups.find(g=>g.day===DAY_ORDER[todayIdx]);
       for(let i=1;i<=7&&!target;i++){
         target = groups.find(g=>g.day===DAY_ORDER[(todayIdx+i)%7]);
       }
       setSelected((target||groups[0]).exercises[0].id);
+      onTargetConsumed?.();
     }
-  },[profile.id,profile.shared_program_owner_id]);
+  },[profile.id,profile.shared_program_owner_id,targetDay]);
 
   useEffect(()=>{loadEx();},[loadEx]);
   useEffect(()=>{
@@ -2658,6 +2664,11 @@ function ClientDashboard({ profile, logout }) {
   const programOnly = profile.client_type === "program_only";
   const [page, setPage] = useState(programOnly ? "program" : "dashboard");
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
+  // "today" (Today card's "View Full Workout") vs "next" (Upcoming card's
+  // "Next Workout") — the Workouts page's default exercise selection needs
+  // to know which one the client actually clicked, not guess from neither.
+  const [workoutsTarget, setWorkoutsTarget] = useState(null);
+  const goToWorkouts = (target) => { setWorkoutsTarget(target); setPage("workouts"); };
 
   // Sold-access enforcement: once access_until has passed, the client is locked
   // out of the portal (their data is preserved) until the coach extends it.
@@ -2700,13 +2711,13 @@ function ClientDashboard({ profile, logout }) {
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && !programOnly && <ClientHome profile={profile} setPage={setPage} />}
+      {page === "dashboard" && !programOnly && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "program" && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
-      {page === "workouts" && <Workouts profile={profile} />}
+      {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
       {page === "habits" && !programOnly && (
         <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>

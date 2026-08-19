@@ -158,21 +158,27 @@ export function GlobalStyles() {
            pinches out. Most inputs here are 13-14px; floor them all at 16px
            so focus never triggers it. */
         input, textarea, select { font-size: 16px !important; }
-        .g4 { grid-template-columns: repeat(2, 1fr) !important; }
-        .g2, .g3, .g6, .cg { grid-template-columns: 1fr !important; }
+        .g4 { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
+        .g2, .g3, .g6, .cg { grid-template-columns: minmax(0,1fr) !important; }
         table { font-size: 12px; }
       }
+      /* minmax(0, 1fr), not a bare 1fr — a bare 1fr track's minimum is
+         still its content's min-content size, so one wide child (e.g. a card
+         with a chart) can blow the whole track — and the page — out past the
+         viewport; overflow-x:hidden above then just silently clips it rather
+         than showing a scrollbar. minmax(0,...) caps the floor at 0 so the
+         track (and everything in it) is forced to actually fit. */
       @media (max-width: 980px) and (min-width: 721px) {
-        .g6 { grid-template-columns: repeat(3, 1fr) !important; }
-        .coach-tile-grid { grid-template-columns: repeat(2, 1fr) !important; }
+        .g6 { grid-template-columns: repeat(3, minmax(0,1fr)) !important; }
+        .coach-tile-grid { grid-template-columns: repeat(2, minmax(0,1fr)) !important; }
       }
       @media (max-width: 980px) {
         /* Coach Overview's table + side-column split — stack once there's no
            room for a real side column instead of squeezing both illegibly. */
-        .coach-grid-main { grid-template-columns: 1fr !important; }
+        .coach-grid-main { grid-template-columns: minmax(0,1fr) !important; }
       }
       @media (max-width: 720px) {
-        .coach-tile-grid { grid-template-columns: 1fr !important; }
+        .coach-tile-grid { grid-template-columns: minmax(0,1fr) !important; }
       }
     `}</style>
   );

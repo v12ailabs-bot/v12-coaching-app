@@ -165,14 +165,16 @@ export function CoachHome({ setPage, openClient }) {
     return { ...risk, client: c, last: lastActivityByClient[c.id] || null, since };
   });
 
-  // "Inactive" = poor check-in adherence (loggingStatus, not just a plain day
-  // count) — coaching clients only, per the structural split below. "At
-  // Risk" = has a real progress/nutrition/recovery flag AND isn't already
-  // flagged inactive — inactive is the more urgent, mutually-exclusive
-  // signal, so a client never double-counts into both, and the Alerts panel
-  // (built from the same `isAtRisk`) and the table's "At Risk" filter always
-  // show the same clients.
-  const isInactive = (a) => a.loggingStatus?.level === "poor";
+  // "Inactive" = no real activity (any of daily/weekly check-in, workout log,
+  // progress photo) in the last 48 hours — `since` is day-granular, so 2+
+  // days ago is the first value that's unambiguously past 48h. Coaching
+  // clients only, per the structural split below. "At Risk" = has a real
+  // progress/nutrition/recovery flag AND isn't already flagged inactive —
+  // inactive is the more urgent, mutually-exclusive signal, so a client
+  // never double-counts into both, and the Alerts panel (built from the same
+  // `isAtRisk`) and the table's "At Risk" filter always show the same
+  // clients.
+  const isInactive = (a) => a.since == null || a.since >= 2;
   const isAtRisk = (a) => !isInactive(a) && a.flags.length > 0;
 
   const needs = assessedCoached.filter(isAtRisk).sort((a, b) => b.severity - a.severity);
@@ -302,7 +304,7 @@ export function CoachHome({ setPage, openClient }) {
         leadsTrendPct={leadsTrendPct}
       />
 
-      <div className="coach-grid-main" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20, alignItems: "start" }}>
+      <div className="coach-grid-main" style={{ display: "grid", gridTemplateColumns: "minmax(0,2fr) minmax(0,1fr)", gap: 20, marginBottom: 20, alignItems: "start" }}>
         <div style={{ minWidth: 0 }}>
           <ClientOverviewTable rows={rows} openClient={openClient} />
         </div>
@@ -312,7 +314,7 @@ export function CoachHome({ setPage, openClient }) {
         </div>
       </div>
 
-      <div className="coach-tile-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 20, marginBottom: 20, alignItems: "start" }}>
+      <div className="coach-tile-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 20, marginBottom: 20, alignItems: "start" }}>
         <QuickAnalytics
           checkin={{ current: checkinNow, deltaPct: deltaOf(checkinSeries), series: checkinSeries }}
           progress={{ current: progressNow, deltaPct: deltaOf(progressSeries), series: progressSeries }}

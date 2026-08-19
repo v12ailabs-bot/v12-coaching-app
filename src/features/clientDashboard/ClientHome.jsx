@@ -18,7 +18,7 @@ import { ProgramRoadmapCard } from "./ProgramRoadmapCard.jsx";
 // Composed client dashboard. Each section below is a self-contained,
 // self-fetching component (see ./*.jsx) — this file only loads the data
 // needed for risk assessment/goal scoring, which several sections share.
-export function ClientHome({ profile, setPage }) {
+export function ClientHome({ profile, setPage, goToWorkouts }) {
   const isMobile = useIsMobile();
   const [checkins, setCheckins] = useState([]);
   const [weeklyDone, setWeeklyDone] = useState(true);
@@ -114,7 +114,7 @@ export function ClientHome({ profile, setPage }) {
       )}
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-        <TodayWorkoutPreview profile={profile} setPage={setPage} />
+        <TodayWorkoutPreview profile={profile} onViewFull={() => goToWorkouts("today")} />
         <HabitSummary profile={profile} setPage={setPage} />
       </div>
 
@@ -131,7 +131,7 @@ export function ClientHome({ profile, setPage }) {
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <ProgressSnapshot profile={profile} checkins={checkins} setPage={setPage} />
-        <UpcomingCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} />
+        <UpcomingCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} goToWorkouts={goToWorkouts} />
       </div>
 
       <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>

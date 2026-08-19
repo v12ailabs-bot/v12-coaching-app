@@ -44,7 +44,7 @@ function TrendPill({ deltaPct }) {
 // bare row of text, so this reads as part of the same design system.
 function MetricTile({ label, current, deltaPct, series, color }) {
   return (
-    <div style={{ background: S.surface2, border: "1px solid " + S.border, borderRadius: RADIUS.sm, padding: 16, flex: 1, minWidth: 0 }}>
+    <div style={{ background: S.surface2, border: "1px solid " + S.border, borderRadius: RADIUS.sm, padding: 16, minWidth: 0, overflow: "hidden" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8, gap: 8 }}>
         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted }}>{label}</div>
         <TrendPill deltaPct={deltaPct} />
@@ -66,7 +66,7 @@ export function QuickAnalytics({ checkin, progress }) {
   return (
     <Card>
       <SectionTitle>Quick Analytics <span style={{ fontSize: 11, color: S.muted, fontWeight: 400, marginLeft: 6 }}>Last 6 Weeks</span></SectionTitle>
-      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 12 }}>
         <MetricTile label="Check-In Completion" current={checkin.current} deltaPct={checkin.deltaPct} series={checkin.series} color={S.accent} />
         <MetricTile label="Avg Client Progress" current={progress.current} deltaPct={progress.deltaPct} series={progress.series} color={S.accent2} />
       </div>
