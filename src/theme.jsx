@@ -159,8 +159,16 @@ export function GlobalStyles() {
            so focus never triggers it. */
         input, textarea, select { font-size: 16px !important; }
         .g4 { grid-template-columns: repeat(2, 1fr) !important; }
-        .g2, .g3, .cg { grid-template-columns: 1fr !important; }
+        .g2, .g3, .g6, .cg { grid-template-columns: 1fr !important; }
         table { font-size: 12px; }
+      }
+      @media (max-width: 980px) and (min-width: 721px) {
+        .g6 { grid-template-columns: repeat(3, 1fr) !important; }
+      }
+      @media (max-width: 980px) {
+        /* Coach Overview's table + side-column split — stack once there's no
+           room for a real side column instead of squeezing both illegibly. */
+        .coach-grid-main { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );

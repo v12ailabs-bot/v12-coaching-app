@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
-import { Card, CardTitle } from "../../components/ui/index.js";
+import { Card } from "../../components/ui/index.js";
+import { SectionTitle } from "./SectionTitle.jsx";
 
 const relTime = (iso) => {
   const mins = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -32,7 +33,7 @@ export function RecentActivityFeed({ nameOf }) {
         ...(wc || []).map((r) => ({ ...r, text: "completed a weekly check-in" })),
         ...(wl || []).map((r) => ({ ...r, text: "logged a workout" })),
         ...(pp || []).map((r) => ({ ...r, text: "uploaded progress photos" })),
-      ].sort((a, b) => (a.created_at < b.created_at ? 1 : -1)).slice(0, 8);
+      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8);
       setEvents(merged);
       setLoading(false);
     })();
@@ -40,7 +41,7 @@ export function RecentActivityFeed({ nameOf }) {
 
   return (
     <Card>
-      <CardTitle>Recent Activity</CardTitle>
+      <SectionTitle>Recent Activity</SectionTitle>
       {loading ? (
         <div className="spinner" style={{ margin: "20px auto" }} />
       ) : events.length === 0 ? (

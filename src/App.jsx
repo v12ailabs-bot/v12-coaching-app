@@ -1361,7 +1361,20 @@ function Workouts({ profile, readOnly, embedded }) {
     // order_index) once grouped by day.
     const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile));
     setExercises(data||[]);
-    if(data&&data.length>0&&!selected) setSelected(data[0].id);
+    if(data&&data.length>0&&!selected){
+      // Default to the client's actual next scheduled day (same "day after
+      // today, cycling through the week" the Home page's Upcoming card uses
+      // for "Next Workout") instead of whichever exercise happens to be
+      // data[0] — that was always Day 1's first exercise, regardless of
+      // where the client actually is in their split.
+      const groups = groupByDay(data);
+      const todayIdx = DAY_ORDER.indexOf(new Date().toLocaleDateString("en-US",{weekday:"long"}));
+      let target = null;
+      for(let i=1;i<=7&&!target;i++){
+        target = groups.find(g=>g.day===DAY_ORDER[(todayIdx+i)%7]);
+      }
+      setSelected((target||groups[0]).exercises[0].id);
+    }
   },[profile.id,profile.shared_program_owner_id]);
 
   useEffect(()=>{loadEx();},[loadEx]);
@@ -2953,12 +2966,18 @@ function CoachDashboard({ profile, logout }) {
   // ClientDetailPage consumes it once on mount so it opens straight to that
   // client instead of falling back to whichever is first in the roster.
   const [openClientId, setOpenClientId] = useState(null);
-  const openClient = (id) => { setOpenClientId(id); setPage("clients"); };
+  // Optional target section key (e.g. "program-roadmap") to auto-expand once
+  // ClientDetailPage opens this client — lets other pages (the Overview's
+  // Client Overview table) jump straight to a specific accordion section
+  // instead of always landing on the collapsed default.
+  const [openSectionKey, setOpenSectionKey] = useState(null);
+  const openClient = (id, opts) => { setOpenClientId(id); setOpenSectionKey(opts?.section || null); setPage("clients"); };
 
   return (
     <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
-      {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)} />}
+      {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
+        initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}
       {page === "crm" && <CRMPanel />}
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}

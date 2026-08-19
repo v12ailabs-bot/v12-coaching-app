@@ -1,12 +1,15 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
-import { S, todayStr, avatarFrom } from "../../theme.jsx";
-import { PageTitle, Card, CardTitle, Btn, StatusBadge, CollapsibleSection } from "../../components/ui/index.js";
+import { S, todayStr, localDateStr, avatarFrom } from "../../theme.jsx";
+import { PageTitle, Card, Btn, CollapsibleSection } from "../../components/ui/index.js";
 import { COACH_EMAIL } from "../../lib/constants.js";
 import { assessClientRisk } from "../../lib/scoring.js";
+import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
+import { ClientMessagesPanel } from "./ClientMessagesPanel.jsx";
+import { QuickAnalytics } from "./QuickAnalytics.jsx";
 import { CheckInOverview } from "./CheckInOverview.jsx";
 import { ProgramDistribution } from "./ProgramDistribution.jsx";
 import { RecentActivityFeed } from "./RecentActivityFeed.jsx";
@@ -14,6 +17,13 @@ import { RecentNotes } from "./RecentNotes.jsx";
 
 const monthStart = () => todayStr().slice(0, 7) + "-01";
 const weekStartStr = () => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return d.toISOString().split("T")[0]; };
+// First of last calendar month, and "the same day-of-month last month" — used
+// to compare this-month-so-far figures (revenue, leads, total clients) to an
+// equivalent partial window last month instead of a lopsided full-month one.
+const monthsAgoStart = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); d.setDate(1); return localDateStr(d); };
+const monthsAgoSameDay = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); return localDateStr(d); };
+
+const WEEKLY_BUCKETS = 6;
 
 // Folds a list of free-text program/goal labels into up to 5 groups + "Other"
 // — no fixed taxonomy invented, just a count of what's actually there.
@@ -36,7 +46,9 @@ export function CoachHome({ setPage, openClient }) {
   const [lastWorkoutByClient, setLastWorkoutByClient] = useState({});
   const [upgrades, setUpgrades] = useState([]);
   const [monthlyRevenue, setMonthlyRevenue] = useState(0);
+  const [lastMonthRevenue, setLastMonthRevenue] = useState(0);
   const [newLeads, setNewLeads] = useState(0);
+  const [lastMonthLeads, setLastMonthLeads] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -52,11 +64,15 @@ export function CoachHome({ setPage, openClient }) {
       const grouped = {};
       let weeklies = [];
       if (allIds.length) {
-        // 30 days of daily check-ins for EVERY client (not just coached) — this
-        // is the activity signal behind "Active/Inactive" and Recent Activity;
-        // progress-based risk flags below still only apply to coached clients.
-        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 29);
-        const cut = cutoff.toISOString().split("T")[0];
+        // ~8 weeks of daily check-ins for EVERY client (not just coached) —
+        // this is the activity signal behind "Active/Inactive" and Recent
+        // Activity, AND (for coached clients) the raw history the Quick
+        // Analytics weekly trend buckets below are computed from. Wider than
+        // the 29-day window this used to be so those buckets have enough
+        // history; progress-based risk flags still only apply to coached
+        // clients.
+        const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - (7 * WEEKLY_BUCKETS + 6));
+        const cut = localDateStr(cutoff);
         const { data: ch } = await supabase.from("daily_checkins")
           .select("client_id,date,weight,workout,diet").in("client_id", allIds).gte("date", cut).order("date");
         (ch || []).forEach((r) => { (grouped[r.client_id] = grouped[r.client_id] || []).push(r); });
@@ -91,10 +107,18 @@ export function CoachHome({ setPage, openClient }) {
         (wl || []).forEach((r) => { if (!lastWorkout[r.client_id] || r.date > lastWorkout[r.client_id]) lastWorkout[r.client_id] = r.date; });
       }
 
-      const { data: leads } = await supabase.from("leads").select("id").gte("created_at", monthStart());
-      setNewLeads((leads || []).length);
-      const { data: metrics } = await supabase.from("daily_metrics").select("revenue_today").gte("date", monthStart());
-      setMonthlyRevenue((metrics || []).reduce((s, m) => s + (Number(m.revenue_today) || 0), 0));
+      // Leads and revenue: fetch back to the start of last month so this
+      // month's figure can be compared against the same partial window last
+      // month (1st through today's day-of-month), not a lopsided full month.
+      const { data: leads } = await supabase.from("leads").select("id,created_at").gte("created_at", monthsAgoStart(1));
+      const leadDateOf = (l) => (l.created_at || "").slice(0, 10);
+      setNewLeads((leads || []).filter((l) => leadDateOf(l) >= monthStart()).length);
+      setLastMonthLeads((leads || []).filter((l) => leadDateOf(l) >= monthsAgoStart(1) && leadDateOf(l) <= monthsAgoSameDay(1)).length);
+
+      const { data: metrics } = await supabase.from("daily_metrics").select("revenue_today,date").gte("date", monthsAgoStart(1));
+      const sumRevenue = (rows) => rows.reduce((s, m) => s + (Number(m.revenue_today) || 0), 0);
+      setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
+      setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
       setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setLastWorkoutByClient(lastWorkout); setLoading(false);
     })();
@@ -133,7 +157,6 @@ export function CoachHome({ setPage, openClient }) {
 
   const needs = assessed.filter((a) => a.flags.length > 0).sort((a, b) => b.severity - a.severity);
   const coached = assessed.filter((a) => !a.programOnly);
-  const avgAdh = coached.length ? Math.round(coached.reduce((s, a) => s + a.adh.score, 0) / coached.length) : 0;
   const withGoalScore = coached.filter((a) => a.goalScore?.overallScore != null);
   const avgGoalProgress = withGoalScore.length ? Math.round(withGoalScore.reduce((s, a) => s + a.goalScore.overallScore, 0) / withGoalScore.length) : null;
   const inactiveCount = assessed.filter(isInactive).length;
@@ -183,53 +206,90 @@ export function CoachHome({ setPage, openClient }) {
 
   const programGroups = groupByLabel(clients.map((c) => programByClient[c.id]?.name || c.goal));
 
+  // Quick Analytics' two weekly trend series, computed from data every other
+  // panel on this page already reads — no new tracking table. Each of the
+  // last WEEKLY_BUCKETS weeks gets its own trailing-7-day snapshot:
+  //   - checkin completion: days logged / 7, averaged across coached clients.
+  //   - client progress: computeGoalScore's primary-metric score (the same
+  //     scorer assessClientRisk uses), averaged across clients with an active
+  //     bodyweight goal, evaluated as-of that week's end date instead of
+  //     today. This is a primary-metric-only approximation of the richer,
+  //     nutrition/training-blended goalScore shown elsewhere on a client's
+  //     own page — a fair trend signal, even though the absolute value can
+  //     differ slightly from that blended score.
+  const trailingCompletionPct = (clientId, end) => {
+    const start = new Date(end); start.setDate(start.getDate() - 6);
+    const startStr = localDateStr(start), endStr = localDateStr(end);
+    const days = new Set((byClient[clientId] || []).filter((r) => r.date >= startStr && r.date <= endStr).map((r) => r.date)).size;
+    return (days / 7) * 100;
+  };
+  const clientsWithGoal = coached.filter((a) => goalsByClient[a.client.id]);
+  const checkinSeries = [], progressSeries = [];
+  for (let i = WEEKLY_BUCKETS - 1; i >= 0; i--) {
+    const end = new Date(); end.setDate(end.getDate() - i * 7);
+    const label = localDateStr(end);
+
+    const completionVals = coached.map((a) => trailingCompletionPct(a.client.id, end));
+    checkinSeries.push({ label, value: completionVals.length ? Math.round(completionVals.reduce((s, v) => s + v, 0) / completionVals.length) : null });
+
+    const progressVals = clientsWithGoal.map((a) => {
+      const goal = goalsByClient[a.client.id];
+      const series = (byClient[a.client.id] || []).filter((r) => r.weight != null).map((r) => ({ date: r.date, value: r.weight }));
+      return computeGoalScore(goal, series, {}, end).overallScore;
+    }).filter((v) => v != null);
+    progressSeries.push({ label, value: progressVals.length ? Math.round(progressVals.reduce((s, v) => s + v, 0) / progressVals.length) : null });
+  }
+  const deltaOf = (series) => {
+    const cur = series[series.length - 1].value, prev = series[series.length - 2]?.value;
+    return cur == null || prev == null ? null : Math.round(cur - prev);
+  };
+  const checkinNow = checkinSeries[checkinSeries.length - 1].value;
+  const progressNow = progressSeries[progressSeries.length - 1].value;
+
+  // Real, derivable month-over-month trends only — Active Clients has no
+  // historical snapshot to diff against, so it gets no trend rather than a
+  // fabricated one.
+  const cutoffLastMonth = monthsAgoSameDay(1);
+  const clientsAsOfLastMonth = clients.filter((c) => c.created_at && c.created_at.slice(0, 10) <= cutoffLastMonth).length;
+  const totalClientsTrendPct = clientsAsOfLastMonth > 0 ? Math.round(((clients.length - clientsAsOfLastMonth) / clientsAsOfLastMonth) * 100) : null;
+  const revenueTrendPct = lastMonthRevenue > 0 ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
+  const leadsTrendPct = lastMonthLeads > 0 ? Math.round(((newLeads - lastMonthLeads) / lastMonthLeads) * 100) : null;
+
   return (
     <div>
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview" />
 
       <CoachStatCards
         totalClients={clients.length}
+        totalClientsTrendPct={totalClientsTrendPct}
         activeClients={clients.length - inactiveCount}
-        checkInCompletion={avgAdh}
+        checkInCompletion={checkinNow ?? 0}
+        checkInTrendPct={deltaOf(checkinSeries)}
         avgProgress={avgGoalProgress}
+        avgProgressTrendPct={deltaOf(progressSeries)}
         monthlyRevenue={monthlyRevenue}
+        revenueTrendPct={revenueTrendPct}
         newLeads={newLeads}
+        leadsTrendPct={leadsTrendPct}
       />
 
-      <div className="g2" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20, alignItems: "start" }}>
-        <ClientOverviewTable rows={rows} openClient={openClient} />
-        <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} />
+      <div className="coach-grid-main" style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 20, marginBottom: 20, alignItems: "start" }}>
+        <div style={{ minWidth: 0 }}>
+          <ClientOverviewTable rows={rows} openClient={openClient} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
+          <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} />
+          <ClientMessagesPanel messages={messages} nameOf={nameOf} openClient={openClient} />
+          <QuickAnalytics
+            checkin={{ current: checkinNow, deltaPct: deltaOf(checkinSeries), series: checkinSeries }}
+            progress={{ current: progressNow, deltaPct: deltaOf(progressSeries), series: progressSeries }}
+          />
+          <CheckInOverview counts={checkinCounts} total={coached.length} />
+          <ProgramDistribution groups={programGroups} />
+          <RecentActivityFeed nameOf={nameOf} />
+          <RecentNotes nameOf={nameOf} openClient={openClient} />
+        </div>
       </div>
-
-      <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 20, marginBottom: 20, alignItems: "start" }}>
-        <CheckInOverview counts={checkinCounts} total={coached.length} />
-        <ProgramDistribution groups={programGroups} />
-        <RecentActivityFeed nameOf={nameOf} />
-        <RecentNotes nameOf={nameOf} openClient={openClient} />
-      </div>
-
-      {messages.length > 0 && (
-        <CollapsibleSection title="💬 Client Messages & Flags" summary={`${messages.length} this period`}>
-          <Card>
-            <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>From weekly check-ins in the last 14 days — questions, requested adjustments, and red flags worth a reply.</div>
-            {messages.map((m, i) => (
-              <div key={i} onClick={() => openClient(m.id)}
-                style={{ background: S.surface, border: "1px solid " + S.border, borderLeft: "3px solid " + (m.items.some((x) => x.tone === "red") ? S.danger : S.warning), padding: "14px 18px", cursor: "pointer", marginBottom: 10 }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12, marginBottom: 8 }}>
-                  <div style={{ fontWeight: 600, fontSize: 14 }}>{nameOf(m.id)}</div>
-                  <div style={{ fontSize: 11, color: S.muted }}>Week of {m.date}</div>
-                </div>
-                {m.items.map((it, j) => (
-                  <div key={j} style={{ marginBottom: 6 }}>
-                    <span style={{ padding: "2px 8px", fontSize: 10, fontWeight: 600, marginRight: 8, background: it.tone === "red" ? "rgba(239,68,68,.16)" : "rgba(250,204,21,.14)", color: it.tone === "red" ? S.danger : S.warning }}>{it.label}</span>
-                    {it.text && <span style={{ fontSize: 13, color: S.text }}>{it.text.length > 160 ? it.text.slice(0, 160) + "…" : it.text}</span>}
-                  </div>
-                ))}
-              </div>
-            ))}
-          </Card>
-        </CollapsibleSection>
-      )}
 
       {upgrades.length > 0 && (
         <CollapsibleSection title="💎 Upgrade Requests" summary={`${upgrades.length} pending`}>

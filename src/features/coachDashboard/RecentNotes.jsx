@@ -1,7 +1,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
-import { Card, CardTitle } from "../../components/ui/index.js";
+import { Card } from "../../components/ui/index.js";
+import { SectionTitle } from "./SectionTitle.jsx";
 
 // Most recent coach_notes across all clients (existing table, existing
 // per-client notes feature) — a read-only feed here; adding a note still
@@ -17,7 +18,7 @@ export function RecentNotes({ nameOf, openClient }) {
 
   return (
     <Card>
-      <CardTitle>Notes &amp; Updates</CardTitle>
+      <SectionTitle>Notes &amp; Updates</SectionTitle>
       {loading ? (
         <div className="spinner" style={{ margin: "20px auto" }} />
       ) : notes.length === 0 ? (

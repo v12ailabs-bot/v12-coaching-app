@@ -1,5 +1,6 @@
 import { S } from "../../theme.jsx";
-import { Card, CardTitle, ProgressRing } from "../../components/ui/index.js";
+import { Card, ProgressRing } from "../../components/ui/index.js";
+import { SectionTitle } from "./SectionTitle.jsx";
 
 const ROWS = [
   { key: "completed", label: "Completed", color: "success" },
@@ -14,7 +15,7 @@ export function CheckInOverview({ counts, total }) {
   const pct = (n) => (total ? Math.round((n / total) * 100) : 0);
   return (
     <Card>
-      <CardTitle>Check-In Overview · This Week</CardTitle>
+      <SectionTitle>Check-In Overview <span style={{ fontSize: 10, color: S.muted, fontWeight: 400, marginLeft: 6 }}>This Week</span></SectionTitle>
       <div style={{ display: "flex", alignItems: "center", gap: 20 }}>
         <ProgressRing value={pct(counts.completed)} size={90} caption="Completed" />
         <div style={{ flex: 1 }}>

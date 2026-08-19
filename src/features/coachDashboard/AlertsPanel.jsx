@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { S } from "../../theme.jsx";
-import { Card, CardTitle, StatusBadge, Btn } from "../../components/ui/index.js";
+import { Card, StatusBadge, Btn } from "../../components/ui/index.js";
+import { SectionTitle } from "./SectionTitle.jsx";
 
 // Compact version of the old "Needs Attention" card — same `needs` data
 // (assessClientRisk, sorted by severity) and the same click-to-expand detail
@@ -12,10 +13,9 @@ export function AlertsPanel({ needs, openClient, setPage }) {
 
   return (
     <Card>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-        <CardTitle>Alerts &amp; At-Risk Clients</CardTitle>
-        {needs.length > 0 && <Btn sm teal onClick={() => setPage("clients")}>View All</Btn>}
-      </div>
+      <SectionTitle action={needs.length > 0 && <Btn sm teal onClick={() => setPage("clients")}>View All</Btn>}>
+        Alerts &amp; At-Risk Clients
+      </SectionTitle>
       {top.length === 0 ? (
         <div style={{ color: S.success, fontSize: 13, padding: "8px 0" }}>All clients are on track. Nice work.</div>
       ) : (

@@ -158,7 +158,7 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
 
 // Program phase / block adjustment for the client's most recent program, plus
 // its permanent (append-only) change history.
-export function ProgramPhase({ clientId }) {
+export function ProgramPhase({ clientId, onOpenRoadmap }) {
   const [program, setProgram] = useState(null);
   const [phase, setPhase] = useState("");
   const [note, setNote] = useState("");
@@ -239,6 +239,12 @@ export function ProgramPhase({ clientId }) {
             <Btn onClick={save} disabled={saving || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
           </div>
+          {plannedPhases.length === 0 && (
+            <div style={{ background: "rgba(255,106,0,.08)", border: "1px solid rgba(255,106,0,.25)", padding: "12px 16px", marginTop: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, color: S.text, lineHeight: 1.5 }}>This is just the current phase label. To plan the client's <strong>full sequence</strong> — phase names, order, and week ranges — use the Program Roadmap builder below.</div>
+              <button onClick={onOpenRoadmap} style={{ background: "none", border: "1px solid " + S.accent, color: S.accent, padding: "8px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>Open Program Roadmap →</button>
+            </div>
+          )}
           <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
             <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Phase History</div>
             {history.length === 0 ? (

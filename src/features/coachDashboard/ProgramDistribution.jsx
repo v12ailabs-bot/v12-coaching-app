@@ -1,5 +1,6 @@
 import { S } from "../../theme.jsx";
-import { Card, CardTitle } from "../../components/ui/index.js";
+import { Card } from "../../components/ui/index.js";
+import { SectionTitle } from "./SectionTitle.jsx";
 
 // Grouped by each client's actual goal/program text (profiles.goal, or the
 // program name when set) — no fixed category list invented; a long tail of
@@ -8,7 +9,7 @@ export function ProgramDistribution({ groups }) {
   const total = groups.reduce((s, g) => s + g.count, 0);
   return (
     <Card>
-      <CardTitle>Program Distribution</CardTitle>
+      <SectionTitle>Program Distribution</SectionTitle>
       {groups.length === 0 ? (
         <div style={{ color: S.muted, fontSize: 13 }}>No clients yet.</div>
       ) : (

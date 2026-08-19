@@ -1,17 +1,22 @@
-import { Stat } from "../../components/ui/index.js";
+import { MetricCard } from "../../components/ui/index.js";
 
-// Pure display: six stat tiles, all values computed by the parent from real
-// data (profiles/daily_checkins/client_goals/leads/daily_metrics) — nothing
-// here is fabricated or hardcoded.
-export function CoachStatCards({ totalClients, activeClients, checkInCompletion, avgProgress, monthlyRevenue, newLeads }) {
+const fmtDelta = (pct) => (pct == null ? null : { text: `${pct > 0 ? "↑" : pct < 0 ? "↓" : "→"} ${Math.abs(pct)}% from last month`, tone: pct > 0 ? "good" : pct < 0 ? "bad" : "neutral" });
+const fmtWeekDelta = (pct) => (pct == null ? null : { text: `${pct > 0 ? "↑" : pct < 0 ? "↓" : "→"} ${Math.abs(pct)}% vs last week`, tone: pct > 0 ? "good" : pct < 0 ? "bad" : "neutral" });
+
+// Pure display: six stat tiles. Every value AND every trend is computed by
+// the parent from real data (profiles/daily_checkins/client_goals/leads/
+// daily_metrics) — trends that can't be honestly derived yet (no historical
+// snapshot to diff Active Clients against) are simply omitted rather than
+// invented.
+export function CoachStatCards({ totalClients, totalClientsTrendPct, activeClients, checkInCompletion, checkInTrendPct, avgProgress, avgProgressTrendPct, monthlyRevenue, revenueTrendPct, newLeads, leadsTrendPct }) {
   return (
-    <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 16, marginBottom: 24 }}>
-      <Stat label="Total Clients" value={totalClients} unit="" />
-      <Stat label="Active Clients" value={activeClients} unit="" />
-      <Stat label="Check-In Completion" value={checkInCompletion} unit="%" />
-      <Stat label="Avg Client Progress" value={avgProgress ?? "—"} unit={avgProgress != null ? "%" : ""} />
-      <Stat label="Monthly Revenue" value={"$" + monthlyRevenue.toLocaleString()} unit="" />
-      <Stat label="New Leads" value={newLeads} unit="" />
+    <div className="g6" style={{ display: "grid", gridTemplateColumns: "repeat(6,1fr)", gap: 16, marginBottom: 24 }}>
+      <MetricCard icon="👥" label="Total Clients" value={totalClients} unit="" trend={fmtDelta(totalClientsTrendPct)} />
+      <MetricCard icon="⚡" label="Active Clients" value={activeClients} unit="" />
+      <MetricCard icon="✅" label="Check-In Completion" value={checkInCompletion} unit="%" trend={fmtWeekDelta(checkInTrendPct)} />
+      <MetricCard icon="📊" label="Avg Client Progress" value={avgProgress ?? "—"} unit={avgProgress != null ? "%" : ""} trend={fmtWeekDelta(avgProgressTrendPct)} />
+      <MetricCard icon="💰" label="Monthly Revenue" value={"$" + monthlyRevenue.toLocaleString()} unit="" trend={fmtDelta(revenueTrendPct)} />
+      <MetricCard icon="✨" label="New Leads" value={newLeads} unit="" trend={fmtDelta(leadsTrendPct)} />
     </div>
   );
 }

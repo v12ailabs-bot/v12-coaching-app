@@ -30,13 +30,16 @@ async function authHeaders() {
 // header), and Client Settings stay always visible; every other section is a
 // collapsed-by-default accordion. Expand state is session-only (a plain
 // useState Set, not persisted) per the progressive-disclosure requirement.
-export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
+export function ClientDetailPage({ initialClientId, onInitialClientOpened, initialSectionKey, onInitialSectionOpened }) {
   const isMobile = useIsMobile();
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState(null);
   // Applied at most once per mount — after that, the coach's own in-page
   // ClientSelector clicks (or a showArchived toggle) own `selected`.
   const appliedInitial = useRef(false);
+  // Applied at most once per mount, independent of appliedInitial — a caller
+  // can pass a section to jump to even without also passing a client id.
+  const appliedSection = useRef(false);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
@@ -109,6 +112,19 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
     }
     setSelected(s=>(s && vis.some(c=>c.id===s)) ? s : vis[0].id);
   },[clients, showArchived, initialClientId]);
+  // Jump straight to (and expand) a specific accordion section — e.g. the
+  // Overview page's Client Overview table linking a client's phase directly
+  // to their Program Roadmap builder instead of leaving the coach to find it
+  // among a dozen collapsed sections.
+  useEffect(()=>{
+    if(appliedSection.current || !initialSectionKey || !selected) return;
+    appliedSection.current = true;
+    setExpanded(prev=>new Set(prev).add(initialSectionKey));
+    requestAnimationFrame(()=>{
+      document.getElementById(`section-${initialSectionKey}`)?.scrollIntoView({behavior:"smooth",block:"start"});
+    });
+    onInitialSectionOpened?.();
+  },[selected, initialSectionKey]);
   // Program templates come from the Notion program library (via the API).
   useEffect(()=>{
     authHeaders()
@@ -369,7 +385,12 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
           refreshFromNotion={refreshFromNotion} syncing={syncing}/>
     )},
     { key: "nutrition", title: "Nutrition", node: <CoachNutrition clientId={client.id} refreshKey={progTick} /> },
-    { key: "program-phase", title: "Program Phase", node: <ProgramPhase clientId={trainOwnerId} /> },
+    { key: "program-phase", title: "Program Phase", node: (
+        <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>{
+          setExpanded(prev=>new Set(prev).add("program-roadmap"));
+          requestAnimationFrame(()=>document.getElementById("section-program-roadmap")?.scrollIntoView({behavior:"smooth",block:"start"}));
+        }} />
+    )},
     { key: "program-roadmap", title: "Program Roadmap", node: <ProgramRoadmapPlanner clientId={trainOwnerId} /> },
     { key: "program-history", title: "Program History", node: (
         <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
@@ -412,10 +433,12 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened }) {
             saveSettings={saveSettings} savingSettings={savingSettings} settingsMsg={settingsMsg}
             resetGoalToNotion={resetGoalToNotion} resettingGoal={resettingGoal} syncing={syncing}/>
           {sections.map(s => (
-            <CollapsibleSection key={s.key} title={s.title}
-              expanded={expanded.has(s.key)} onToggle={()=>toggleSection(s.key)}>
-              {s.node}
-            </CollapsibleSection>
+            <div key={s.key} id={`section-${s.key}`}>
+              <CollapsibleSection title={s.title}
+                expanded={expanded.has(s.key)} onToggle={()=>toggleSection(s.key)}>
+                {s.node}
+              </CollapsibleSection>
+            </div>
           ))}
         </>
       )}
