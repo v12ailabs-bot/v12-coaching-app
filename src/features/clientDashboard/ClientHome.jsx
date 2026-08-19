@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
-import { S, todayStr, localDateStr } from "../../theme.jsx";
+import { S, todayStr, localDateStr, useIsMobile } from "../../theme.jsx";
 import { PageTitle, Btn, StatusBadge } from "../../components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "../../components/ClientBanners.jsx";
 import { assessClientRisk } from "../../lib/scoring.js";
@@ -19,6 +19,7 @@ import { ProgramRoadmapCard } from "./ProgramRoadmapCard.jsx";
 // self-fetching component (see ./*.jsx) — this file only loads the data
 // needed for risk assessment/goal scoring, which several sections share.
 export function ClientHome({ profile, setPage }) {
+  const isMobile = useIsMobile();
   const [checkins, setCheckins] = useState([]);
   const [weeklyDone, setWeeklyDone] = useState(true);
   const [weeklyRecent, setWeeklyRecent] = useState([]);
@@ -49,13 +50,23 @@ export function ClientHome({ profile, setPage }) {
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
   const doneToday = checkins.some((c) => c.date === todayStr());
-  const todayCheckin = checkins.find((c) => c.date === todayStr());
   // Same assessClientRisk the coach's Needs Attention board uses — the client
   // sees the same flags their coach does, phrased as the coach talking to them.
   const risk = assessClientRisk(profile, checkins, weeklyRecent, goal);
   // Same computeGoalScore GoalsSection/Progress use — one source of truth.
   const weightSeries = checkins.filter((c) => c.weight != null).map((c) => ({ date: c.date, value: c.weight }));
   const goalScore = goal ? computeGoalScore(goal, weightSeries, {}) : null;
+
+  const progressBlock = checkins.length > 1 ? (
+    <ProgressChart checkins={checkins} goal={goal} />
+  ) : (
+    <div style={{ background: S.surface, border: "1px solid " + S.border, borderRadius: 12, textAlign: "center", padding: 48 }}>
+      <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
+      <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, marginBottom: 8 }}>No check-ins yet</div>
+      <div style={{ color: S.muted, fontSize: 13, fontWeight: 500, marginBottom: 20 }}>Log your first daily check-in to start tracking.</div>
+      <Btn onClick={() => setPage("daily")}>Start Now</Btn>
+    </div>
+  );
 
   return (
     <div>
@@ -108,9 +119,15 @@ export function ClientHome({ profile, setPage }) {
       </div>
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-        <NutritionMacroBars profile={profile} todayCheckin={todayCheckin} setPage={setPage} />
+        <NutritionMacroBars profile={profile} checkins={checkins} setPage={setPage} />
         <CheckInCard doneToday={doneToday} adherenceScore={risk.adh?.score} setPage={setPage} />
       </div>
+
+      {/* Mobile only: Progress Over Time goes right after Nutrition Targets
+          instead of after the Program Roadmap, further down. Desktop keeps
+          its original spot at the very end (see below) — this is the same
+          `progressBlock` rendered in one of two positions, not duplicated. */}
+      {isMobile && <div style={{ marginBottom: 14 }}>{progressBlock}</div>}
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <ProgressSnapshot profile={profile} checkins={checkins} setPage={setPage} />
@@ -119,16 +136,7 @@ export function ClientHome({ profile, setPage }) {
 
       <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
 
-      {checkins.length > 1 ? (
-        <ProgressChart checkins={checkins} goal={goal} />
-      ) : (
-        <div style={{ background: S.surface, border: "1px solid " + S.border, borderRadius: 12, textAlign: "center", padding: 48 }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, marginBottom: 8 }}>No check-ins yet</div>
-          <div style={{ color: S.muted, fontSize: 13, fontWeight: 500, marginBottom: 20 }}>Log your first daily check-in to start tracking.</div>
-          <Btn onClick={() => setPage("daily")}>Start Now</Btn>
-        </div>
-      )}
+      {!isMobile && progressBlock}
     </div>
   );
 }

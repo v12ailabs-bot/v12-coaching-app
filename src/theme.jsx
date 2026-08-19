@@ -164,11 +164,15 @@ export function GlobalStyles() {
       }
       @media (max-width: 980px) and (min-width: 721px) {
         .g6 { grid-template-columns: repeat(3, 1fr) !important; }
+        .coach-tile-grid { grid-template-columns: repeat(2, 1fr) !important; }
       }
       @media (max-width: 980px) {
         /* Coach Overview's table + side-column split — stack once there's no
            room for a real side column instead of squeezing both illegibly. */
         .coach-grid-main { grid-template-columns: 1fr !important; }
+      }
+      @media (max-width: 720px) {
+        .coach-tile-grid { grid-template-columns: 1fr !important; }
       }
     `}</style>
   );

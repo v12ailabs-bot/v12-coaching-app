@@ -15,29 +15,44 @@ const relTime = (iso) => {
 // Merges the most recent rows across the tables clients actually write to
 // (daily_checkins, weekly_checkins, workout_logs, progress_photos) into one
 // feed — no separate "activity log" table, just a client-side merge sorted
-// by created_at.
-export function RecentActivityFeed({ nameOf }) {
+// by created_at. `clientIds` restricts this to coaching clients — program-
+// only clients have their own Program Subscribers section, not this feed.
+// A single workout save can insert several workout_logs rows (one per set)
+// sharing the exact same created_at — deduped below so one gym session
+// doesn't show up as several identical-looking lines.
+export function RecentActivityFeed({ nameOf, clientIds }) {
   const [events, setEvents] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    if (!clientIds || clientIds.length === 0) { setEvents([]); setLoading(false); return; }
     (async () => {
+      // Fetched a little deeper than the final 8 shown, since deduping
+      // same-timestamp workout_logs rows can otherwise leave fewer than 8
+      // distinct events even though more real ones exist further back.
+      const LIMIT = 20;
       const [{ data: dc }, { data: wc }, { data: wl }, { data: pp }] = await Promise.all([
-        supabase.from("daily_checkins").select("client_id,created_at").order("created_at", { ascending: false }).limit(8),
-        supabase.from("weekly_checkins").select("client_id,created_at").order("created_at", { ascending: false }).limit(8),
-        supabase.from("workout_logs").select("client_id,created_at").order("created_at", { ascending: false }).limit(8),
-        supabase.from("progress_photos").select("client_id,created_at").order("created_at", { ascending: false }).limit(8),
+        supabase.from("daily_checkins").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
+        supabase.from("weekly_checkins").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
+        supabase.from("workout_logs").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
+        supabase.from("progress_photos").select("client_id,created_at").in("client_id", clientIds).order("created_at", { ascending: false }).limit(LIMIT),
       ]);
+      const seen = new Set();
       const merged = [
         ...(dc || []).map((r) => ({ ...r, text: "completed a daily check-in" })),
         ...(wc || []).map((r) => ({ ...r, text: "completed a weekly check-in" })),
         ...(wl || []).map((r) => ({ ...r, text: "logged a workout" })),
         ...(pp || []).map((r) => ({ ...r, text: "uploaded progress photos" })),
-      ].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8);
+      ].filter((r) => {
+        const key = `${r.client_id}|${r.text}|${r.created_at}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      }).sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()).slice(0, 8);
       setEvents(merged);
       setLoading(false);
     })();
-  }, []);
+  }, [clientIds && clientIds.join(",")]);
 
   return (
     <Card>

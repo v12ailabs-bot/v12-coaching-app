@@ -1,10 +1,9 @@
 import { useState } from "react";
 import { S, useIsMobile } from "../../theme.jsx";
-import { Card, StatusBadge, ProgressRing } from "../../components/ui/index.js";
+import { Card, StatusBadge } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
 
-const STATUS_TONE = { "On Track": "green", "Needs Attention": "amber", "At Risk": "red" };
-const STATUS_RING_COLOR = { "On Track": S.success, "Needs Attention": S.warning, "At Risk": S.danger };
+const STATUS_TONE = { "On Track": "green", "Needs Attention": "amber", "At Risk": "red", "Inactive": "neutral" };
 const FILTERS = [
   { id: "all", label: "All Clients" },
   { id: "active", label: "Active" },
@@ -25,15 +24,6 @@ function NameCell({ row, openClient }) {
         {row.phaseLabel || "Plan roadmap →"}
       </div>
     </>
-  );
-}
-
-function CheckInRing({ value, status }) {
-  if (value == null) return <span style={{ fontSize: 12, color: S.muted }}>—</span>;
-  return (
-    <ProgressRing value={value} size={34} strokeWidth={4} color={STATUS_RING_COLOR[status] || S.accent}>
-      <span style={{ fontSize: 9, fontWeight: 700, color: S.text }}>{value}%</span>
-    </ProgressRing>
   );
 }
 
@@ -65,19 +55,19 @@ function MobileRow({ row, openClient }) {
       <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>{row.programName}</div>
       <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
         <div style={{ flex: 1 }}><ProgressBar value={row.progress} /></div>
-        <CheckInRing value={row.checkin} status={row.status} />
+        <div style={{ fontSize: 12, color: S.text, whiteSpace: "nowrap" }}>{row.checkin}% check-in</div>
       </div>
       <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>Last activity: {row.lastActivity}</div>
     </div>
   );
 }
 
-// `rows` are precomputed by CoachHome from assessClientRisk/loggingAssessment —
-// this component only filters and renders. `bucket` (active/at_risk/inactive)
-// is a mutually-exclusive grouping for the filter tabs, separate from the
-// finer-grained `status` badge shown per row (On Track/Needs Attention/At Risk).
-// Fixed-height card with its own internal scroll, so the Overview page's
-// height doesn't grow with the client roster.
+// `rows` are precomputed by CoachHome from assessClientRisk/loggingAssessment
+// — coaching clients only, program-only clients have their own Program
+// Subscribers section. `bucket` (active/at_risk/inactive) is a mutually-
+// exclusive grouping for the filter tabs, separate from the finer-grained
+// `status` badge shown per row. Fixed-height card with its own internal
+// scroll, so the Overview page's height doesn't grow with the roster.
 export function ClientOverviewTable({ rows, openClient }) {
   const [filter, setFilter] = useState("all");
   const isMobile = useIsMobile();
@@ -107,12 +97,17 @@ export function ClientOverviewTable({ rows, openClient }) {
           {shown.map((r) => <MobileRow key={r.id} row={r} openClient={openClient} />)}
         </div>
       ) : (
+        // overflow (not overflowY) so the sticky header scrolls away from the
+        // header row above it cleanly on both axes; the sticky `<th>`s need an
+        // explicit z-index — without one, scrolling `<tr>`s painted later in
+        // the DOM sit on top of the "stuck" header instead of under it, which
+        // is what read as the header/rows bleeding into each other.
         <div style={{ overflow: "auto", flex: 1, minHeight: 0 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 600 }}>
             <thead>
               <tr>
                 {["Client", "Program", "Progress", "Check-In", "Status", "Last Activity"].map((h) => (
-                  <th key={h} style={{ position: "sticky", top: 0, background: S.surface, fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "8px 12px", borderBottom: "1px solid " + S.border }}>{h}</th>
+                  <th key={h} style={{ position: "sticky", top: 0, zIndex: 2, background: S.surface, fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "8px 12px", borderBottom: "1px solid " + S.border, boxShadow: "0 1px 0 " + S.border }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -122,7 +117,7 @@ export function ClientOverviewTable({ rows, openClient }) {
                   <td style={{ padding: "12px", borderBottom: "1px solid " + S.border }}><NameCell row={r} openClient={openClient} /></td>
                   <td style={{ padding: "12px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{r.programName}</td>
                   <td style={{ padding: "12px", borderBottom: "1px solid " + S.border, minWidth: 100 }}><ProgressBar value={r.progress} /></td>
-                  <td style={{ padding: "12px", borderBottom: "1px solid " + S.border }}><CheckInRing value={r.checkin} status={r.status} /></td>
+                  <td style={{ padding: "12px", fontSize: 13, color: S.text, borderBottom: "1px solid " + S.border }}>{r.checkin}%</td>
                   <td style={{ padding: "12px", borderBottom: "1px solid " + S.border }}><StatusBadge label={r.status} tone={STATUS_TONE[r.status]} /></td>
                   <td style={{ padding: "12px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{r.lastActivity}</td>
                 </tr>

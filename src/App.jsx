@@ -2556,14 +2556,18 @@ function Nutrition({ profile }) {
 // DASHBOARD SHELLS — top bar + sidebar nav + active page
 // ---------------------------------------------------------------------------
 
-function Shell({ profile, isCoach, logout, page, setPage, children }) {
+function Shell({ profile, isCoach, logout, page, setPage, children, wide }) {
   const programOnly = !isCoach && profile?.client_type === "program_only";
   return (
     <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
       <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
         <Sidebar isCoach={isCoach} programOnly={programOnly} page={page} setPage={setPage} />
-        <main className="main-content" style={{ flex: 1, minWidth: 0, padding: "28px 32px", maxWidth: 1180, width: "100%" }}>
+        {/* `wide` (Coach Overview only) uses the full available width instead
+            of the app's standard 1180px column — that page's grid/tile
+            panels were reading cramped with a lot of unused whitespace past
+            it on larger screens. Every other page keeps the standard width. */}
+        <main className="main-content" style={{ flex: 1, minWidth: 0, padding: "28px 32px", maxWidth: wide ? 1760 : 1180, width: "100%" }}>
           {children}
         </main>
       </div>
@@ -2974,7 +2978,7 @@ function CoachDashboard({ profile, logout }) {
   const openClient = (id, opts) => { setOpenClientId(id); setOpenSectionKey(opts?.section || null); setPage("clients"); };
 
   return (
-    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage}>
+    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard"}>
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
       {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
         initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}

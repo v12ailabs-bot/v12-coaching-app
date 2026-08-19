@@ -6,8 +6,8 @@ import { S } from "../../theme.jsx";
 // this page.
 export function SectionTitle({ children, action }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 10, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 15, fontWeight: 700, color: S.text, letterSpacing: 0.2 }}>{children}</div>
+    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 10, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 19, fontWeight: 800, color: S.text, letterSpacing: 0.2 }}>{children}</div>
       {action}
     </div>
   );
