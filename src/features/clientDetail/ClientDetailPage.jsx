@@ -291,6 +291,13 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     }
     setSaving(false);
   };
+  // Cancel must fully reset the form — otherwise a leftover block_type/group_id
+  // from an in-progress superset silently links the next unrelated "Add
+  // Exercise" into that same block.
+  const cancelAdd = ()=>{
+    setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
+    setShowAdd(false);
+  };
   const delEx = async(id)=>{
     // Deleting an exercise cascade-deletes its workout_logs. Warn the coach when
     // there's logged history on the line so it isn't lost silently.
@@ -408,7 +415,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     { key: "exercises", title: "Assigned Exercises", node: (
         <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
           newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}
-          addEx={addEx} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}/>
+          addEx={addEx} cancelAdd={cancelAdd} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}/>
     )},
     { key: "partner", title: "Training Partner", node: (
         <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}

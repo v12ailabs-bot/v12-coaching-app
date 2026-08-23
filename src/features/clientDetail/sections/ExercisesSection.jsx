@@ -5,7 +5,7 @@ import { DAY_ORDER, EX_TYPES, PHASE_ORDER, groupByDay, BLOCK_TYPES, BLOCK_TYPE_L
 // Assigned-exercises table/cards, grouped by training day. All state (the
 // exercise list, the add/edit forms) stays owned by the parent ClientsPanel —
 // this component is purely presentational, same as the other Clients sections.
-export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, newEx, setNewEx, editEx, setEditEx, saving, addEx, delEx, startEditEx, saveEditEx }) {
+export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, newEx, setNewEx, editEx, setEditEx, saving, addEx, cancelAdd, delEx, startEditEx, saveEditEx }) {
   return (
     <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -61,7 +61,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
           <Fld label="Notes / loading guidance"><Inp type="text" value={newEx.notes} onChange={e=>setNewEx(p=>({...p,notes:e.target.value}))} placeholder="e.g. @80% 1RM, RPE 8, 3s eccentric"/></Fld>
           <div style={{display:"flex",gap:10,marginTop:8}}>
             <Btn sm onClick={addEx} disabled={saving}>{saving?"Saving...":"Add Exercise"}</Btn>
-            <button onClick={()=>setShowAdd(false)} style={{padding:"7px 14px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
+            <button onClick={cancelAdd} style={{padding:"7px 14px",fontSize:10,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
           </div>
         </div>
       )}
