@@ -33,7 +33,11 @@ export function CoachConversations({ clientId }) {
   return (
     <Card style={{ marginBottom: 20 }}>
       <CardTitle>Conversation Log</CardTitle>
-      <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 12 }}>
+      {/* Stacked, not a 3-column grid — this only ever renders in the
+          Client Detail right rail now (a fixed ~280px column), where 3
+          across (especially the two date inputs) overflowed and squeezed
+          the rest of the rail's cards. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 12 }}>
         <Fld label="Channel"><RG options={CHANNELS} value={form.channel} onChange={(v) => set("channel", v)} cap /></Fld>
         <Fld label="Date"><Inp type="date" value={form.occurred_on} onChange={(e) => set("occurred_on", e.target.value)} /></Fld>
         <Fld label="Follow-up (optional)"><Inp type="date" value={form.follow_up_on} onChange={(e) => set("follow_up_on", e.target.value)} /></Fld>

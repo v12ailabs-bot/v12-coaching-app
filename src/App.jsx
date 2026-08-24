@@ -1526,9 +1526,9 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
             <Card style={{marginBottom:16,padding:"16px 20px"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  {dayGroups.length>1 && <button onClick={()=>goToDay(-1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:26,height:26,fontSize:12}}>‹</button>}
-                  <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{currentDay.label}</div>
-                  {dayGroups.length>1 && <button onClick={()=>goToDay(1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:26,height:26,fontSize:12}}>›</button>}
+                  {dayGroups.length>1 && <button className="day-nav-arrow" onClick={()=>goToDay(-1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:30,height:30,borderRadius:"50%",fontSize:14}}>‹</button>}
+                  <div key={currentDay.day} className="day-label-swap" style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{currentDay.label}</div>
+                  {dayGroups.length>1 && <button className="day-nav-arrow" onClick={()=>goToDay(1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:30,height:30,borderRadius:"50%",fontSize:14}}>›</button>}
                 </div>
                 <div style={{fontSize:12,color:S.muted}}>{dayDoneCount} of {dayTotal} exercises · {dayPct}%</div>
               </div>

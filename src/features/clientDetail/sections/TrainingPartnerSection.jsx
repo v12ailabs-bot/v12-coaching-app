@@ -11,7 +11,7 @@ export function TrainingPartnerSection({ clients, selected, selClient, partnerId
       <div style={{display:"flex",gap:12,alignItems:"flex-end",flexWrap:"wrap"}}>
         <Fld label="Share training program with">
           <select value={partnerId} onChange={e=>setPartnerId(e.target.value)}
-            style={{width:"100%",minWidth:240,background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
+            style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
             <option value="">Independent (no partner)</option>
             {clients
               .filter(c=>c.id!==selected && !c.shared_program_owner_id)

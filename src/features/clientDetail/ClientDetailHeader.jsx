@@ -1,15 +1,16 @@
 import { S, RADIUS, avatarFrom } from "../../theme.jsx";
-import { StatusBadge } from "../../components/ui/index.js";
+import { StatusBadge, Btn } from "../../components/ui/index.js";
 
 // Always-visible top strip across every tab — name, program type, contact,
 // Active/Archived status, and last check-in. There's no "next check-in"
 // scheduling concept anywhere in the app (no cadence field, no reschedule
-// action) — this shows the real "last check-in" instead, as a clickable
-// link into the Progress card rather than a static label. The gear icon
-// opens Client Settings (goal / access date / client type / training
-// location) in a modal — account configuration, not day-to-day client
-// status, so it stays out of the Overview info grid.
-export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onLastCheckinClick, onSettingsClick }) {
+// action) — this shows the real "last check-in" date as plain text, with a
+// separate "Progress" button to open the full Progress view (the date
+// itself isn't the click target). The gear icon opens Client Settings
+// (goal / access date / client type / training location) in a modal —
+// account configuration, not day-to-day client status, so it stays out of
+// the Overview info grid.
+export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpenProgress, onSettingsClick }) {
   return (
     <div style={{ background: S.surface, border: "1px solid " + S.border, borderRadius: RADIUS.lg, padding: 20, marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
       <div style={{ width: 52, height: 52, borderRadius: "50%", background: S.accent, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>
@@ -25,12 +26,8 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onLas
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Last check-in</div>
-        <button
-          onClick={onLastCheckinClick}
-          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 14, fontWeight: 700, color: S.accent, textDecoration: "underline", textUnderlineOffset: 3 }}
-        >
-          {lastCheckin || "No check-ins yet"}
-        </button>
+        <div style={{ fontSize: 14, fontWeight: 700, color: S.text, marginBottom: 8 }}>{lastCheckin || "No check-ins yet"}</div>
+        <Btn sm onClick={onOpenProgress}>Progress</Btn>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
           <button
             onClick={() => onArchiveToggle(client, !client.archived)}

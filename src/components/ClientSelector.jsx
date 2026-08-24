@@ -33,6 +33,19 @@ export function ClientSelector({ clients, selectedId, onSelect, showViewTabs = t
     );
   }, [clients, activeView, query]);
 
+  // Coaching and program-only clients are different day-to-day workflows —
+  // split into two labeled groups instead of one mixed list, on every view
+  // (Archived stays a single flat list since the split matters less there).
+  const groups = useMemo(() => {
+    if (activeView === "archived") return [{ label: null, items: filtered }];
+    const coaching = filtered.filter((c) => c.client_type !== "program_only");
+    const programOnly = filtered.filter((c) => c.client_type === "program_only");
+    const out = [];
+    if (coaching.length) out.push({ label: "Coaching", items: coaching });
+    if (programOnly.length) out.push({ label: "Program Only", items: programOnly });
+    return out;
+  }, [filtered, activeView]);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <input
@@ -59,35 +72,49 @@ export function ClientSelector({ clients, selectedId, onSelect, showViewTabs = t
             {query ? "No clients match your search." : activeView === "archived" ? "No archived clients." : activeView === "active" ? "No active clients yet." : "No clients yet."}
           </div>
         )}
-        {filtered.map((c, i) => {
-          const isSel = selectedId === c.id;
-          return (
-            <button key={c.id} onClick={() => onSelect(c.id)}
-              style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", border: "none",
-                borderBottom: i < filtered.length - 1 ? "1px solid " + S.border : "none",
-                boxShadow: isSel ? "inset 3px 0 0 " + S.accent : "none",
-                background: isSel ? "rgba(255,106,0,.08)" : "transparent", cursor: "pointer", textAlign: "left" }}>
-              <div style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, background: COLORS[i % COLORS.length],
-                color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
-                {avatarFrom(c.name || c.email)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: isSel ? S.accent : S.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {c.name || c.email}
+        {(() => {
+          let flatIndex = -1;
+          return groups.map((group, gi) => (
+            <div key={group.label || "flat"}>
+              {group.label && (
+                <div style={{ padding: "8px 14px", fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, background: S.surface2, borderBottom: "1px solid " + S.border, borderTop: gi > 0 ? "1px solid " + S.border : "none" }}>
+                  {group.label} ({group.items.length})
                 </div>
-                <div style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {c.goal || "No goal set"}
-                </div>
-              </div>
-              {badgeFor && badgeFor(c) && (
-                <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", color: LOGGING_COLOR[badgeFor(c).level] || S.muted, flexShrink: 0, whiteSpace: "nowrap" }}>
-                  {badgeFor(c).label}
-                </span>
               )}
-              <StatusBadge label={c.archived ? "Archived" : "Active"} tone={c.archived ? "neutral" : "green"} />
-            </button>
-          );
-        })}
+              {group.items.map((c, i) => {
+                flatIndex++;
+                const isSel = selectedId === c.id;
+                const isLastRow = gi === groups.length - 1 && i === group.items.length - 1;
+                return (
+                  <button key={c.id} onClick={() => onSelect(c.id)}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", border: "none",
+                      borderBottom: isLastRow ? "none" : "1px solid " + S.border,
+                      boxShadow: isSel ? "inset 3px 0 0 " + S.accent : "none",
+                      background: isSel ? "rgba(255,106,0,.08)" : "transparent", cursor: "pointer", textAlign: "left" }}>
+                    <div style={{ width: 32, height: 32, borderRadius: "50%", flexShrink: 0, background: COLORS[flatIndex % COLORS.length],
+                      color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>
+                      {avatarFrom(c.name || c.email)}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: isSel ? S.accent : S.text, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {c.name || c.email}
+                      </div>
+                      <div style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                        {c.goal || "No goal set"}
+                      </div>
+                    </div>
+                    {badgeFor && badgeFor(c) && (
+                      <span style={{ fontSize: 9, fontWeight: 600, letterSpacing: 0.5, textTransform: "uppercase", color: LOGGING_COLOR[badgeFor(c).level] || S.muted, flexShrink: 0, whiteSpace: "nowrap" }}>
+                        {badgeFor(c).label}
+                      </span>
+                    )}
+                    <StatusBadge label={c.archived ? "Archived" : "Active"} tone={c.archived ? "neutral" : "green"} />
+                  </button>
+                );
+              })}
+            </div>
+          ));
+        })()}
       </div>
     </div>
   );

@@ -440,11 +440,11 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
 
         <div style={{ minWidth:0 }}>
           {client ? (
-            <div className="client-workspace" style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,280px)", gap:20, alignItems:"start" }}>
+            <div className="client-workspace" style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,320px)", gap:20, alignItems:"start" }}>
               <div style={{ minWidth:0 }}>
                 <ClientDetailHeader client={client} lastCheckin={lastCheckin} onArchiveToggle={setArchived}
                   onSettingsClick={()=>setShowSettingsModal(true)}
-                  onLastCheckinClick={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}/>
+                  onOpenProgress={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}/>
                 <div className="client-tabs-sticky">
                   <Tabs tabs={tabs} active={validTab} onChange={setActiveTab}/>
                 </div>
@@ -508,7 +508,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   reference material checked occasionally, not reviewed every
                   visit, so they live here rather than as full-width Overview
                   rows. */}
-              <div className="client-rail" style={{ display:"flex", flexDirection:"column", gap:16 }}>
+              <div className="client-rail" style={{ display:"flex", flexDirection:"column", gap:16, minWidth:0 }}>
                 <ClientQuickActionsRail
                   onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
                   onUpdateNutrition={()=>{ if(window.confirm(`Regenerate ${client.name||client.email}'s nutrition plan now?`)) generateProgram(client,"nutrition"); }}

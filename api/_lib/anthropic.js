@@ -549,7 +549,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
 
 // A short, encouraging plain-text recap of the client's last ~30 days, built from
 // their daily log, body metrics, and logged workouts. Returns prose (not JSON).
-export async function generateCheckinSummary({ profile = {}, daily = [], logs = [], phaseHistory = [], goal = null }) {
+export async function generateCheckinSummary({ profile = {}, daily = [], logs = [], phaseHistory = [], goal = null, strength = [] }) {
   const weights = daily.filter((d) => d.weight != null);
   // Workouts = distinct days with a logged session OR a daily check-in marked
   // "completed" (the client's "Training Today" self-report).
@@ -567,6 +567,10 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
     sets_logged: logs.length,
     phase_changes: phaseHistory.map((h) => ({ phase: h.phase, date: h.changed_at?.slice(0, 10), note: h.phase_note })),
     structured_goal: goal,
+    // Per-exercise top-set weight/rep movement over the same 30 days (see
+    // api/_lib/strengthTrends.js) — real strength progress, not just
+    // bodyweight/nutrition/habits.
+    strength_progress: strength,
   };
   const message = await anthropic.messages.create({
     model: MODEL,
@@ -575,13 +579,13 @@ export async function generateCheckinSummary({ profile = {}, daily = [], logs = 
       {
         role: "user",
         content: `You are a supportive but honest performance coach. Write a concise 30-day progress recap for ${profile.name || "the client"} (goal: ${data.goal}).
-Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself.
+Use ONLY the data below — never invent numbers. If data is sparse, acknowledge it and encourage more consistent logging. If "phase_changes" is non-empty, you may mention the program phase change(s) as context for the recap. If "structured_goal" is non-null, its "classification"/"overall_score" are the real, computed goal progress — cite them directly rather than eyeballing the weight numbers yourself. If "strength_progress" is non-empty, each entry is one exercise's top-set movement (weight in lb, or reps for bodyweight moves) from "first_value" on "first_date" to "latest_value" on "latest_date" — weave in the clearest one or two as concrete strength wins (or, if a delta is negative, an honest note), not just body weight.
 
 DATA (last 30 days): ${JSON.stringify(data)}
 
 Write 3 short paragraphs, ~120-160 words total, second person ("you"):
-1. What the data shows (weight trend, workouts completed, consistency).
-2. One clear win to celebrate.
+1. What the data shows (weight trend, workouts completed, consistency, and any notable strength movement from strength_progress).
+2. One clear win to celebrate — prefer a concrete strength_progress entry when one exists, otherwise the best of the other data.
 3. One specific focus for the next 30 days.
 Plain text only — no markdown headers, no bullet lists.`,
       },
@@ -623,10 +627,11 @@ Use ONLY the data below — never invent numbers. If a component score or raw st
 SCORES (0-100, already-computed component scores): ${JSON.stringify(data)}
 
 RAW 30-DAY NUMBERS BEHIND THOSE SCORES (last 30 days) — when a component score is low, this is WHY; cite the specific number instead of just restating the score: ${JSON.stringify(rawStats)}
+"strength_trends" inside those raw numbers is per-exercise top-set movement (weight in lb, or reps for bodyweight moves) from "first_value"/"first_date" to "latest_value"/"latest_date" — real strength progress, separate from the bodyweight-based goal score above. When it's non-empty, factor the clearest entry into your assessment even if the goal itself is a weight target.
 
 Write 2 short paragraphs, ~80-120 words total, second person ("you"):
-1. Where they stand right now (on pace / ahead / behind) and the CONCRETE reason driving that — e.g. "you averaged X calories against a Y target" or "you logged Z of ${rawStats.window_days ?? 30} workouts", not just "nutrition is at 62%". Pick whichever raw number(s) explain the lowest component score(s).
-2. One concrete, specific recommendation for the next 1-2 weeks, tied directly to that same number (e.g. what to change about calorie intake, macros, or training frequency).
+1. Where they stand right now (on pace / ahead / behind) and the CONCRETE reason driving that — e.g. "you averaged X calories against a Y target", "you logged Z of ${rawStats.window_days ?? 30} workouts", or "your top-set on [exercise] moved from X to Y", not just "nutrition is at 62%". Pick whichever raw number(s) — including a strength_trends entry when it's the most notable signal — explain the lowest component score(s) or best support the overall picture.
+2. One concrete, specific recommendation for the next 1-2 weeks, tied directly to that same number (e.g. what to change about calorie intake, macros, training frequency, or load progression on a specific lift).
 Plain text only — no markdown headers, no bullet lists.`,
       },
     ],

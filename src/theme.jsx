@@ -133,6 +133,15 @@ export function GlobalStyles() {
         animation: spin 0.8s linear infinite; }
       @keyframes spin { to { transform: rotate(360deg); } }
       input[type="range"] { width: 100%; accent-color: ${S.accent}; }
+      /* Workout day-switcher arrows: a visible press/hover response instead
+         of a static outlined box, plus a little slide-fade on the day label
+         itself each time it changes so switching days reads as a real
+         transition, not an instant swap. */
+      .day-nav-arrow { transition: transform .15s ease, background-color .15s ease, border-color .15s ease; }
+      .day-nav-arrow:hover { background: rgba(255,106,0,.14) !important; border-color: ${S.accent} !important; color: ${S.accent} !important; transform: scale(1.12); }
+      .day-nav-arrow:active { transform: scale(0.9); }
+      .day-label-swap { animation: dayLabelIn .25s ease; }
+      @keyframes dayLabelIn { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: translateX(0); } }
       @media (max-width: 720px) {
         /* Collapse the left sidebar into a fixed bottom tab bar. These need
            !important: the <nav> and its items carry inline styles, which

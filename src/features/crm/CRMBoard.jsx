@@ -94,7 +94,9 @@ export function CRMBoard() {
   return (
     <div>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 16, flexWrap: "wrap" }}>
-        <PageTitle title="Leads / CRM" sub="Track and manage inquiries through your coaching pipeline" />
+        <div style={{ minWidth: 0 }}>
+          <PageTitle title="Leads / CRM" sub="Track and manage inquiries through your coaching pipeline" />
+        </div>
         <Btn onClick={() => setShowAdd(true)}>+ Add Lead</Btn>
       </div>
 

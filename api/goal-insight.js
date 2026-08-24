@@ -3,6 +3,7 @@ import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
+import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 
 // POST /api/goal-insight  { goal_id }
 // Coach-only: recomputes the goal's score server-side (never trusts a
@@ -25,13 +26,14 @@ export default async function handler(req, res) {
     cutoff.setDate(cutoff.getDate() - 44); // a bit more than 30d so the 30-day windows below have full coverage
     const cut = cutoff.toISOString().split("T")[0];
 
-    const [{ data: profile }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }] = await Promise.all([
+    const [{ data: profile }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal").eq("id", goal.client_id).maybeSingle(),
       supabaseAdmin.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g,workout").eq("client_id", goal.client_id).gte("date", cut).order("date"),
       supabaseAdmin.from("weekly_checkins").select("date,bodyweight,sleep_quality,hydration_quality").eq("client_id", goal.client_id).gte("date", cut).order("date"),
       supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", goal.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabaseAdmin.from("habits").select("id").eq("client_id", goal.client_id).eq("active", true),
       supabaseAdmin.from("habit_logs").select("habit_id,date,done").eq("client_id", goal.client_id).gte("date", cut),
+      supabaseAdmin.from("workout_logs").select("date,exercise_id,weight,reps").eq("client_id", goal.client_id).gte("date", cut),
     ]);
 
     // Primary metric series — v1 only supports metric_key 'bodyweight': daily
@@ -63,6 +65,17 @@ export default async function handler(req, res) {
     // reasons (calorie/macro gaps, workout-session count) instead of only
     // restating a percentage.
     const avgOf = (rows, key) => { const v = rows.map(r => r[key]).filter(v => v != null); return v.length ? Math.round(v.reduce((s, x) => s + x, 0) / v.length) : null; };
+    // Top-set weight/rep movement per exercise over the same window — lets
+    // the insight cite real strength progress alongside nutrition/training,
+    // not just the weight-trend goal score.
+    const exerciseIds = [...new Set((workoutLogs || []).map(l => l.exercise_id).filter(Boolean))];
+    const { data: exRows } = exerciseIds.length
+      ? await supabaseAdmin.from("exercises").select("id,name,is_bodyweight").in("id", exerciseIds)
+      : { data: [] };
+    const exerciseById = {};
+    (exRows || []).forEach(e => { exerciseById[e.id] = e; });
+    const strength_trends = strengthTrendsFrom(workoutLogs || [], exerciseById);
+
     const rawStats = {
       calorie_target: nutPlan?.calories ?? null,
       avg_calories_logged: avgOf(recentDaily, "calories"),
@@ -75,6 +88,7 @@ export default async function handler(req, res) {
       days_with_nutrition_logged: recentDaily.filter(d => d.calories != null || d.protein_g != null).length,
       workouts_completed: recentDaily.filter(d => d.workout === "completed").length,
       window_days: recentDaily.length,
+      strength_trends,
     };
 
     const scoreData = computeGoalScore(goal, series, { nutrition, training, recovery, habit });
