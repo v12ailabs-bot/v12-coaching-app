@@ -1,7 +1,7 @@
 import { S } from "../../theme.jsx";
 
 const TONES = {
-  red: { bg: "rgba(239,68,68,.16)", fg: S.danger },
+  red: { bg: "rgba(255,107,91,.16)", fg: S.danger },
   amber: { bg: "rgba(250,204,21,.14)", fg: S.warning },
   green: { bg: "rgba(34,197,94,.14)", fg: S.success },
   accent: { bg: "rgba(255,106,0,.12)", fg: S.accent },

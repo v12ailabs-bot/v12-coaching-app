@@ -52,7 +52,7 @@ export function CoachConversations({ clientId }) {
             <div style={{ fontSize: 13, lineHeight: 1.6, whiteSpace: "pre-wrap" }}>{c.summary}</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 8 }}>
               <span style={{ fontSize: 10, color: c.follow_up_on ? S.accent2 : S.muted }}>{c.follow_up_on ? `↻ Follow up ${c.follow_up_on}` : ""}</span>
-              <button onClick={() => remove(c)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+              <button onClick={() => remove(c)} style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
             </div>
           </div>
         ))}

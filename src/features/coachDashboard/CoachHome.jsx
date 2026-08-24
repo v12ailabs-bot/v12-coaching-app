@@ -3,7 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, todayStr, localDateStr, avatarFrom } from "../../theme.jsx";
 import { PageTitle, Card, Btn, CollapsibleSection } from "../../components/ui/index.js";
 import { COACH_EMAIL } from "../../lib/constants.js";
-import { assessClientRisk } from "../../lib/scoring.js";
+import { assessClientRisk, adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
@@ -240,13 +240,13 @@ export function CoachHome({ setPage, openClient }) {
   // panel on this page already reads — no new tracking table. Each of the
   // last WEEKLY_BUCKETS weeks gets its own trailing-7-day snapshot:
   //   - checkin completion: days logged / 7, averaged across coached clients.
-  //   - client progress: computeGoalScore's primary-metric score (the same
-  //     scorer assessClientRisk uses), averaged across clients with an active
-  //     bodyweight goal, evaluated as-of that week's end date instead of
-  //     today. This is a primary-metric-only approximation of the richer,
-  //     nutrition/training-blended goalScore shown elsewhere on a client's
-  //     own page — a fair trend signal, even though the absolute value can
-  //     differ slightly from that blended score.
+  //   - client progress: the SAME nutrition/training-blended computeGoalScore
+  //     assessClientRisk uses for avgGoalProgress above, evaluated as-of that
+  //     week's end date (nutrition/training components recomputed as-of that
+  //     date too, via adherenceFrom/nutritionScoreFrom's asOf param) instead
+  //     of always "now". The most recent bucket (end = today) is therefore
+  //     the same formula, same population, same reference date as
+  //     avgGoalProgress — the two tiles can no longer disagree on "today".
   const trailingCompletionPct = (clientId, end) => {
     const start = new Date(end); start.setDate(start.getDate() - 6);
     const startStr = localDateStr(start), endStr = localDateStr(end);
@@ -264,8 +264,11 @@ export function CoachHome({ setPage, openClient }) {
 
     const progressVals = clientsWithGoal.map((c) => {
       const goal = goalsByClient[c.id];
-      const series = (byClient[c.id] || []).filter((r) => r.weight != null).map((r) => ({ date: r.date, value: r.weight }));
-      return computeGoalScore(goal, series, {}, end).overallScore;
+      const checkins = byClient[c.id] || [];
+      const series = checkins.filter((r) => r.weight != null).map((r) => ({ date: r.date, value: r.weight }));
+      const nut = nutritionScoreFrom(checkins, 30, end);
+      const adh = adherenceFrom(checkins, 30, end);
+      return computeGoalScore(goal, series, { nutrition: nut.score, training: adh.trainingRate }, end).overallScore;
     }).filter((v) => v != null);
     progressSeries.push({ label, value: progressVals.length ? Math.round(progressVals.reduce((s, v) => s + v, 0) / progressVals.length) : null });
   }

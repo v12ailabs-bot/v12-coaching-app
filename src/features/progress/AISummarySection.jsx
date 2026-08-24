@@ -62,7 +62,7 @@ export function ClientSummaries({ profile, coachView }) {
         </div>
         {coachView && <Btn onClick={generate} disabled={gen === "loading"}>{gen === "loading" ? "Generating..." : "Generate this month"}</Btn>}
       </div>
-      {coachView && err && <div style={{ color: "#ff6b5b", fontSize: 12, marginBottom: 10 }}>{err}</div>}
+      {coachView && err && <div style={{ color: S.danger, fontSize: 12, marginBottom: 10 }}>{err}</div>}
       {loading ? <div className="spinner" style={{ margin: "20px auto" }} /> :
         rows.length === 0 ? <div style={{ color: S.muted, fontSize: 13 }}>No recaps yet{coachView ? " — generate this month's to start the history." : "."}</div> :
         rows.map((r) => (

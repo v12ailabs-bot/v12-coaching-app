@@ -26,7 +26,7 @@ export function ClientMessagesPanel({ messages, nameOf, openClient }) {
           </div>
           {m.items.slice(0, 2).map((it, j) => (
             <div key={j} style={{ marginBottom: 4 }}>
-              <span style={{ padding: "2px 7px", fontSize: 9, fontWeight: 600, marginRight: 6, background: it.tone === "red" ? "rgba(239,68,68,.16)" : "rgba(250,204,21,.14)", color: it.tone === "red" ? S.danger : S.warning }}>{it.label}</span>
+              <span style={{ padding: "2px 7px", fontSize: 9, fontWeight: 600, marginRight: 6, background: it.tone === "red" ? "rgba(255,107,91,.16)" : "rgba(250,204,21,.14)", color: it.tone === "red" ? S.danger : S.warning }}>{it.label}</span>
               {it.text && <span style={{ fontSize: 12, color: S.text }}>{it.text.length > 90 ? it.text.slice(0, 90) + "…" : it.text}</span>}
             </div>
           ))}

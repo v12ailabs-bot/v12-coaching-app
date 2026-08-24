@@ -17,18 +17,30 @@ export const S = {
   neon: "#C6FF00",
   success: "#22C55E",
   warning: "#FACC15",
-  danger: "#EF4444",
+  // Coral-red, reserved for warnings/due-dates/overdue items and destructive
+  // actions — was previously duplicated as a stray hardcoded hex literal in
+  // ~20 components (delete buttons, overdue follow-ups, error messages)
+  // while this token sat at a different, barely-used red (#EF4444).
+  // Consolidated to the value already in de-facto use everywhere.
+  danger: "#FF6B5B",
 };
 
 // Avatar colors, cycled by index.
 export const COLORS = ["#FF6A00", "#00C9A7", "#8B5CF6", "#3B82F6", "#F59E0B", "#EF4444"];
 
-// Every card/button/input in the design system shares one 12px radius.
-export const RADIUS = { sm: 12, md: 12, lg: 12 };
+// sm/md: the radius already in use across all existing cards/buttons/inputs —
+// left untouched so unrelated screens don't visually shift. lg: for larger
+// new surfaces (kanban columns, split-workspace panels) added in this pass.
+export const RADIUS = { sm: 12, md: 12, lg: 16 };
 export const SHADOW = { card: "0 1px 3px rgba(0,0,0,.3)" };
 
 // Spacing scale used by new components (existing inline styles are untouched).
 export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32, huge: 40 };
+
+// Focus-visible ring for interactive elements in newly-built components (no
+// equivalent existed before — inputs app-wide set outline:"none" with no
+// replacement). Not retrofitted onto untouched legacy screens.
+export const FOCUS_RING = "0 0 0 3px rgba(255,106,0,.35)";
 
 // Base button style; pass overrides that are merged on top.
 export const bS = (o = {}) => ({
@@ -176,9 +188,25 @@ export function GlobalStyles() {
         /* Coach Overview's table + side-column split — stack once there's no
            room for a real side column instead of squeezing both illegibly. */
         .coach-grid-main { grid-template-columns: minmax(0,1fr) !important; }
+        /* Leads/CRM board + Today rail — same reasoning as coach-grid-main. */
+        .crm-layout { grid-template-columns: minmax(0,1fr) !important; }
+        /* Clients split workspace: directory | (content + quick-actions rail).
+           Below 980px there's no room for all three side by side — drop to
+           directory-above-workspace first; the inner content/rail split
+           collapses separately at the tighter 720px breakpoint below. */
+        .clients-layout { grid-template-columns: minmax(0,1fr) !important; }
       }
       @media (max-width: 720px) {
         .coach-tile-grid { grid-template-columns: minmax(0,1fr) !important; }
+        /* Kanban columns are too narrow to squeeze 4-across on a phone —
+           scroll horizontally, one column at a time, instead of shrinking
+           each column to unreadable width. */
+        .crm-columns { grid-auto-flow: column; grid-template-columns: none !important;
+          grid-auto-columns: minmax(78vw, 1fr); overflow-x: auto; }
+        /* Client workspace's content + Quick Actions/Notes rail — stack so
+           the rail reads as a section below the tabs instead of a squeezed
+           sidebar. */
+        .client-workspace { grid-template-columns: minmax(0,1fr) !important; }
       }
     `}</style>
   );

@@ -20,7 +20,7 @@ export function TrainingPartnerSection({ clients, selected, selClient, partnerId
         </Fld>
         <Btn onClick={savePartner} disabled={savingPartner}>{savingPartner?"Saving...":"Save Partner Link"}</Btn>
         {partnerMsg && (
-          <span style={{fontSize:12,fontWeight:600,color:partnerMsg.ok?S.accent2:"#ff6b5b"}}>{partnerMsg.text}</span>
+          <span style={{fontSize:12,fontWeight:600,color:partnerMsg.ok?S.accent2:S.danger}}>{partnerMsg.text}</span>
         )}
       </div>
       {selClient?.shared_program_owner_id && (

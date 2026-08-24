@@ -30,7 +30,7 @@ function Sparkline({ data, color }) {
 
 function TrendPill({ deltaPct }) {
   if (deltaPct == null) return null;
-  const tone = deltaPct > 0 ? { bg: "rgba(0,201,167,.14)", fg: S.accent2 } : deltaPct < 0 ? { bg: "rgba(239,68,68,.14)", fg: S.danger } : { bg: S.surface, fg: S.muted };
+  const tone = deltaPct > 0 ? { bg: "rgba(0,201,167,.14)", fg: S.accent2 } : deltaPct < 0 ? { bg: "rgba(255,107,91,.14)", fg: S.danger } : { bg: S.surface, fg: S.muted };
   const arrow = deltaPct > 0 ? "↑" : deltaPct < 0 ? "↓" : "→";
   return (
     <span style={{ padding: "3px 8px", borderRadius: 4, fontSize: 10, fontWeight: 700, background: tone.bg, color: tone.fg, whiteSpace: "nowrap" }}>

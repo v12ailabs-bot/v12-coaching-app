@@ -9,6 +9,8 @@ export { Btn } from "./Btn.jsx";
 export { CC } from "./CC.jsx";
 export { DayFolder } from "./DayFolder.jsx";
 export { CollapsibleSection } from "./CollapsibleSection.jsx";
+export { Tabs } from "./Tabs.jsx";
+export { Modal } from "./Modal.jsx";
 export { StatusBadge } from "./StatusBadge.jsx";
 export { MetricCard } from "./MetricCard.jsx";
 export { ProgressRing } from "./ProgressRing.jsx";

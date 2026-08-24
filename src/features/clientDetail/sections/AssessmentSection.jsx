@@ -24,7 +24,7 @@ export function AssessmentSection({ client, assess, setAssess, saveAssessment, s
       <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
         <Btn onClick={saveAssessment} disabled={savingAssess}>{savingAssess?"Saving...":"Save Assessment"}</Btn>
         {assessMsg && (
-          <span style={{fontSize:12,fontWeight:600,color:assessMsg.ok?S.accent2:"#ff6b5b"}}>{assessMsg.text}</span>
+          <span style={{fontSize:12,fontWeight:600,color:assessMsg.ok?S.accent2:S.danger}}>{assessMsg.text}</span>
         )}
       </div>
     </Card>

@@ -40,7 +40,7 @@ export function CoachNotes({ clientId }) {
               <span style={{ fontSize: 10, color: S.muted }}>{(n.created_at || "").slice(0, 10)}</span>
               <div style={{ display: "flex", gap: 14 }}>
                 <button onClick={() => togglePin(n)} style={{ background: "none", border: "none", color: n.pinned ? S.neon : S.muted, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>{n.pinned ? "Unpin" : "Pin"}</button>
-                <button onClick={() => remove(n)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+                <button onClick={() => remove(n)} style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
               </div>
             </div>
           </div>

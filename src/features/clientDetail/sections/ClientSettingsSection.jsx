@@ -41,7 +41,7 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
       <div style={{display:"flex",alignItems:"center",gap:14,marginTop:18}}>
         <Btn onClick={saveSettings} disabled={savingSettings}>{savingSettings?"Saving...":"Save Settings"}</Btn>
         {settingsMsg && (
-          <span style={{fontSize:12,fontWeight:600,color:settingsMsg.ok?S.accent2:"#ff6b5b"}}>{settingsMsg.text}</span>
+          <span style={{fontSize:12,fontWeight:600,color:settingsMsg.ok?S.accent2:S.danger}}>{settingsMsg.text}</span>
         )}
       </div>
     </Card>

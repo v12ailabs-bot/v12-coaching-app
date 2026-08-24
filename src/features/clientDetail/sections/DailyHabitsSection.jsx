@@ -34,7 +34,7 @@ export function CoachHabits({ clientId }) {
       {habits.map((h) => (
         <div key={h.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: "1px solid " + S.border }}>
           <span style={{ fontSize: 13 }}>{h.name}</span>
-          <button onClick={() => remove(h)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Remove</button>
+          <button onClick={() => remove(h)} style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Remove</button>
         </div>
       ))}
       <div style={{ display: "flex", gap: 10, marginTop: 14 }}>

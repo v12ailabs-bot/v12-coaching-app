@@ -2,7 +2,7 @@ import { S } from "../../theme.jsx";
 
 const VARIANTS = {
   success: { fg: S.accent2 },
-  error: { fg: "#ff6b5b" },
+  error: { fg: S.danger },
   info: { fg: S.muted },
 };
 

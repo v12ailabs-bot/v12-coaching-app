@@ -144,12 +144,12 @@ export function ProgramProgress({ profile }) {
         </Card>
       )}
       {missedSessions.length > 0 && (
-        <Card style={{ borderLeft: "3px solid #ff6b5b" }}>
+        <Card style={{ borderLeft: "3px solid " + S.danger }}>
           <CardTitle>Missed Sessions</CardTitle>
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Scheduled program days in the last 14 with no logged workout:</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             {missedSessions.map((d) => (
-              <span key={d} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: "rgba(255,107,91,.1)", border: "1px solid rgba(255,107,91,.3)", color: "#ff6b5b" }}>{d}</span>
+              <span key={d} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: "rgba(255,107,91,.1)", border: "1px solid rgba(255,107,91,.3)", color: S.danger }}>{d}</span>
             ))}
           </div>
         </Card>

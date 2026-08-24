@@ -17,7 +17,7 @@ export function MetricCard({ label, value, unit, trend, icon }) {
         {value}<span style={{ fontSize: 12, color: S.muted }}>{unit}</span>
       </div>
       {trend && (
-        <div style={{ fontSize: 11, marginTop: 6, color: trend.tone === "bad" ? "#ff6b5b" : trend.tone === "good" ? S.accent2 : S.muted }}>
+        <div style={{ fontSize: 11, marginTop: 6, color: trend.tone === "bad" ? S.danger : trend.tone === "good" ? S.accent2 : S.muted }}>
           {trend.text}
         </div>
       )}

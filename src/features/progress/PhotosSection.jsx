@@ -190,7 +190,7 @@ export function ProgressPhotos({ profile, coachView = false }) {
                   : <div style={{height:210,display:"flex",alignItems:"center",justifyContent:"center",color:S.muted,fontSize:12}}>unavailable</div>}
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px"}}>
                   <span style={{fontSize:11,color:S.muted}}>{p.taken_on||(p.created_at||"").slice(0,10)}</span>
-                  {!coachView && <button onClick={()=>remove(p)} style={{background:"none",border:"none",color:"#ff6b5b",cursor:"pointer",fontSize:11,fontWeight:600}}>Delete</button>}
+                  {!coachView && <button onClick={()=>remove(p)} style={{background:"none",border:"none",color:S.danger,cursor:"pointer",fontSize:11,fontWeight:600}}>Delete</button>}
                 </div>
               </div>
             ))}

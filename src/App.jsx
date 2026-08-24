@@ -10,6 +10,7 @@ import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
+import { CRMBoard } from "./features/crm/CRMBoard.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
@@ -1759,8 +1760,8 @@ function MetricsDashboard() {
   });
   const badge = (status) => !status ? null : (
     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "3px 8px", marginLeft: 6,
-      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : status === "Red Flag" ? "#ff6b5b" : "rgba(255,107,91,.14)",
-      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : status === "Red Flag" ? "white" : "#ff6b5b" }}>{status}</span>
+      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : status === "Red Flag" ? S.danger : "rgba(255,107,91,.14)",
+      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : status === "Red Flag" ? "white" : S.danger }}>{status}</span>
   );
 
   return (
@@ -1930,7 +1931,7 @@ function TemplatesPanel() {
       {msg && (
         <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
           background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",
-          color:msg.ok?S.accent2:"#ff6b5b"}}>
+          color:msg.ok?S.accent2:S.danger}}>
           {msg.text}
         </div>
       )}
@@ -2075,7 +2076,7 @@ function AssessmentsPanel() {
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
         <Btn teal onClick={startNew}>+ New Assessment</Btn>
       </div>
-      {msg && <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:"#ff6b5b"}}>{msg.text}</div>}
+      {msg && <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:S.danger}}>{msg.text}</div>}
       {editing && (
         <Card>
           <CardTitle>{editing==="new"?"New Assessment":"Edit Assessment"}</CardTitle>
@@ -2186,7 +2187,7 @@ function ResourcesPanel() {
       </div>
       {msg && (
         <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
-          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:"#ff6b5b"}}>{msg.text}</div>
+          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",color:msg.ok?S.accent2:S.danger}}>{msg.text}</div>
       )}
       {editing && (
         <Card>
@@ -2728,251 +2729,8 @@ function ClientDashboard({ profile, logout }) {
   );
 }
 
-// ---------------------------------------------------------------------------
-// COACH — LEADS / CRM (in-app system of record; replaces Notion Lead Pipeline
-// CRM, one-time backfill only, no live sync) + accept/reject on applications.
-// ---------------------------------------------------------------------------
-const LEAD_STATUSES = ["new", "applied", "accepted", "closed_lost", "follow_up_later", "price_objection", "not_ready"];
-const LEAD_STATUS_LABEL = { new: "New", applied: "Applied", accepted: "Accepted", closed_lost: "Closed Lost", follow_up_later: "Follow-up Later", price_objection: "Price Objection", not_ready: "Not Ready" };
-const REJECT_STATUSES = ["closed_lost", "follow_up_later", "price_objection", "not_ready"];
-// Select-option vocab copied exactly from the live Notion "V12 Lead Pipeline
-// — CRM" database (confirmed via the API 2026-07-17), so a lead logged here
-// and one logged in Notion read the same way.
-const CRM_GOAL_OPTIONS = ["Fat Loss", "Muscle Build", "Both", "Unknown"];
-const CRM_CHANNEL_OPTIONS = ["TikTok", "Instagram", "Facebook", "Referral", "WhatsApp Cold", "Other"];
-const CRM_STAGE_OPTIONS = ["New DM", "Qualifying", "Application Sent", "WhatsApp Moved", "Call Booked", "Call Done", "Closed Won", "Closed Lost", "Ghost"];
-const CRM_RESPONSE_RATE_OPTIONS = ["Replied", "No Response", "Ghosted After Interest"];
-const BLANK_MANUAL_LEAD = {
-  name: "", email: "", goal: "", channel: "", stage: "New DM", response_rate: "",
-  deal_value: "", follow_up_date: "", last_contact_date: "", notes: "",
-  dm_opener_sent: false, application_submitted: false, call_booked: false, moved_to_whatsapp: false,
-};
+// CRMPanel now lives in src/features/crm/CRMBoard.jsx.
 
-function CRMPanel() {
-  const [leads, setLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState("all");
-  const [dueOnly, setDueOnly] = useState(false);
-  const [expanded, setExpanded] = useState(null);
-  const [addForm, setAddForm] = useState(BLANK_MANUAL_LEAD);
-  const [adding, setAdding] = useState(false);
-  const [addMsg, setAddMsg] = useState(null);
-  const setAddField = (k, v) => setAddForm((p) => ({ ...p, [k]: v }));
-
-  const load = useCallback(async () => {
-    const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
-    setLeads(data || []);
-    setLoading(false);
-  }, []);
-  useEffect(() => { load(); }, [load]);
-
-  // Fire-and-forget push to the lead's Notion CRM page (created if it doesn't
-  // exist yet) — never blocks or fails the coach's save on a Notion hiccup,
-  // same contract as the intake-form sync.
-  const syncToNotionCrm = (email, patch) => {
-    if (!email) return;
-    supabase.auth.getSession().then(({ data: { session } }) =>
-      fetch("/api/sync-lead-to-notion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-        body: JSON.stringify({ email, patch }),
-      })
-    ).catch(() => {});
-  };
-
-  const updateLead = async (id, patch) => {
-    const lead = leads.find((l) => l.id === id);
-    setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
-    await supabase.from("leads").update({ ...patch, updated_at: new Date().toISOString() }).eq("id", id);
-    syncToNotionCrm(lead?.email, patch);
-  };
-
-  // Log a lead met via cold outreach (DM/social) that never touched the
-  // in-app intake form — mirrors the fields on the Notion Lead Pipeline CRM
-  // exactly so nothing needs re-entering by hand in either place.
-  const addLead = async () => {
-    if (!addForm.name.trim() || !addForm.email.trim()) {
-      setAddMsg({ ok: false, text: "Name and email are required." });
-      return;
-    }
-    setAdding(true); setAddMsg(null);
-    const payload = {
-      name: addForm.name.trim(), email: addForm.email.trim().toLowerCase(),
-      goal: addForm.goal || null, channel: addForm.channel || null, stage: addForm.stage || null,
-      response_rate: addForm.response_rate || null,
-      deal_value: addForm.deal_value === "" ? null : Number(addForm.deal_value),
-      follow_up_date: addForm.follow_up_date || null, last_contact_date: addForm.last_contact_date || null,
-      notes: addForm.notes.trim() || null,
-      dm_opener_sent: addForm.dm_opener_sent, application_submitted: addForm.application_submitted,
-      call_booked: addForm.call_booked, moved_to_whatsapp: addForm.moved_to_whatsapp,
-      source: "manual", status: "new",
-    };
-    const { error } = await supabase.from("leads").insert(payload);
-    setAdding(false);
-    if (error) { setAddMsg({ ok: false, text: error.message }); return; }
-    setAddMsg({ ok: true, text: `${payload.name} added.` });
-    setAddForm(BLANK_MANUAL_LEAD);
-    syncToNotionCrm(payload.email, payload);
-    await load();
-  };
-
-  // Accept: mark accepted and auto-link to an existing profile by email if one
-  // already exists (they may have signed up before or after applying). If not,
-  // leave client_id null — the coach sees "awaiting signup".
-  const accept = async (lead) => {
-    const { data: match } = await supabase.from("profiles").select("id").ilike("email", lead.email).maybeSingle();
-    await updateLead(lead.id, { status: "accepted", client_id: match?.id || null });
-  };
-  const reject = async (lead, status) => updateLead(lead.id, { status });
-
-  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
-
-  const today = todayStr();
-  const dueCount = leads.filter((l) => l.follow_up_date && l.follow_up_date <= today).length;
-  let filtered = filter === "all" ? leads : leads.filter((l) => l.status === filter);
-  if (dueOnly) filtered = filtered.filter((l) => l.follow_up_date && l.follow_up_date <= today);
-  filtered = [...filtered].sort((a, b) => (a.follow_up_date || "9999") < (b.follow_up_date || "9999") ? -1 : 1);
-
-  return (
-    <div>
-      <PageTitle title="Leads / CRM" sub="Applications and prospects — migrated one-time from Notion, no live sync" />
-
-      <CollapsibleSection title="+ Add Lead" summary="log a cold-outreach contact">
-        <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16 }}>
-          <Fld label="Name *"><Inp type="text" value={addForm.name} onChange={(e) => setAddField("name", e.target.value)} placeholder="Full name" /></Fld>
-          <Fld label="Email *"><Inp type="email" value={addForm.email} onChange={(e) => setAddField("email", e.target.value)} placeholder="name@email.com" /></Fld>
-          <Fld label="Goal"><RG options={CRM_GOAL_OPTIONS} value={addForm.goal} onChange={(v) => setAddField("goal", v)} /></Fld>
-          <Fld label="Source"><RG options={CRM_CHANNEL_OPTIONS} value={addForm.channel} onChange={(v) => setAddField("channel", v)} /></Fld>
-          <Fld label="Stage"><RG options={CRM_STAGE_OPTIONS} value={addForm.stage} onChange={(v) => setAddField("stage", v)} /></Fld>
-          <Fld label="Response Rate"><RG options={CRM_RESPONSE_RATE_OPTIONS} value={addForm.response_rate} onChange={(v) => setAddField("response_rate", v)} /></Fld>
-          <Fld label="Deal Value ($)"><Inp type="number" value={addForm.deal_value} onChange={(e) => setAddField("deal_value", e.target.value)} placeholder="e.g. 1500" /></Fld>
-          <Fld label="Follow-up Date"><Inp type="date" value={addForm.follow_up_date} onChange={(e) => setAddField("follow_up_date", e.target.value)} /></Fld>
-          <Fld label="Last Contact Date"><Inp type="date" value={addForm.last_contact_date} onChange={(e) => setAddField("last_contact_date", e.target.value)} /></Fld>
-        </div>
-        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", margin: "4px 0 16px" }}>
-          {[["dm_opener_sent", "DM Opener Sent"], ["application_submitted", "Application Submitted"], ["call_booked", "Call Booked"], ["moved_to_whatsapp", "Moved to WhatsApp"]].map(([k, label]) => (
-            <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
-              <input type="checkbox" checked={addForm[k]} onChange={(e) => setAddField(k, e.target.checked)} /> {label}
-            </label>
-          ))}
-        </div>
-        <Fld label="Notes"><textarea rows={2} value={addForm.notes} onChange={(e) => setAddField("notes", e.target.value)}
-          style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} /></Fld>
-        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-          <Btn onClick={addLead} disabled={adding}>{adding ? "Adding..." : "Add Lead"}</Btn>
-          <Alert variant={addMsg?.ok ? "success" : "error"}>{addMsg?.text}</Alert>
-        </div>
-      </CollapsibleSection>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 20 }}>
-        {["all", ...LEAD_STATUSES].map((s) => (
-          <button key={s} onClick={() => setFilter(s)}
-            style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (filter === s ? S.accent : S.border), background: filter === s ? "rgba(255,106,0,.08)" : "transparent", color: filter === s ? S.accent : S.muted }}>
-            {s === "all" ? "All" : LEAD_STATUS_LABEL[s]} {s !== "all" && `(${leads.filter((l) => l.status === s).length})`}
-          </button>
-        ))}
-        <button onClick={() => setDueOnly((v) => !v)}
-          style={{ padding: "6px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + (dueOnly ? "#ff6b5b" : S.border), background: dueOnly ? "rgba(255,107,91,.1)" : "transparent", color: dueOnly ? "#ff6b5b" : S.muted }}>
-          📅 Due for follow-up ({dueCount})
-        </button>
-      </div>
-      {filtered.length === 0 ? <div style={{ color: S.muted, fontSize: 13 }}>No leads in this view.</div> : filtered.map((lead) => (
-        <Card key={lead.id}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12, flexWrap: "wrap", cursor: "pointer" }} onClick={() => setExpanded(expanded === lead.id ? null : lead.id)}>
-            <div>
-              <div style={{ fontWeight: 700, fontSize: 15 }}>{lead.name || lead.email}</div>
-              <div style={{ fontSize: 12, color: S.muted }}>{lead.email} · {lead.source} · {(lead.created_at || "").slice(0, 10)}</div>
-              {lead.follow_up_date && (
-                <div style={{ fontSize: 11, fontWeight: 700, marginTop: 4, color: lead.follow_up_date <= today ? "#ff6b5b" : S.neon }}>
-                  📅 Follow up {lead.follow_up_date}{lead.follow_up_date <= today ? " · Due" : ""}
-                </div>
-              )}
-            </div>
-            <span style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontWeight: 700, padding: "4px 10px", background: S.surface2, color: S.accent }}>{LEAD_STATUS_LABEL[lead.status] || lead.status}</span>
-          </div>
-          {expanded === lead.id && (
-            <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
-              {lead.height && <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Height: {lead.height}</div>}
-              {lead.intake_data?.packageInterest && <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Package: <strong>{lead.intake_data.packageInterest}</strong></div>}
-              {lead.intake_data && (
-                <details style={{ marginBottom: 12 }}>
-                  <summary style={{ fontSize: 12, color: S.muted, cursor: "pointer" }}>Full intake data</summary>
-                  <div style={{ marginTop: 10, display: "grid", gap: 8 }}>
-                    {Object.entries(lead.intake_data)
-                      .filter(([, v]) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0))
-                      .map(([k, v]) => (
-                        <div key={k} style={{ fontSize: 13, color: S.text, display: "flex", gap: 10, flexWrap: "wrap" }}>
-                          <span style={{ color: S.muted, minWidth: 180 }}>{INTAKE_FIELDS.find((f) => f.key === k)?.label || k}</span>
-                          <span>{Array.isArray(v) ? v.join(", ") : String(v)}</span>
-                        </div>
-                      ))}
-                  </div>
-                </details>
-              )}
-              {(lead.status === "new" || lead.status === "applied") && (
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-                  <Btn onClick={() => { if (window.confirm(`Accept ${lead.name || lead.email}?`)) accept(lead); }}>Accept</Btn>
-                  {REJECT_STATUSES.map((s) => (
-                    <button key={s} onClick={() => { if (window.confirm(`Mark ${lead.name || lead.email} as "${LEAD_STATUS_LABEL[s]}"?`)) reject(lead, s); }}
-                      style={{ padding: "9px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}>
-                      {LEAD_STATUS_LABEL[s]}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {lead.status === "accepted" && (
-                <div style={{ marginBottom: 12 }}>
-                  <div style={{ fontSize: 12, color: lead.client_id ? S.accent2 : S.muted, marginBottom: 12 }}>
-                    {lead.client_id ? "Linked to client record" : "Awaiting signup — links automatically once they sign up with this email"}
-                  </div>
-                  <Fld label="Manual PayPal invoice link">
-                    <Inp defaultValue={lead.invoice_link || ""} placeholder="https://paypal.me/..."
-                      onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, invoice_link: e.target.value } : l)))}
-                      onBlur={(e) => updateLead(lead.id, { invoice_link: e.target.value })} />
-                  </Fld>
-                  <div style={{ display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
-                    <Btn onClick={() => updateLead(lead.id, { invoice_sent_at: new Date().toISOString() })}>{lead.invoice_sent_at ? "Invoice marked sent ✓" : "Mark invoice sent"}</Btn>
-                    <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
-                      <input type="checkbox" checked={!!lead.paid} onChange={(e) => updateLead(lead.id, { paid: e.target.checked })} /> Paid
-                    </label>
-                  </div>
-                </div>
-              )}
-              <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 4 }}>
-                <Fld label="Stage"><RG options={CRM_STAGE_OPTIONS} value={lead.stage || ""} onChange={(v) => updateLead(lead.id, { stage: v })} /></Fld>
-                <Fld label="Source"><RG options={CRM_CHANNEL_OPTIONS} value={lead.channel || ""} onChange={(v) => updateLead(lead.id, { channel: v })} /></Fld>
-                <Fld label="Response Rate"><RG options={CRM_RESPONSE_RATE_OPTIONS} value={lead.response_rate || ""} onChange={(v) => updateLead(lead.id, { response_rate: v })} /></Fld>
-                <Fld label="Deal Value ($)">
-                  <Inp type="number" defaultValue={lead.deal_value ?? ""} placeholder="e.g. 1500"
-                    onBlur={(e) => updateLead(lead.id, { deal_value: e.target.value === "" ? null : Number(e.target.value) })} />
-                </Fld>
-                <Fld label="Follow-up Date">
-                  <Inp type="date" value={lead.follow_up_date || ""} onChange={(e) => updateLead(lead.id, { follow_up_date: e.target.value || null })} />
-                </Fld>
-                <Fld label="Last Contact Date">
-                  <Inp type="date" value={lead.last_contact_date || ""} onChange={(e) => updateLead(lead.id, { last_contact_date: e.target.value || null })} />
-                </Fld>
-              </div>
-              <div style={{ display: "flex", gap: 20, flexWrap: "wrap", margin: "4px 0 16px" }}>
-                {[["dm_opener_sent", "DM Opener Sent"], ["application_submitted", "Application Submitted"], ["call_booked", "Call Booked"], ["moved_to_whatsapp", "Moved to WhatsApp"]].map(([k, label]) => (
-                  <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: S.muted, cursor: "pointer" }}>
-                    <input type="checkbox" checked={!!lead[k]} onChange={(e) => updateLead(lead.id, { [k]: e.target.checked })} /> {label}
-                  </label>
-                ))}
-              </div>
-              <Fld label="Notes">
-                <textarea defaultValue={lead.notes || ""} rows={2}
-                  onChange={(e) => setLeads((prev) => prev.map((l) => (l.id === lead.id ? { ...l, notes: e.target.value } : l)))}
-                  onBlur={(e) => updateLead(lead.id, { notes: e.target.value })}
-                  style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 14px", fontSize: 13, outline: "none", fontFamily: "inherit" }} />
-              </Fld>
-            </div>
-          )}
-        </Card>
-      ))}
-    </div>
-  );
-}
 
 function CoachDashboard({ profile, logout }) {
   const [page, setPage] = useState("dashboard");
@@ -2993,7 +2751,7 @@ function CoachDashboard({ profile, logout }) {
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
       {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
         initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}
-      {page === "crm" && <CRMPanel />}
+      {page === "crm" && <CRMBoard />}
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}

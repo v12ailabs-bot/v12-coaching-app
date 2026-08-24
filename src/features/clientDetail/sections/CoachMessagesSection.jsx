@@ -46,7 +46,7 @@ export function CoachMessagesSection({ clientId }) {
               <span style={{ fontSize: 10, color: m.acknowledged_at ? S.accent2 : S.muted }}>
                 {(m.created_at || "").slice(0, 10)} · {m.acknowledged_at ? `seen ${m.acknowledged_at.slice(0, 10)}` : "not seen yet"}
               </span>
-              <button onClick={() => remove(m)} style={{ background: "none", border: "none", color: "#ff6b5b", cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
+              <button onClick={() => remove(m)} style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 11, fontWeight: 600 }}>Delete</button>
             </div>
           </div>
         ))}

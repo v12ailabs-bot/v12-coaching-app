@@ -237,7 +237,7 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
           </Fld>
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
             <Btn onClick={save} disabled={saving || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
-            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
+            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
           {plannedPhases.length === 0 && (
             <div style={{ background: "rgba(255,106,0,.08)", border: "1px solid rgba(255,106,0,.25)", padding: "12px 16px", marginTop: 18, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>

@@ -149,7 +149,7 @@ export function CoachNutrition({ clientId, refreshKey }) {
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 8 }}>
             <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Plan"}</Btn>
             <Btn sm onClick={() => { setEditing(false); setMsg(null); }} disabled={saving}>Cancel</Btn>
-            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b" }}>{msg.text}</span>}
+            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
         </>
       ) : (
@@ -198,7 +198,7 @@ export function CoachNutrition({ clientId, refreshKey }) {
               {plan.supplements_disclaimer && <div style={{ fontSize: 11, color: S.muted, marginTop: 10, fontStyle: "italic" }}>{plan.supplements_disclaimer}</div>}
             </div>
           )}
-          {msg && <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : "#ff6b5b", marginTop: 12 }}>{msg.text}</div>}
+          {msg && <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger, marginTop: 12 }}>{msg.text}</div>}
         </>
       )}
     </Card>

@@ -6,17 +6,17 @@ import { computeGoalScore } from "./scoring/goalScoring.js";
 // The denominator scales to how long the client has actually been active (from
 // their first check-in), capped at the window — so a client one day in who
 // checked in reads 100%, not 1/30 (≈3%).
-export function adherenceFrom(checkins, days = 30) {
+export function adherenceFrom(checkins, days = 30, asOf = new Date()) {
   const all = checkins || [];
-  const cutoff = new Date();
+  const cutoff = new Date(asOf);
   cutoff.setDate(cutoff.getDate() - (days - 1));
   const cut = cutoff.toISOString().split("T")[0];
-  const recent = all.filter((c) => c.date >= cut);
+  const asOfStr = asOf.toISOString().split("T")[0];
+  const recent = all.filter((c) => c.date >= cut && c.date <= asOfStr);
   const checkinDays = new Set(recent.map((c) => c.date)).size;
   const completed = recent.filter((c) => c.workout === "completed").length;
-  const today = todayStr();
-  const firstEver = all.length ? all.reduce((m, c) => (c.date < m ? c.date : m), today) : today;
-  const elapsed = Math.floor((new Date(today) - new Date(firstEver)) / 86400000) + 1;
+  const firstEver = all.length ? all.reduce((m, c) => (c.date < m ? c.date : m), asOfStr) : asOfStr;
+  const elapsed = Math.floor((new Date(asOfStr) - new Date(firstEver)) / 86400000) + 1;
   const denom = Math.max(1, Math.min(days, elapsed));
   return {
     score: Math.min(100, Math.round((checkinDays / denom) * 100)),
@@ -29,11 +29,12 @@ export function adherenceFrom(checkins, days = 30) {
 // Nutrition adherence: average self-reported diet quality across recent
 // check-ins, scored 0-100. Returns null when there's nothing to score.
 const DIET_SCORE = { "On track": 100, "Mostly clean": 75, "Struggled": 40, "Off plan": 10 };
-export function nutritionScoreFrom(checkins, days = 30) {
-  const cutoff = new Date();
+export function nutritionScoreFrom(checkins, days = 30, asOf = new Date()) {
+  const cutoff = new Date(asOf);
   cutoff.setDate(cutoff.getDate() - (days - 1));
   const cut = cutoff.toISOString().split("T")[0];
-  const recent = (checkins || []).filter((c) => c.date >= cut && c.diet != null);
+  const asOfStr = asOf.toISOString().split("T")[0];
+  const recent = (checkins || []).filter((c) => c.date >= cut && c.date <= asOfStr && c.diet != null);
   if (!recent.length) return { score: null, n: 0 };
   const total = recent.reduce((s, c) => s + (DIET_SCORE[c.diet] ?? 50), 0);
   return { score: Math.round(total / recent.length), n: recent.length };
