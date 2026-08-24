@@ -50,7 +50,7 @@ export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compa
                   : <circle key={props.key} cx={props.cx} cy={props.cy} r={compact ? 0 : 2} fill={S.accent2} />;
               }}
               label={(props) => {
-                const isLast = latest && props.payload.date === latest.date;
+                const isLast = props.index === chartData.length - 1;
                 if (compact && !isLast) return null;
                 return (
                   <text key={"lbl"+props.index} x={props.x} y={props.y - (compact ? 6 : 10)} textAnchor="middle"
