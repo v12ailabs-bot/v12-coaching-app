@@ -1425,17 +1425,17 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[currentDay?.day, profile.id, saved]);
 
-  // Prefill the set tracker from today's real logged sets (not just blank
-  // rows), so reopening the page shows what's already been logged — with a
-  // checkmark — instead of a form that's forgotten what you just did.
+  // Size the set tracker to cover today's already-logged sets (so logging 5
+  // when the target is 4 still shows a 5th row), but always leave the actual
+  // weight/reps fields blank — the checkmark (driven by loggedSetNums, from
+  // the DB) is what shows a set is done; the boxes are for entering the next
+  // value, not for echoing back what was just saved.
   useEffect(()=>{
     if(!selectedEx || blockType!=="straight_set") return;
     const today = todayStr();
-    const todayLogs = logs.filter(l=>l.date===today).sort((a,b)=>a.sets-b.sets);
+    const todayLogs = logs.filter(l=>l.date===today);
     const n = Math.min(8, Math.max(parseInt(selectedEx.sets)||4, todayLogs.length, 1));
-    const base = freshSets(n);
-    todayLogs.forEach(l=>{ const idx=l.sets-1; if(base[idx]) base[idx] = { weight: l.weight!=null?String(l.weight):"", reps: l.reps!=null?String(l.reps):"", time: l.time||"" }; });
-    setSets(base);
+    setSets(freshSets(n));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selected, logs]);
   useEffect(()=>{
@@ -1461,7 +1461,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
         time:s.time||null
       }));
     if(entries.length>0) await supabase.from("workout_logs").insert(entries);
-    setSaving(false);setSaved(true);
+    setSaving(false);setSaved(true);setSets(sets.map(()=>blankRow()));
     setTimeout(()=>setSaved(false),2000);
   };
 
@@ -1488,9 +1488,21 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
       });
     });
     if (entries.length > 0) await supabase.from("workout_logs").insert(entries);
-    setSaving(false); setSaved(true);
+    setSaving(false); setSaved(true); setRounds(freshRounds(selectedEx.sets, groupMembers));
     setTimeout(() => setSaved(false), 2000);
   };
+  // All-time best (independent of the graphs' per-date reduction below): the
+  // heaviest weight ever logged for this exercise, with its reps — or, for
+  // bodyweight moves, the best rep count. Only moves when a new log actually
+  // beats it, so it doesn't flicker with chart data.
+  const bestSet = logs.reduce((best, l) => {
+    if (selectedEx?.is_bodyweight) {
+      if (l.reps == null) return best;
+      return (!best || l.reps > best.reps) ? { weight: null, reps: l.reps } : best;
+    }
+    if (l.weight == null) return best;
+    return (!best || l.weight > best.weight) ? { weight: l.weight, reps: l.reps } : best;
+  }, null);
   const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
   const targetRange = targetRepRange(selectedEx?.reps);
 
@@ -1578,6 +1590,12 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                         <div style={{textAlign:"center"}}>
                           <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
                           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.reps??"—"}</div>
+                        </div>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Best Lift</div>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:bestSet?S.accent2:S.text}}>
+                            {bestSet ? (selectedEx.is_bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}${bestSet.reps?` × ${bestSet.reps}`:""}`) : "—"}
+                          </div>
                         </div>
                       </div>
                       <WorkoutMannequin exerciseName={selectedEx.name} size={64} color={S.accent}/>
@@ -1678,37 +1696,16 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                 </Card>
 
                 {/* Compact progress preview — two small chart cards side by
-                    side with a "View full progress" link on mobile;
-                    full-size (same components) on desktop, followed by
-                    session history. */}
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:isMobile?10:20,marginBottom:isMobile?8:20}}>
+                    side, with a "View full progress" link to the Progress →
+                    Strength tab. Session-level history lives there, not here
+                    — keeping the logging screen focused on entering today's
+                    sets. */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:isMobile?10:20,marginBottom:12}}>
                   <WeightOverTimeChart chartData={chartData} isBodyweight={selectedEx.is_bodyweight} compact={isMobile}/>
                   <TopSetRepsChart chartData={chartData} targetRange={targetRange} compact={isMobile}/>
                 </div>
-                {isMobile ? (
-                  setPage && <div onClick={()=>setPage("progress")} style={{textAlign:"center",fontSize:12,fontWeight:600,color:S.accent,cursor:"pointer",marginBottom:20}}>View full progress →</div>
-                ) : (
-                  <Card>
-                    <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:16}}>Session History</div>
-                    <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
-                      <thead><tr>{["Date","Weight","Reps","Round","Time","Rest"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
-                      <tbody>
-                        {[...logs].reverse().map((row,i)=>(
-                          <tr key={i}>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.date}</td>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.weight?row.weight+" lbs":"BW"}</td>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.reps||"—"}</td>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.sets}</td>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.time||"—"}</td>
-                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.rest||"—"}</td>
-                          </tr>
-                        ))}
-                        {logs.length===0&&<tr><td colSpan={6} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
-                      </tbody>
-                    </table>
-                    </div>
-                  </Card>
+                {setPage && (
+                  <div onClick={()=>setPage("progress")} style={{textAlign:"center",fontSize:12,fontWeight:600,color:S.accent,cursor:"pointer",marginBottom:20}}>View full progress →</div>
                 )}
               </div>
 

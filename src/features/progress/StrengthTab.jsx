@@ -89,30 +89,34 @@ export function StrengthTab({ profile }) {
               <CC key={s.id} title={s.name} sub={f.key==="Circuit"?"Best logged time":(s.is_bodyweight?"Top-set reps":"Top-set weight + reps")}>
                 <ResponsiveContainer width="100%" height="100%">
                   {f.key==="Circuit" ? (
-                    <LineChart data={s.data}>
+                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:0}}>
                       <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                       <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
                       <YAxis tick={{fontSize:10,fill:"#666"}} tickFormatter={fmtSec} domain={["auto","auto"]}/>
                       <Tooltip {...TT} formatter={v=>[fmtSec(v),"Time"]}/>
-                      <Line type="monotone" dataKey="timeSec" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
+                      <Line type="monotone" dataKey="timeSec" stroke={S.neon} strokeWidth={2} dot={{r:3}}
+                        label={{position:"top",fontSize:9,fill:S.neon,formatter:fmtSec}}/>
                     </LineChart>
                   ) : s.is_bodyweight ? (
-                    <LineChart data={s.data}>
+                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:0}}>
                       <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                       <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
                       <YAxis tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
                       <Tooltip {...TT}/>
-                      <Line type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                      <Line type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:3}}
+                        label={{position:"top",fontSize:9,fill:S.accent2}}/>
                     </LineChart>
                   ) : (
-                    <LineChart data={s.data}>
+                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:20}}>
                       <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                       <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
                       <YAxis yAxisId="w" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
                       <YAxis yAxisId="r" orientation="right" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
                       <Tooltip {...TT}/>
-                      <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight (lb)" stroke={S.neon} strokeWidth={2} dot={{r:3}}/>
-                      <Line yAxisId="r" type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:2}}/>
+                      <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight (lb)" stroke={S.neon} strokeWidth={2} dot={{r:3}}
+                        label={{position:"top",fontSize:9,fill:S.neon}}/>
+                      <Line yAxisId="r" type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:2}}
+                        label={{position:"bottom",fontSize:9,fill:S.accent2}}/>
                     </LineChart>
                   )}
                 </ResponsiveContainer>

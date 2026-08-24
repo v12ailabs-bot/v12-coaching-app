@@ -37,7 +37,7 @@ export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compa
         <NoData label="your weight trend" onLogFirst={onLogFirst} />
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: compact ? 4 : 12, right: 12, left: 0, bottom: 0 }}>
+          <LineChart data={chartData} margin={{ top: compact ? 16 : 20, right: 12, left: 0, bottom: 0 }}>
             {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
             <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 30} />
@@ -48,6 +48,16 @@ export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compa
                 return isLast
                   ? <circle key={props.key} cx={props.cx} cy={props.cy} r={4} fill={S.accent2} stroke={S.surface} strokeWidth={2} />
                   : <circle key={props.key} cx={props.cx} cy={props.cy} r={compact ? 0 : 2} fill={S.accent2} />;
+              }}
+              label={(props) => {
+                const isLast = latest && props.payload.date === latest.date;
+                if (compact && !isLast) return null;
+                return (
+                  <text key={"lbl"+props.index} x={props.x} y={props.y - (compact ? 6 : 10)} textAnchor="middle"
+                    fontSize={compact ? 10 : 10} fontWeight={isLast ? 700 : 500} fill={isLast ? S.accent2 : S.text}>
+                    {props.value}
+                  </text>
+                );
               }} />
           </LineChart>
         </ResponsiveContainer>
@@ -63,7 +73,7 @@ export function TopSetRepsChart({ chartData, targetRange, onLogFirst, compact })
         <NoData label="your rep trend" onLogFirst={onLogFirst} />
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: compact ? 4 : 16, right: 12, left: 0, bottom: 0 }}>
+          <BarChart data={chartData} margin={{ top: compact ? 16 : 22, right: 12, left: 0, bottom: 0 }}>
             {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
             <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
             <YAxis tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 26} />
@@ -72,7 +82,16 @@ export function TopSetRepsChart({ chartData, targetRange, onLogFirst, compact })
               <ReferenceArea y1={targetRange.min} y2={targetRange.max} fill={S.accent2} fillOpacity={0.12} stroke={S.accent2} strokeDasharray="4 4" strokeOpacity={0.5} />
             )}
             <Bar dataKey="reps" fill={S.accent} radius={[4, 4, 0, 0]}
-              label={compact ? undefined : { position: "top", fontSize: 10, fill: S.text }} />
+              label={(props) => {
+                const isLast = props.index === chartData.length - 1;
+                if (compact && !isLast) return null;
+                return (
+                  <text key={"lbl"+props.index} x={props.x + props.width / 2} y={props.y - (compact ? 4 : 6)} textAnchor="middle"
+                    fontSize={10} fontWeight={isLast ? 700 : 500} fill={S.text}>
+                    {props.value}
+                  </text>
+                );
+              }} />
           </BarChart>
         </ResponsiveContainer>
       )}
