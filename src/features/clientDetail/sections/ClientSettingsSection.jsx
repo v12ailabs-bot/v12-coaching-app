@@ -1,10 +1,12 @@
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, RG, Btn } from "../../../components/ui/index.js";
 
-export function ClientSettingsSection({ client, settings, setSettings, saveSettings, savingSettings, settingsMsg, resetGoalToNotion, resettingGoal, syncing }) {
-  return (
-    <Card style={{marginBottom:20}}>
-      <CardTitle>Client Settings</CardTitle>
+// `embedded` skips the outer Card/title — used when a parent already
+// provides the framing (e.g. the gear-icon settings Modal, which supplies
+// its own "Client Settings" title bar).
+export function ClientSettingsSection({ client, settings, setSettings, saveSettings, savingSettings, settingsMsg, resetGoalToNotion, resettingGoal, syncing, embedded = false }) {
+  const body = (
+    <>
       <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
         Coaching clients get the full portal (check-ins, habits, progress, coach notes). Program-only clients get a self-guided portal: their plan, nutrition, workout logging, and the resource hub — no check-in prompts.
       </div>
@@ -44,6 +46,14 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
           <span style={{fontSize:12,fontWeight:600,color:settingsMsg.ok?S.accent2:S.danger}}>{settingsMsg.text}</span>
         )}
       </div>
+    </>
+  );
+
+  if (embedded) return body;
+  return (
+    <Card style={{marginBottom:20}}>
+      <CardTitle>Client Settings</CardTitle>
+      {body}
     </Card>
   );
 }

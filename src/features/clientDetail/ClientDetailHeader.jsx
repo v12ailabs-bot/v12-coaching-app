@@ -4,12 +4,12 @@ import { StatusBadge } from "../../components/ui/index.js";
 // Always-visible top strip across every tab — name, program type, contact,
 // Active/Archived status, and last check-in. There's no "next check-in"
 // scheduling concept anywhere in the app (no cadence field, no reschedule
-// action) — this shows the real "last check-in" instead of fabricating a
-// forward-looking date that doesn't exist. Consolidates the identity block
-// that used to live in the old ClientHeaderSection; its AI-generation
-// actions moved into the Program Phase tab (see ProgramGenerateActions.jsx),
-// and Client Settings moved into the Overview tab as a collapsible card.
-export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle }) {
+// action) — this shows the real "last check-in" instead, as a clickable
+// link into the Progress card rather than a static label. The gear icon
+// opens Client Settings (goal / access date / client type / training
+// location) in a modal — account configuration, not day-to-day client
+// status, so it stays out of the Overview info grid.
+export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onLastCheckinClick, onSettingsClick }) {
   return (
     <div style={{ background: S.surface, border: "1px solid " + S.border, borderRadius: RADIUS.lg, padding: 20, marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
       <div style={{ width: 52, height: 52, borderRadius: "50%", background: S.accent, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>
@@ -25,13 +25,28 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle }) {
       </div>
       <div style={{ textAlign: "right", flexShrink: 0 }}>
         <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Last check-in</div>
-        <div style={{ fontSize: 14, fontWeight: 700 }}>{lastCheckin || "No check-ins yet"}</div>
         <button
-          onClick={() => onArchiveToggle(client, !client.archived)}
-          style={{ marginTop: 10, padding: "6px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}
+          onClick={onLastCheckinClick}
+          style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 14, fontWeight: 700, color: S.accent, textDecoration: "underline", textUnderlineOffset: 3 }}
         >
-          {client.archived ? "Unarchive" : "Archive"}
+          {lastCheckin || "No check-ins yet"}
         </button>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+          <button
+            onClick={() => onArchiveToggle(client, !client.archived)}
+            style={{ padding: "6px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}
+          >
+            {client.archived ? "Unarchive" : "Archive"}
+          </button>
+          <button
+            onClick={onSettingsClick}
+            title="Client settings"
+            aria-label="Client settings"
+            style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted, fontSize: 14, borderRadius: RADIUS.sm }}
+          >
+            ⚙
+          </button>
+        </div>
       </div>
     </div>
   );

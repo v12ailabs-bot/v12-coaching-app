@@ -207,6 +207,15 @@ export function GlobalStyles() {
            the rail reads as a section below the tabs instead of a squeezed
            sidebar. */
         .client-workspace { grid-template-columns: minmax(0,1fr) !important; }
+        /* Overview grid's 2-up rows (Progress/Insights, Roadmap/History)
+           collapse to single-column stacked cards on mobile instead of
+           squeezing two cards side by side. */
+        .overview-row-2 { grid-template-columns: minmax(0,1fr) !important; }
+        /* Tabs bar stays pinned below the fixed 54px topbar while the tab
+           content scrolls underneath it, instead of scrolling away with the
+           page — the coach shouldn't have to scroll back up to switch tabs. */
+        .client-tabs-sticky { position: sticky; top: 54px; z-index: 90; background: ${S.bg}; padding: 6px 0; }
+        .daily-habits-grid { grid-template-columns: minmax(0,1fr) !important; }
       }
     `}</style>
   );

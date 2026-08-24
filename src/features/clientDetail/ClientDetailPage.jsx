@@ -1,22 +1,25 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, useIsMobile } from "../../theme.jsx";
-import { PageTitle, CollapsibleSection, Tabs, Modal } from "../../components/ui/index.js";
+import { PageTitle, Tabs, Modal } from "../../components/ui/index.js";
 import { ClientSelector } from "../../components/ClientSelector.jsx";
 import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
 import { ProgramGenerateActions } from "./sections/ProgramGenerateActions.jsx";
+import { ProgressSummaryCard } from "./sections/ProgressSummaryCard.jsx";
+import { ClientInsightCard } from "./sections/ClientInsightCard.jsx";
+import { DailyHabitsPanel } from "./sections/DailyHabitsPanel.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
 import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
 import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
+import { CoachWorkoutReview } from "./sections/CoachWorkoutReview.jsx";
 import { ProgramPhase, ProgramRoadmapPlanner, ProgramVersions, createProgramVersion } from "./sections/ProgramSection.jsx";
 import { CoachNutrition } from "./sections/NutritionSection.jsx";
-import { CoachHabits } from "./sections/DailyHabitsSection.jsx";
 import { CoachNotes } from "./sections/CoachNotesSection.jsx";
 import { CoachConversations } from "./sections/ConversationLogSection.jsx";
-import { CoachClientInsights } from "./sections/ClientInsightsSection.jsx";
+import { CheckinNotesPanel } from "./sections/CheckinNotesPanel.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
@@ -41,12 +44,11 @@ const TABS_FOR = (client) => [
 
 // Deep-link target (openClient(id,{section})) -> which tab it now lives in.
 // Only "program-roadmap" is actually used as a deep-link today (from the
-// coach Overview's Client Overview table), but every section key that moved
-// into the Overview tab's accordion is mapped here for completeness.
+// coach Overview's Client Overview table), but every section key on the
+// Overview grid is mapped here for completeness.
 const SECTION_TAB = {
   "program-roadmap": "overview", "program-history": "overview", "progress": "overview",
-  "insights": "overview", "habits": "overview", "conversations": "overview",
-  "partner": "overview", "settings": "overview",
+  "insights": "overview", "habits": "overview",
   "goals": "goals", "assessment": "assessment", "nutrition": "nutrition",
   "program-phase": "program-phase", "exercises": "program-phase",
 };
@@ -66,6 +68,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [activeTab, setActiveTab] = useState("overview");
   const [lastCheckin, setLastCheckin] = useState(null);
   const [showMessageModal, setShowMessageModal] = useState(false);
+  const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showProgressModal, setShowProgressModal] = useState(false);
   // Applied at most once per mount — after that, the coach's own in-page
   // ClientSelector clicks (or a view-tab change) own `selected`.
   const appliedInitial = useRef(false);
@@ -95,14 +99,6 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerMsg, setPartnerMsg] = useState(null);
-  // Session-only expand state for the Overview tab's accordion — collapsed
-  // by default, resets on reload (no persistence, per spec).
-  const [expanded, setExpanded] = useState(() => new Set());
-  const toggleSection = (key) => setExpanded(prev => {
-    const next = new Set(prev);
-    next.has(key) ? next.delete(key) : next.add(key);
-    return next;
-  });
 
   // The id whose TRAINING rows (program + exercises) the selected client shares.
   // For a linked partner this is their owner; otherwise the client itself.
@@ -143,17 +139,16 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     }
     setSelected(s=>(s && vis.some(c=>c.id===s)) ? s : vis[0].id);
   },[clients, clientView, initialClientId]);
-  // Jump straight to (and expand) a specific accordion section — e.g. the
-  // Overview page's Client Overview table linking a client's phase directly
-  // to their Program Roadmap builder instead of leaving the coach to find it
-  // among a dozen collapsed sections. Now also switches to whichever tab
-  // that section lives in.
+  // Jump straight to a specific Overview card — e.g. the coach Overview
+  // page's Client Overview table linking a client's phase directly to their
+  // Program Roadmap builder. Switches to whichever tab that card lives in,
+  // then scrolls the card into view (Overview cards are always visible now,
+  // not collapsed, so there's nothing left to expand).
   useEffect(()=>{
     if(appliedSection.current || !initialSectionKey || !selected) return;
     appliedSection.current = true;
     const targetTab = SECTION_TAB[initialSectionKey] || "overview";
     setActiveTab(targetTab);
-    if(targetTab === "overview") setExpanded(prev=>new Set(prev).add(initialSectionKey));
     requestAnimationFrame(()=>{
       document.getElementById(`section-${initialSectionKey}`)?.scrollIntoView({behavior:"smooth",block:"start"});
     });
@@ -206,7 +201,6 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     setAssessMsg(null);
     setSettingsMsg(null);
     setPartnerMsg(null);
-    setExpanded(new Set());
     setActiveTab("overview");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selected]);
@@ -420,47 +414,20 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const client = clients.find(c=>c.id===selected);
   if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
 
-  // Switch to Overview and expand+scroll to a specific accordion card —
-  // used by Program Phase's "View Roadmap" link and the "Log check-in"
-  // quick action (which jumps to the Progress card).
+  // Switch to Overview and scroll a specific card into view — used by
+  // Program Phase's "View Roadmap" link and the header's "Last check-in"
+  // link (which jumps to the Progress card).
   const openOverviewSection = (key) => {
     setActiveTab("overview");
-    setExpanded(prev=>new Set(prev).add(key));
     requestAnimationFrame(()=>document.getElementById(`section-${key}`)?.scrollIntoView({behavior:"smooth",block:"start"}));
   };
-
-  // Everything that isn't one of the 5 named tabs lives here as collapsible
-  // cards within Overview, per the redesign's content-mapping plan.
-  const overviewSections = client ? [
-    ...(client.client_type === "program_only" ? [] : [
-      { key: "progress", title: "Progress", node: <Progress profile={client} coachView /> },
-    ]),
-    { key: "program-roadmap", title: "Program Roadmap", node: <ProgramRoadmapPlanner clientId={trainOwnerId} /> },
-    { key: "program-history", title: "Program History", node: (
-        <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
-    )},
-    ...(client.client_type === "program_only" ? [] : [
-      { key: "insights", title: "Client Insights", node: <CoachClientInsights client={client} /> },
-    ]),
-    { key: "habits", title: "Daily Habits", node: <CoachHabits clientId={client.id} /> },
-    { key: "conversations", title: "Conversation Log", node: <CoachConversations clientId={client.id} /> },
-    { key: "partner", title: "Training Partner", node: (
-        <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}
-          partnerId={partnerId} setPartnerId={setPartnerId} savePartner={savePartner}
-          savingPartner={savingPartner} partnerMsg={partnerMsg}/>
-    )},
-    { key: "settings", title: "Client Settings", node: (
-        <ClientSettingsSection client={client} settings={settings} setSettings={setSettings}
-          saveSettings={saveSettings} savingSettings={savingSettings} settingsMsg={settingsMsg}
-          resetGoalToNotion={resetGoalToNotion} resettingGoal={resettingGoal} syncing={syncing}/>
-    )},
-  ] : [];
 
   const tabs = TABS_FOR(client);
   // Guards against a stale "goals" activeTab surviving a client_type switch
   // (or a different client with no Goals tab) — falls back to Overview
   // instead of rendering a blank pane with no tab visibly active.
   const validTab = tabs.some(t => t.key === activeTab) ? activeTab : "overview";
+  const showProgress = client && client.client_type !== "program_only";
 
   return (
     <div>
@@ -475,17 +442,34 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
           {client ? (
             <div className="client-workspace" style={{ display:"grid", gridTemplateColumns:"minmax(0,1fr) minmax(0,280px)", gap:20, alignItems:"start" }}>
               <div style={{ minWidth:0 }}>
-                <ClientDetailHeader client={client} lastCheckin={lastCheckin} onArchiveToggle={setArchived}/>
-                <Tabs tabs={tabs} active={validTab} onChange={setActiveTab}/>
+                <ClientDetailHeader client={client} lastCheckin={lastCheckin} onArchiveToggle={setArchived}
+                  onSettingsClick={()=>setShowSettingsModal(true)}
+                  onLastCheckinClick={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}/>
+                <div className="client-tabs-sticky">
+                  <Tabs tabs={tabs} active={validTab} onChange={setActiveTab}/>
+                </div>
                 <div style={{ marginTop:20 }}>
-                  {validTab === "overview" && overviewSections.map(s => (
-                    <div key={s.key} id={`section-${s.key}`}>
-                      <CollapsibleSection title={s.title}
-                        expanded={expanded.has(s.key)} onToggle={()=>toggleSection(s.key)}>
-                        {s.node}
-                      </CollapsibleSection>
+                  {validTab === "overview" && (
+                    <div className="overview-grid" style={{ display:"flex", flexDirection:"column", gap:20 }}>
+                      {/* Row 1: Progress | Client Insights — the reference mockup's
+                          "Current phase" + "Goals checklist" position/weight. */}
+                      <div className="overview-row-2" style={{ display:"grid", gridTemplateColumns: showProgress ? "1fr 1fr" : "1fr", gap:20, alignItems:"stretch" }}>
+                        {showProgress && <div id="section-progress"><ProgressSummaryCard client={client}/></div>}
+                        <div id="section-insights"><ClientInsightCard client={client}/></div>
+                      </div>
+                      {/* Row 2: Program Roadmap | Program History — forward-looking
+                          next to backward-looking, reading left-to-right. */}
+                      <div className="overview-row-2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, alignItems:"stretch" }}>
+                        <div id="section-program-roadmap"><ProgramRoadmapPlanner clientId={trainOwnerId} /></div>
+                        <div id="section-program-history">
+                          <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
+                        </div>
+                      </div>
+                      {/* Row 3: Daily Habits, full width — the "Recent check-ins"
+                          timeline's position. */}
+                      <div id="section-habits"><DailyHabitsPanel clientId={client.id} /></div>
                     </div>
-                  ))}
+                  )}
                   {validTab === "goals" && <GoalsSection client={client} />}
                   {validTab === "assessment" && (
                     <AssessmentSection client={client} assess={assess} setAssess={setAssess}
@@ -497,22 +481,45 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                     <>
                       <ProgramGenerateActions client={client} templateId={templateId} setTemplateId={setTemplateId}
                         templates={templates} generating={generating} genScope={genScope} genMsg={genMsg} onGenerate={generateProgram}/>
+                      {/* Coach's monitoring/editing view (Section 9) — compact
+                          phase+adherence header, scannable exercise list with
+                          trend indicators, tap-to-expand into the same charts
+                          the client sees. Works on both mobile and desktop. */}
+                      <div style={{marginBottom:20}}>
+                        <CoachWorkoutReview clientId={trainOwnerId} exercises={exercises}
+                          onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
+                          onEditProgram={()=>document.getElementById("exercises-section-anchor")?.scrollIntoView({behavior:"smooth",block:"start"})}
+                          onMessageClient={()=>setShowMessageModal(true)}/>
+                      </div>
                       <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>openOverviewSection("program-roadmap")} />
-                      <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
-                        newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}
-                        addEx={addEx} cancelAdd={cancelAdd} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}/>
+                      <div id="exercises-section-anchor">
+                        <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
+                          newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}
+                          addEx={addEx} cancelAdd={cancelAdd} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}/>
+                      </div>
                     </>
                   )}
                 </div>
               </div>
 
+              {/* Right rail: visible regardless of tab. Training Partner is a
+                  small reference card here (who they're paired with), not a
+                  full grid row. Conversation Log + weekly check-in notes are
+                  reference material checked occasionally, not reviewed every
+                  visit, so they live here rather than as full-width Overview
+                  rows. */}
               <div className="client-rail" style={{ display:"flex", flexDirection:"column", gap:16 }}>
                 <ClientQuickActionsRail
-                  onLogCheckin={()=>openOverviewSection(client.client_type === "program_only" ? "program-roadmap" : "progress")}
+                  onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
                   onUpdateNutrition={()=>{ if(window.confirm(`Regenerate ${client.name||client.email}'s nutrition plan now?`)) generateProgram(client,"nutrition"); }}
                   onUpdateProgramPhase={()=>setActiveTab("program-phase")}
                   onSendMessage={()=>setShowMessageModal(true)}
                 />
+                <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}
+                  partnerId={partnerId} setPartnerId={setPartnerId} savePartner={savePartner}
+                  savingPartner={savingPartner} partnerMsg={partnerMsg}/>
+                <CoachConversations clientId={client.id} />
+                <CheckinNotesPanel clientId={client.id} />
                 <CoachNotes clientId={client.id} />
               </div>
             </div>
@@ -525,6 +532,18 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       {client && showMessageModal && (
         <Modal title="Send Client Message" onClose={()=>setShowMessageModal(false)}>
           <CoachMessagesSection clientId={client.id} />
+        </Modal>
+      )}
+      {client && showSettingsModal && (
+        <Modal title="Client Settings" onClose={()=>setShowSettingsModal(false)}>
+          <ClientSettingsSection client={client} settings={settings} setSettings={setSettings}
+            saveSettings={saveSettings} savingSettings={savingSettings} settingsMsg={settingsMsg}
+            resetGoalToNotion={resetGoalToNotion} resettingGoal={resettingGoal} syncing={syncing} embedded/>
+        </Modal>
+      )}
+      {client && showProgressModal && (
+        <Modal title="Progress" onClose={()=>setShowProgressModal(false)} width={1100}>
+          <Progress profile={client} coachView />
         </Modal>
       )}
     </div>

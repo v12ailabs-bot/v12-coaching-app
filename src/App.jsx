@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react"
-import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 
 
 
@@ -8,10 +8,13 @@ import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatar
 import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
+import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
+import { RestTimer } from "./components/RestTimer.jsx";
+import { WeightOverTimeChart, TopSetRepsChart, targetRepRange } from "./features/workouts/WorkoutCharts.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -1335,11 +1338,12 @@ function RoadmapSection() {
   );
 }
 
-function Workouts({ profile, readOnly, embedded, targetDay, onTargetConsumed }) {
+function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
+  const isMobile = useIsMobile();
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [dayLoggedIds, setDayLoggedIds] = useState(new Set());
   const [selected, setSelected] = useState(null);
-  const [logMode, setLogMode] = useState(false);
   const blankRow = () => ({weight:"",reps:"",time:""});
   const freshSets = (n) => Array.from({length: Math.min(8, Math.max(1, parseInt(n)||4))}, blankRow);
   const [sets, setSets] = useState(freshSets(4));
@@ -1391,26 +1395,75 @@ function Workouts({ profile, readOnly, embedded, targetDay, onTargetConsumed }) 
       .then(({data})=>setLogs(data||[]));
   },[selected,profile.id,saved]);
 
-  const handleLog = async()=>{
-    setSaving(true);
-    const ex = exercises.find(e=>e.id===selected);
-    const entries = sets.filter(s=>s.reps||s.weight).map((s,i)=>({
-      client_id:profile.id,exercise_id:selected,date:todayStr(),
-      sets:i+1,reps:parseInt(s.reps)||null,
-      weight:ex?.is_bodyweight?null:parseFloat(s.weight)||null,
-      time:s.time||null
-    }));
-    if(entries.length>0) await supabase.from("workout_logs").insert(entries);
-    setSaving(false);setSaved(true);setLogMode(false);
-    setSets(freshSets(ex?.sets));
-    setTimeout(()=>setSaved(false),2000);
-  };
-
   const selectedEx = exercises.find(e=>e.id===selected);
   const blockType = selectedEx?.block_type || "straight_set";
   const groupMembers = selectedEx
     ? exercises.filter((e) => e.day_of_week === selectedEx.day_of_week && e.group_id === selectedEx.group_id)
     : [];
+
+  // Group the program's exercises into sequential "Day 1..N" for the compact
+  // day header + selector below — one day shown at a time (prev/next to
+  // switch) instead of every day stacked as an accordion.
+  const dayGroups = groupByDay(exercises);
+  const dayLabelOf = {};
+  dayGroups.forEach(g=>g.exercises.forEach(e=>{dayLabelOf[e.id]=g.label;}));
+  const currentDay = dayGroups.find(g=>g.exercises.some(e=>e.id===selected)) || dayGroups[0] || null;
+  const currentDayIndex = currentDay ? dayGroups.indexOf(currentDay) : -1;
+  const goToDay = (delta) => {
+    if(!dayGroups.length) return;
+    const next = dayGroups[(currentDayIndex + delta + dayGroups.length) % dayGroups.length];
+    if(next) setSelected(next.exercises[0].id);
+  };
+
+  // Which of the current day's exercises already have a logged set today —
+  // drives the compact day header's "X of Y exercises" + progress bar.
+  useEffect(()=>{
+    if(!currentDay || !currentDay.exercises.length){ setDayLoggedIds(new Set()); return; }
+    const ids = currentDay.exercises.map(e=>e.id);
+    supabase.from("workout_logs").select("exercise_id").eq("client_id",profile.id).eq("date",todayStr()).in("exercise_id",ids)
+      .then(({data})=>setDayLoggedIds(new Set((data||[]).map(r=>r.exercise_id))));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[currentDay?.day, profile.id, saved]);
+
+  // Prefill the set tracker from today's real logged sets (not just blank
+  // rows), so reopening the page shows what's already been logged — with a
+  // checkmark — instead of a form that's forgotten what you just did.
+  useEffect(()=>{
+    if(!selectedEx || blockType!=="straight_set") return;
+    const today = todayStr();
+    const todayLogs = logs.filter(l=>l.date===today).sort((a,b)=>a.sets-b.sets);
+    const n = Math.min(8, Math.max(parseInt(selectedEx.sets)||4, todayLogs.length, 1));
+    const base = freshSets(n);
+    todayLogs.forEach(l=>{ const idx=l.sets-1; if(base[idx]) base[idx] = { weight: l.weight!=null?String(l.weight):"", reps: l.reps!=null?String(l.reps):"", time: l.time||"" }; });
+    setSets(base);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selected, logs]);
+  useEffect(()=>{
+    if(selectedEx && blockType!=="straight_set") setRounds(freshRounds(selectedEx.sets, groupMembers));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selected]);
+
+  const loggedSetNums = new Set(logs.filter(l=>l.date===todayStr()).map(l=>l.sets));
+
+  // Only inserts rows for sets not already logged today — logging set 3 after
+  // sets 1-2 are already saved (and still showing, prefilled, in the tracker)
+  // must not re-insert duplicate rows for 1-2.
+  const handleLog = async()=>{
+    setSaving(true);
+    const ex = exercises.find(e=>e.id===selected);
+    const today = todayStr();
+    const entries = sets.map((s,i)=>({...s,setNum:i+1}))
+      .filter(s=>!loggedSetNums.has(s.setNum) && (s.reps||s.weight))
+      .map(s=>({
+        client_id:profile.id,exercise_id:selected,date:today,
+        sets:s.setNum,reps:parseInt(s.reps)||null,
+        weight:ex?.is_bodyweight?null:parseFloat(s.weight)||null,
+        time:s.time||null
+      }));
+    if(entries.length>0) await supabase.from("workout_logs").insert(entries);
+    setSaving(false);setSaved(true);
+    setTimeout(()=>setSaved(false),2000);
+  };
 
   const handleLogGroup = async () => {
     setSaving(true);
@@ -1435,199 +1488,253 @@ function Workouts({ profile, readOnly, embedded, targetDay, onTargetConsumed }) 
       });
     });
     if (entries.length > 0) await supabase.from("workout_logs").insert(entries);
-    setSaving(false); setSaved(true); setLogMode(false);
+    setSaving(false); setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
   const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
+  const targetRange = targetRepRange(selectedEx?.reps);
 
-  // Group the program's exercises into sequential "Day 1..N" for the selector.
-  const dayGroups = groupByDay(exercises);
-  const dayLabelOf = {};
-  dayGroups.forEach(g=>g.exercises.forEach(e=>{dayLabelOf[e.id]=g.label;}));
+  const setStepper = (i, field, delta) => {
+    const n = [...sets];
+    const cur = parseFloat(n[i][field]) || 0;
+    const step = field === "weight" ? 5 : 1;
+    n[i][field] = String(Math.max(0, cur + delta*step));
+    setSets(n);
+  };
+
+  const dayDoneCount = currentDay ? currentDay.exercises.filter(e=>dayLoggedIds.has(e.id)).length : 0;
+  const dayTotal = currentDay ? currentDay.exercises.length : 0;
+  const dayPct = dayTotal ? Math.round((dayDoneCount/dayTotal)*100) : 0;
 
   return (
     <div>
       {embedded
         ? <div style={{fontSize:13,color:S.muted,marginBottom:18,lineHeight:1.6}}>Log the sets you complete for each day's exercises. Your progression graphs live under Progress → Strength.</div>
-        : <PageTitle title="Workout Log" sub={readOnly?"Client's logged sessions":"Track your strength progression"}/>}
-      {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>Session logged!</div>}
+        : <PageTitle title="Workout" sub="Track your strength progression"/>}
+      {saved && <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"10px 18px",fontSize:12,fontWeight:600,marginBottom:16,display:"inline-flex"}}>Set logged!</div>}
       {exercises.length===0?(
         <Card style={{textAlign:"center",padding:48}}>
           <div style={{fontSize:32,marginBottom:12}}>🏋</div>
           <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22,marginBottom:8}}>No exercises assigned yet</div>
-          <div style={{color:S.muted,fontSize:13}}>{readOnly?"This client has no program assigned yet.":"Your coach will assign your program. Check back soon."}</div>
+          <div style={{color:S.muted,fontSize:13}}>Your coach will assign your program. Check back soon.</div>
         </Card>
       ):(
         <>
-          <div style={{marginBottom:22}}>
-            {dayGroups.map(({day,exercises:dayExs,label})=>(
-              <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`} defaultOpen={dayExs.some(e=>e.id===selected)}>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {dayExs.map(ex=>(
-                    <button key={ex.id} onClick={()=>{setSelected(ex.id);setLogMode(false);}}
-                      style={{padding:"6px 14px",fontSize:11,fontWeight:600,cursor:"pointer",border:"1px solid "+(selected===ex.id?S.accent:S.border),background:selected===ex.id?"rgba(255,106,0,.08)":"transparent",color:selected===ex.id?S.accent:S.muted}}>
-                      {ex.name}{BLOCK_TYPE_SHORT[ex.block_type]&&<span style={{marginLeft:6,fontSize:9,color:S.accent2}}>{BLOCK_TYPE_SHORT[ex.block_type]}</span>}
-                    </button>
-                  ))}
+          {/* Compact day header — one day at a time, prev/next to switch,
+              replacing the old stacked-accordion-per-day list. */}
+          {currentDay && (
+            <Card style={{marginBottom:16,padding:"16px 20px"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  {dayGroups.length>1 && <button onClick={()=>goToDay(-1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:26,height:26,fontSize:12}}>‹</button>}
+                  <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{currentDay.label}</div>
+                  {dayGroups.length>1 && <button onClick={()=>goToDay(1)} style={{background:"none",border:"1px solid "+S.border,color:S.text,cursor:"pointer",width:26,height:26,fontSize:12}}>›</button>}
                 </div>
-              </DayFolder>
-            ))}
-          </div>
-          {selectedEx&&(
-            <>
-              <Card style={{marginBottom:20}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-                  <div style={{flex:1,minWidth:200}}>
-                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:22}}>{selectedEx.name}</div>
-                    <div style={{fontSize:12,color:S.muted}}>{[dayLabelOf[selectedEx.id],selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
-                    {selectedEx.notes&&<div style={{fontSize:12,color:S.muted,marginTop:8,lineHeight:1.6,maxWidth:560}}>{selectedEx.notes}</div>}
-                  </div>
-                  <div style={{display:"flex",gap:24}}>
-                    <div style={{textAlign:"center"}}>
-                      <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Sets</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{selectedEx.sets??"—"}</div>
-                    </div>
-                    <div style={{textAlign:"center"}}>
-                      <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{selectedEx.reps??"—"}</div>
-                    </div>
-                  </div>
-                </div>
-              </Card>
-              <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:20}}>
-                <CC title={selectedEx.name+" Progress"} sub={selectedEx.is_bodyweight?"Reps over time":"Weight over time"}>
-                  {chartData.length===0
-                    ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:S.muted,fontSize:13}}>Log sessions to see chart</div>
-                    :<ResponsiveContainer width="100%" height="100%">
-                      <LineChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-                        <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                        <Tooltip {...TT}/>
-                        <Line type="monotone" dataKey={selectedEx.is_bodyweight?"reps":"weight"} stroke={S.accent} strokeWidth={2} dot={{r:3}}/>
-                      </LineChart>
-                    </ResponsiveContainer>
-                  }
-                </CC>
-                <CC title="Reps per Session" sub="Top set reps over time">
-                  {chartData.length===0
-                    ?<div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100%",color:S.muted,fontSize:13}}>No data yet</div>
-                    :<ResponsiveContainer width="100%" height="100%">
-                      <BarChart data={chartData}>
-                        <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                        <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-                        <YAxis tick={{fontSize:10,fill:"#666"}}/>
-                        <Tooltip {...TT}/>
-                        <Bar dataKey="reps" fill={S.accent2} radius={[4,4,0,0]}/>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  }
-                </CC>
+                <div style={{fontSize:12,color:S.muted}}>{dayDoneCount} of {dayTotal} exercises · {dayPct}%</div>
               </div>
-              <Card>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                  <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted}}>Session History</div>
-                  {!readOnly&&<Btn sm teal onClick={()=>{
-                    const open=!logMode; setLogMode(open);
-                    if(open){
-                      if(blockType==="straight_set") setSets(freshSets(selectedEx.sets));
-                      else setRounds(freshRounds(selectedEx.sets, groupMembers));
-                    }
-                  }}>{logMode?"Cancel":"+ Log Session"}</Btn>}
-                </div>
-                {!readOnly&&logMode&&blockType==="straight_set"&&(
-                  <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {selectedEx.name}</div>
-                      <div style={{fontSize:11,color:S.muted}}>Target: {selectedEx.sets??"—"} × {selectedEx.reps??"—"}</div>
+              <div style={{height:6,background:S.surface2,borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",width:dayPct+"%",background:S.accent,transition:"width .3s"}}/>
+              </div>
+            </Card>
+          )}
+
+          {/* Horizontally scrollable exercise selector — numbered pills with
+              a category mannequin icon, current one highlighted. */}
+          {currentDay && (
+            <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:8,marginBottom:20}}>
+              {currentDay.exercises.map((ex,i)=>{
+                const isSel = selected===ex.id;
+                return (
+                  <button key={ex.id} onClick={()=>setSelected(ex.id)}
+                    style={{flexShrink:0,width:84,display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 8px",cursor:"pointer",
+                      border:"1px solid "+(isSel?S.accent:S.border),background:isSel?"rgba(255,106,0,.08)":S.surface,borderRadius:10}}>
+                    <div style={{width:20,height:20,borderRadius:"50%",background:isSel?S.accent:S.surface2,color:isSel?"white":S.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700}}>{i+1}</div>
+                    <WorkoutMannequin exerciseName={ex.name} size={32} color={isSel?S.accent:S.muted}/>
+                    <div style={{fontSize:10,fontWeight:600,color:isSel?S.accent:S.text,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{ex.name}</div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {selectedEx&&(
+            <div className="workout-main-grid" style={{display:"grid",gridTemplateColumns: isMobile?"1fr":"1fr 300px",gap:20,alignItems:"start",marginBottom:20}}>
+              <div style={{minWidth:0}}>
+                {/* Action-center exercise card: name, day/type, target
+                    sets/reps + mannequin, then the always-visible set
+                    tracker with a big "Log Set" action. */}
+                <Card style={{marginBottom:20}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:16}}>
+                    <div style={{flex:1,minWidth:180}}>
+                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24}}>{selectedEx.name}</div>
+                      <div style={{fontSize:12,color:S.muted}}>{[dayLabelOf[selectedEx.id],selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
                     </div>
-                    {sets.map((s,i)=>(
-                      <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
-                        <span style={{fontSize:11,color:S.muted,width:42}}>Set {i+1}</span>
-                        {!selectedEx.is_bodyweight&&<input type="number" placeholder="lbs" value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>}
-                        <input type="number" placeholder={selectedEx.reps?`reps (${selectedEx.reps})`:"reps"} value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:110,outline:"none"}}/>
-                        <input type="text" placeholder="time (opt)" value={s.time} onChange={e=>{const n=[...sets];n[i].time=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:100,outline:"none"}}/>
-                        {sets.length>1&&<button onClick={()=>setSets(sets.filter((_,j)=>j!==i))} title="Remove set" style={{background:"none",border:"none",color:S.muted,cursor:"pointer",fontSize:18,lineHeight:1,padding:"0 4px"}}>×</button>}
+                    <div style={{display:"flex",alignItems:"center",gap:20}}>
+                      <div style={{display:"flex",gap:20}}>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Sets</div>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.sets??"—"}</div>
+                        </div>
+                        <div style={{textAlign:"center"}}>
+                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.reps??"—"}</div>
+                        </div>
                       </div>
-                    ))}
-                    <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
-                      <Btn onClick={handleLog} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
-                      <button onClick={()=>setSets([...sets,blankRow()])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Set</button>
+                      <WorkoutMannequin exerciseName={selectedEx.name} size={64} color={S.accent}/>
                     </div>
                   </div>
-                )}
-                {!readOnly&&logMode&&blockType!=="straight_set"&&(
-                  <div style={{marginBottom:20,padding:16,background:S.surface2,border:"1px solid "+S.border}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>Log {groupMembers.map(m=>m.name).join(" + ")}</div>
-                      <div style={{fontSize:11,color:S.muted}}>{BLOCK_TYPE_LABEL[blockType]}</div>
+                  {isMobile && selectedEx.notes && (
+                    <div style={{fontSize:12,color:S.muted,marginBottom:16,lineHeight:1.6,background:S.surface2,border:"1px solid "+S.border,padding:"10px 14px"}}>
+                      <span style={{color:S.accent,fontWeight:700,textTransform:"uppercase",fontSize:9,letterSpacing:1}}>Coaching Cue&nbsp;</span>{selectedEx.notes}
                     </div>
-                    {rounds.map((round,i)=>(
-                      <div key={i} style={{marginBottom:14,paddingBottom:14,borderBottom:i<rounds.length-1?"1px solid "+S.border:"none"}}>
-                        <div style={{fontSize:11,color:S.muted,marginBottom:8}}>Round {i+1}</div>
-                        {blockType==="circuit_for_time" ? (
-                          <input type="text" placeholder="total time (e.g. 8:45)" value={round.time}
-                            onChange={e=>{const n=[...rounds];n[i]={...n[i],time:e.target.value};setRounds(n);}}
-                            style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:180,outline:"none"}}/>
-                        ) : (
-                          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                            {groupMembers.map(m=>(
-                              <div key={m.id} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                                <span style={{fontSize:12,color:S.text,width:140}}>{m.name}</span>
-                                {blockType!=="timed_circuit"&&!m.is_bodyweight&&(
-                                  <input type="number" placeholder="lbs" value={round.perExercise[m.id]?.weight||""}
-                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],weight:e.target.value}}};setRounds(n);}}
-                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
-                                )}
-                                {blockType==="superset"&&(
-                                  <input type="number" placeholder="reps" value={round.perExercise[m.id]?.reps||""}
-                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],reps:e.target.value}}};setRounds(n);}}
-                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
-                                )}
-                                {(blockType==="timed_circuit"||blockType==="weighted_circuit")&&(
-                                  <input type="text" placeholder="time" value={round.perExercise[m.id]?.time||""}
-                                    onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],time:e.target.value}}};setRounds(n);}}
-                                    style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:90,outline:"none"}}/>
-                                )}
+                  )}
+
+                  {blockType==="straight_set" ? (
+                    <>
+                      <div style={{marginBottom:14}}>
+                        {sets.map((s,i)=>{
+                          const isLogged = loggedSetNums.has(i+1);
+                          return (
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"10px 0",borderBottom:i<sets.length-1?"1px solid "+S.border:"none",flexWrap:"wrap"}}>
+                              <span style={{fontSize:12,color:S.muted,width:44}}>Set {i+1}</span>
+                              {!selectedEx.is_bodyweight && (
+                                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                  <button onClick={()=>setStepper(i,"weight",-1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>−</button>
+                                  <input type="number" placeholder="lbs" value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:56,textAlign:"center",outline:"none"}}/>
+                                  <button onClick={()=>setStepper(i,"weight",1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>+</button>
+                                </div>
+                              )}
+                              <div style={{display:"flex",alignItems:"center",gap:6}}>
+                                <button onClick={()=>setStepper(i,"reps",-1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>−</button>
+                                <input type="number" placeholder="reps" value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:56,textAlign:"center",outline:"none"}}/>
+                                <button onClick={()=>setStepper(i,"reps",1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>+</button>
                               </div>
-                            ))}
-                          </div>
-                        )}
-                        {blockType!=="circuit_for_time"&&(
-                          <div style={{marginTop:8}}>
-                            <input type="text" placeholder="rest after this round (e.g. 90s)" value={round.rest}
-                              onChange={e=>{const n=[...rounds];n[i]={...n[i],rest:e.target.value};setRounds(n);}}
-                              style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:240,outline:"none"}}/>
-                          </div>
-                        )}
+                              <div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:"auto",
+                                background:isLogged?S.accent2:"transparent",border:isLogged?"none":"1px solid "+S.border,color:isLogged?"#0B0B0D":S.border,fontSize:13,fontWeight:700}}>
+                                {isLogged?"✓":""}
+                              </div>
+                              {sets.length>1&&<button onClick={()=>setSets(sets.filter((_,j)=>j!==i))} title="Remove set" style={{background:"none",border:"none",color:S.muted,cursor:"pointer",fontSize:16,lineHeight:1,padding:"0 2px"}}>×</button>}
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                    <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
-                      <Btn onClick={handleLogGroup} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
-                      <button onClick={()=>setRounds([...rounds,blankRound(groupMembers)])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Round</button>
+                      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                        <Btn onClick={handleLog} disabled={saving}>{saving?"Saving...":"LOG SET"}</Btn>
+                        <button onClick={()=>setSets([...sets,blankRow()])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"10px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Set</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{padding:16,background:S.surface2,border:"1px solid "+S.border}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>{groupMembers.map(m=>m.name).join(" + ")}</div>
+                        <div style={{fontSize:11,color:S.muted}}>{BLOCK_TYPE_LABEL[blockType]}</div>
+                      </div>
+                      {rounds.map((round,i)=>(
+                        <div key={i} style={{marginBottom:14,paddingBottom:14,borderBottom:i<rounds.length-1?"1px solid "+S.border:"none"}}>
+                          <div style={{fontSize:11,color:S.muted,marginBottom:8}}>Round {i+1}</div>
+                          {blockType==="circuit_for_time" ? (
+                            <input type="text" placeholder="total time (e.g. 8:45)" value={round.time}
+                              onChange={e=>{const n=[...rounds];n[i]={...n[i],time:e.target.value};setRounds(n);}}
+                              style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:180,outline:"none"}}/>
+                          ) : (
+                            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                              {groupMembers.map(m=>(
+                                <div key={m.id} style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+                                  <span style={{fontSize:12,color:S.text,width:140}}>{m.name}</span>
+                                  {blockType!=="timed_circuit"&&!m.is_bodyweight&&(
+                                    <input type="number" placeholder="lbs" value={round.perExercise[m.id]?.weight||""}
+                                      onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],weight:e.target.value}}};setRounds(n);}}
+                                      style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
+                                  )}
+                                  {blockType==="superset"&&(
+                                    <input type="number" placeholder="reps" value={round.perExercise[m.id]?.reps||""}
+                                      onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],reps:e.target.value}}};setRounds(n);}}
+                                      style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:80,outline:"none"}}/>
+                                  )}
+                                  {(blockType==="timed_circuit"||blockType==="weighted_circuit")&&(
+                                    <input type="text" placeholder="time" value={round.perExercise[m.id]?.time||""}
+                                      onChange={e=>{const n=[...rounds];n[i]={...n[i],perExercise:{...n[i].perExercise,[m.id]:{...n[i].perExercise[m.id],time:e.target.value}}};setRounds(n);}}
+                                      style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:90,outline:"none"}}/>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {blockType!=="circuit_for_time"&&(
+                            <div style={{marginTop:8}}>
+                              <input type="text" placeholder="rest after this round (e.g. 90s)" value={round.rest}
+                                onChange={e=>{const n=[...rounds];n[i]={...n[i],rest:e.target.value};setRounds(n);}}
+                                style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"8px 10px",fontSize:13,width:240,outline:"none"}}/>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                      <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
+                        <Btn onClick={handleLogGroup} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
+                        <button onClick={()=>setRounds([...rounds,blankRound(groupMembers)])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Round</button>
+                      </div>
                     </div>
-                  </div>
-                )}
-                <div style={{overflowX:"auto"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
-                  <thead><tr>{["Date","Weight","Reps","Round","Time","Rest"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
-                  <tbody>
-                    {[...logs].reverse().map((row,i)=>(
-                      <tr key={i}>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.date}</td>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.weight?row.weight+" lbs":"BW"}</td>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.reps||"—"}</td>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.sets}</td>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.time||"—"}</td>
-                        <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.rest||"—"}</td>
-                      </tr>
-                    ))}
-                    {logs.length===0&&<tr><td colSpan={6} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
-                  </tbody>
-                </table>
+                  )}
+                </Card>
+
+                {/* Compact progress preview — two small chart cards side by
+                    side with a "View full progress" link on mobile;
+                    full-size (same components) on desktop, followed by
+                    session history. */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:isMobile?10:20,marginBottom:isMobile?8:20}}>
+                  <WeightOverTimeChart chartData={chartData} isBodyweight={selectedEx.is_bodyweight} compact={isMobile}/>
+                  <TopSetRepsChart chartData={chartData} targetRange={targetRange} compact={isMobile}/>
                 </div>
-              </Card>
-            </>
+                {isMobile ? (
+                  setPage && <div onClick={()=>setPage("progress")} style={{textAlign:"center",fontSize:12,fontWeight:600,color:S.accent,cursor:"pointer",marginBottom:20}}>View full progress →</div>
+                ) : (
+                  <Card>
+                    <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:16}}>Session History</div>
+                    <div style={{overflowX:"auto"}}>
+                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:420}}>
+                      <thead><tr>{["Date","Weight","Reps","Round","Time","Rest"].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border}}>{h}</th>)}</tr></thead>
+                      <tbody>
+                        {[...logs].reverse().map((row,i)=>(
+                          <tr key={i}>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.date}</td>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.weight?row.weight+" lbs":"BW"}</td>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.reps||"—"}</td>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.sets}</td>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.time||"—"}</td>
+                            <td style={{padding:"11px 14px",fontSize:13,borderBottom:"1px solid "+S.border}}>{row.rest||"—"}</td>
+                          </tr>
+                        ))}
+                        {logs.length===0&&<tr><td colSpan={6} style={{padding:"11px 14px",fontSize:13,color:S.muted,textAlign:"center"}}>No sessions logged yet</td></tr>}
+                      </tbody>
+                    </table>
+                    </div>
+                  </Card>
+                )}
+              </div>
+
+              {/* Desktop-only right column: Today's Workout, Rest Timer,
+                  Coaching Cue — fills the space beside the exercise card
+                  instead of leaving it empty. */}
+              {!isMobile && (
+                <div style={{display:"flex",flexDirection:"column",gap:16}}>
+                  <Card style={{marginBottom:0}}>
+                    <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:14}}>Today's Workout</div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8}}><span style={{color:S.muted}}>Exercises</span><span>{dayDoneCount} of {dayTotal} completed</span></div>
+                    <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}><span style={{color:S.muted}}>Sets Logged Today</span><span>{loggedSetNums.size} of {selectedEx.sets??"—"}</span></div>
+                  </Card>
+                  <RestTimer/>
+                  {selectedEx.notes && (
+                    <Card style={{marginBottom:0}}>
+                      <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:12}}>Coaching Cue</div>
+                      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                        <WorkoutMannequin exerciseName={selectedEx.name} size={40} color={S.muted}/>
+                        <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>{selectedEx.notes}</div>
+                      </div>
+                    </Card>
+                  )}
+                </div>
+              )}
+            </div>
           )}
         </>
       )}
@@ -2718,7 +2825,7 @@ function ClientDashboard({ profile, logout }) {
       {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
-      {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} />}
+      {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} setPage={setPage} />}
       {page === "nutrition" && <Nutrition profile={profile} />}
       {page === "habits" && !programOnly && (
         <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
@@ -2747,7 +2854,7 @@ function CoachDashboard({ profile, logout }) {
   const openClient = (id, opts) => { setOpenClientId(id); setOpenSectionKey(opts?.section || null); setPage("clients"); };
 
   return (
-    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard"}>
+    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard" || page === "clients" || page === "crm"}>
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
       {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
         initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}

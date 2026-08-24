@@ -1,0 +1,81 @@
+import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ResponsiveContainer } from "recharts";
+import { S, TT } from "../../theme.jsx";
+import { CC, Btn } from "../../components/ui/index.js";
+
+// Shared by the client-facing Workouts page and the coach's mobile/desktop
+// Workout Review (Section 9) — one chart implementation, not two, per the
+// redesign brief. `chartData` is [{date, weight, reps}] ascending by date.
+
+// "5-8" / "8 to 12" / "AMRAP 10+" -> {min,max} target rep range for the
+// reference band; null when the target isn't a parseable range (e.g. "AMRAP"
+// alone, or no target set) — the chart still renders, just without a band.
+export function targetRepRange(reps) {
+  const m = String(reps || "").match(/(\d+)\s*[-–to]+\s*(\d+)/i);
+  if (!m) return null;
+  const min = Number(m[1]), max = Number(m[2]);
+  return min < max ? { min, max } : null;
+}
+
+function NoData({ label, onLogFirst }) {
+  return (
+    <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, textAlign: "center", padding: 12 }}>
+      <div style={{ fontSize: 12, color: S.muted }}>No sessions logged yet — {label} will appear here once you do.</div>
+      <div style={{ width: "80%", height: 40, border: "1px dashed " + S.border, borderRadius: 4, position: "relative" }}>
+        <div style={{ position: "absolute", bottom: 2, left: 4, fontSize: 9, color: S.border }}>0</div>
+      </div>
+      {onLogFirst && <Btn sm onClick={onLogFirst}>Log first session</Btn>}
+    </div>
+  );
+}
+
+export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compact }) {
+  const dataKey = isBodyweight ? "reps" : "weight";
+  const latest = chartData.length ? chartData[chartData.length - 1] : null;
+  return (
+    <CC title="Weight Over Time" sub={isBodyweight ? "Top-set reps · dates on x-axis" : "Top-set weight · dates on x-axis, lbs on y-axis"} height={compact ? 90 : 230}>
+      {chartData.length === 0 ? (
+        <NoData label="your weight trend" onLogFirst={onLogFirst} />
+      ) : (
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={chartData} margin={{ top: compact ? 4 : 12, right: 12, left: 0, bottom: 0 }}>
+            {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
+            <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 30} />
+            {!compact && <Tooltip {...TT} />}
+            <Line type="monotone" dataKey={dataKey} stroke={S.accent2} strokeWidth={2}
+              dot={(props) => {
+                const isLast = latest && props.payload.date === latest.date;
+                return isLast
+                  ? <circle key={props.key} cx={props.cx} cy={props.cy} r={4} fill={S.accent2} stroke={S.surface} strokeWidth={2} />
+                  : <circle key={props.key} cx={props.cx} cy={props.cy} r={compact ? 0 : 2} fill={S.accent2} />;
+              }} />
+          </LineChart>
+        </ResponsiveContainer>
+      )}
+    </CC>
+  );
+}
+
+export function TopSetRepsChart({ chartData, targetRange, onLogFirst, compact }) {
+  return (
+    <CC title="Top-Set Reps" sub={targetRange ? `Target range ${targetRange.min}-${targetRange.max}` : "One bar per session"} height={compact ? 90 : 230}>
+      {chartData.length === 0 ? (
+        <NoData label="your rep trend" onLogFirst={onLogFirst} />
+      ) : (
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={chartData} margin={{ top: compact ? 4 : 16, right: 12, left: 0, bottom: 0 }}>
+            {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
+            <YAxis tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 26} />
+            {!compact && <Tooltip {...TT} />}
+            {targetRange && (
+              <ReferenceArea y1={targetRange.min} y2={targetRange.max} fill={S.accent2} fillOpacity={0.12} stroke={S.accent2} strokeDasharray="4 4" strokeOpacity={0.5} />
+            )}
+            <Bar dataKey="reps" fill={S.accent} radius={[4, 4, 0, 0]}
+              label={compact ? undefined : { position: "top", fontSize: 10, fill: S.text }} />
+          </BarChart>
+        </ResponsiveContainer>
+      )}
+    </CC>
+  );
+}
