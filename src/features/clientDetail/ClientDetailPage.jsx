@@ -34,10 +34,12 @@ async function authHeaders() {
 // visibility into (same restriction the old accordion list applied) — built
 // per-client below rather than as a fixed constant so the tab itself
 // disappears for them instead of just rendering empty content.
+// Assessment isn't its own tab — with Overview/Goals/Nutrition/Program Phase
+// it's still 4 tabs at most, and folding it into Overview keeps that row
+// from needing to scroll (see Tabs.jsx: it never wraps to a second line).
 const TABS_FOR = (client) => [
   { key: "overview", label: "Overview" },
   ...(client?.client_type === "program_only" ? [] : [{ key: "goals", label: "Goals" }]),
-  { key: "assessment", label: "Assessment" },
   { key: "nutrition", label: "Nutrition" },
   { key: "program-phase", label: "Program Phase" },
 ];
@@ -48,8 +50,8 @@ const TABS_FOR = (client) => [
 // Overview grid is mapped here for completeness.
 const SECTION_TAB = {
   "program-roadmap": "overview", "program-history": "overview", "progress": "overview",
-  "insights": "overview", "habits": "overview",
-  "goals": "goals", "assessment": "assessment", "nutrition": "nutrition",
+  "insights": "overview", "habits": "overview", "assessment": "overview",
+  "goals": "goals", "nutrition": "nutrition",
   "program-phase": "program-phase", "exercises": "program-phase",
 };
 
@@ -64,7 +66,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const isMobile = useIsMobile();
   const [clients, setClients] = useState([]);
   const [selected, setSelected] = useState(null);
-  const [clientView, setClientView] = useState("active");
+  const [clientView, setClientView] = useState("coaching");
   const [activeTab, setActiveTab] = useState("overview");
   const [lastCheckin, setLastCheckin] = useState(null);
   const [showMessageModal, setShowMessageModal] = useState(false);
@@ -129,7 +131,12 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   useEffect(()=>{loadClients();},[]);
   // Keep the selected client valid as the view filter / client list changes.
   useEffect(()=>{
-    const vis = (clients||[]).filter(c=>clientView==="all" ? true : clientView==="archived" ? c.archived : !c.archived);
+    const vis = (clients||[]).filter(c=>{
+      if(clientView==="all") return true;
+      if(clientView==="archived") return c.archived;
+      if(c.archived) return false;
+      return clientView==="program_only" ? c.client_type==="program_only" : c.client_type!=="program_only";
+    });
     if(!vis.length){ setSelected(s=>s?null:s); return; }
     if(!appliedInitial.current && initialClientId && vis.some(c=>c.id===initialClientId)){
       appliedInitial.current = true;
@@ -468,14 +475,16 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                       {/* Row 3: Daily Habits, full width — the "Recent check-ins"
                           timeline's position. */}
                       <div id="section-habits"><DailyHabitsPanel clientId={client.id} /></div>
+                      {/* Row 4: V12 Assessment, full width — not its own tab
+                          (see TABS_FOR), folded in here instead. */}
+                      <div id="section-assessment">
+                        <AssessmentSection client={client} assess={assess} setAssess={setAssess}
+                          saveAssessment={saveAssessment} savingAssess={savingAssess} assessMsg={assessMsg}
+                          refreshFromNotion={refreshFromNotion} syncing={syncing}/>
+                      </div>
                     </div>
                   )}
                   {validTab === "goals" && <GoalsSection client={client} />}
-                  {validTab === "assessment" && (
-                    <AssessmentSection client={client} assess={assess} setAssess={setAssess}
-                      saveAssessment={saveAssessment} savingAssess={savingAssess} assessMsg={assessMsg}
-                      refreshFromNotion={refreshFromNotion} syncing={syncing}/>
-                  )}
                   {validTab === "nutrition" && <CoachNutrition clientId={client.id} refreshKey={progTick} />}
                   {validTab === "program-phase" && (
                     <>
