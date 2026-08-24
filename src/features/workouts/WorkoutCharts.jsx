@@ -16,6 +16,41 @@ export function targetRepRange(reps) {
   return min < max ? { min, max } : null;
 }
 
+// Set-log rows older than this are dropped from workout-review lists (not
+// from the underlying data, and not from Best Lift/trend, which stay
+// all-time) so months of training don't turn a review list into a
+// never-ending scroll. Shared by the coach's and client's Workout Review.
+export const REVIEW_WINDOW_DAYS = 30;
+export function withinReviewWindow(dateStr) {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - REVIEW_WINDOW_DAYS);
+  return dateStr >= cutoff.toISOString().split("T")[0];
+}
+
+// Scrollable log-entry list: fixed height so it doesn't grow the page (or
+// shift under the reader's finger while scrolling) once there are more than
+// a handful of sessions — internal scroll takes over instead.
+export function LogEntryList({ rows }) {
+  if (!rows.length) return <div style={{ fontSize: 12, color: S.muted, padding: "8px 0" }}>No sessions in the last {REVIEW_WINDOW_DAYS} days.</div>;
+  return (
+    <div style={{ maxHeight: rows.length > 5 ? 220 : "none", overflowY: rows.length > 5 ? "auto" : "visible", border: "1px solid " + S.border }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} style={{ borderBottom: i < rows.length - 1 ? "1px solid " + S.border : "none" }}>
+              <td style={{ padding: "7px 10px", fontSize: 11, color: S.muted, whiteSpace: "nowrap" }}>{r.date}</td>
+              {r.exerciseName && <td style={{ padding: "7px 10px", fontSize: 11, color: S.text, whiteSpace: "nowrap" }}>{r.exerciseName}</td>}
+              <td style={{ padding: "7px 10px", fontSize: 11, color: S.text, whiteSpace: "nowrap" }}>Set {r.sets ?? "—"}</td>
+              <td style={{ padding: "7px 10px", fontSize: 11, color: S.text, whiteSpace: "nowrap" }}>{r.weight != null ? `${r.weight} lb` : "—"}</td>
+              <td style={{ padding: "7px 10px", fontSize: 11, color: S.text, whiteSpace: "nowrap" }}>{r.reps != null ? `${r.reps} reps` : (r.time || "—")}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 function NoData({ label, onLogFirst }) {
   return (
     <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 10, textAlign: "center", padding: 12 }}>
@@ -37,10 +72,12 @@ export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compa
         <NoData label="your weight trend" onLogFirst={onLogFirst} />
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={chartData} margin={{ top: compact ? 16 : 20, right: 12, left: 0, bottom: 0 }}>
+          <LineChart data={chartData} margin={{ top: compact ? 16 : 20, right: 12, left: 0, bottom: compact ? 12 : 18 }}>
             {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
-            <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 30} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact}
+              label={{ value: "Date", position: "insideBottom", offset: compact ? -10 : -12, fontSize: 9, fill: "#888" }} />
+            <YAxis domain={["auto", "auto"]} tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 34}
+              label={isBodyweight ? undefined : { value: "lbs", angle: -90, position: "insideLeft", offset: 8, fontSize: 9, fill: "#888" }} />
             {!compact && <Tooltip {...TT} />}
             <Line type="monotone" dataKey={dataKey} stroke={S.accent2} strokeWidth={2}
               dot={(props) => {
@@ -73,10 +110,12 @@ export function TopSetRepsChart({ chartData, targetRange, onLogFirst, compact })
         <NoData label="your rep trend" onLogFirst={onLogFirst} />
       ) : (
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={chartData} margin={{ top: compact ? 16 : 22, right: 12, left: 0, bottom: 0 }}>
+          <BarChart data={chartData} margin={{ top: compact ? 16 : 22, right: 12, left: 0, bottom: compact ? 12 : 18 }}>
             {!compact && <CartesianGrid strokeDasharray="3 3" stroke={S.border} />}
-            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact} />
-            <YAxis tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 26} />
+            <XAxis dataKey="date" tick={{ fontSize: 10, fill: "#666" }} tickFormatter={(d) => d.slice(5)} hide={compact}
+              label={{ value: "Date", position: "insideBottom", offset: compact ? -10 : -12, fontSize: 9, fill: "#888" }} />
+            <YAxis tick={{ fontSize: 10, fill: "#666" }} hide={compact} width={compact ? 0 : 30}
+              label={{ value: "Reps", angle: -90, position: "insideLeft", offset: 8, fontSize: 9, fill: "#888" }} />
             {!compact && <Tooltip {...TT} />}
             {targetRange && (
               <ReferenceArea y1={targetRange.min} y2={targetRange.max} fill={S.accent2} fillOpacity={0.12} stroke={S.accent2} strokeDasharray="4 4" strokeOpacity={0.5} />

@@ -226,6 +226,20 @@ export function GlobalStyles() {
         .client-tabs-sticky { position: sticky; top: 54px; z-index: 90; background: ${S.bg}; padding: 6px 0; }
         .daily-habits-grid { grid-template-columns: minmax(0,1fr) !important; }
       }
+      /* Phone landscape: the max-width breakpoints above are width-only, and
+         most phones' landscape width (roughly 650-950px) falls right under
+         them — so rotating to landscape kept these sections stacked in a
+         single column even though there's plenty of horizontal room to lay
+         them out side by side, the way the desktop grid does. Scoped to the
+         specific split layouts that were reported stacking (Clients, CRM) —
+         not the sidebar/nav or the generic stat-tile grids, which weren't
+         reported broken and default to the portrait rules above. */
+      @media (orientation: landscape) and (min-width: 560px) {
+        .clients-layout { grid-template-columns: minmax(0,320px) minmax(0,1fr) !important; }
+        .client-workspace { grid-template-columns: minmax(0,1fr) minmax(0,320px) !important; }
+        .overview-row-2 { grid-template-columns: 1fr 1fr !important; }
+        .crm-layout { grid-template-columns: minmax(0,3fr) minmax(0,1fr) !important; }
+      }
     `}</style>
   );
 }

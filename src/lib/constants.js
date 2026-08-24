@@ -68,6 +68,28 @@ export const BLOCK_TYPES = ["straight_set", "superset", "circuit_for_time", "tim
 export const BLOCK_TYPE_LABEL = { straight_set: "Straight Set", superset: "Superset / Giant Set", circuit_for_time: "Circuit — For Time", timed_circuit: "Timed Circuit", weighted_circuit: "Weighted Circuit" };
 export const BLOCK_TYPE_SHORT = { superset: "SS", circuit_for_time: "CFT", timed_circuit: "TC", weighted_circuit: "WC" };
 
+// Collapses a day's exercises into "blocks" — a superset/circuit's members
+// become one item (they render and log as one combined card), a straight-set
+// exercise stays its own item. Shared by the client's swipeable Workouts
+// pills and the coach's Workout Review list, so a grouped block reads as one
+// entry in both instead of one per exercise that happen to be linked.
+export function groupIntoBlocks(dayExercises) {
+  const items = [];
+  const seen = new Set();
+  dayExercises.forEach((ex) => {
+    if (ex.block_type && ex.block_type !== "straight_set" && ex.group_id) {
+      const key = ex.day_of_week + "::" + ex.group_id;
+      if (seen.has(key)) return;
+      seen.add(key);
+      const members = dayExercises.filter((e) => e.day_of_week === ex.day_of_week && e.group_id === ex.group_id);
+      items.push({ id: ex.id, members, blockType: ex.block_type });
+    } else {
+      items.push({ id: ex.id, members: [ex], blockType: "straight_set" });
+    }
+  });
+  return items;
+}
+
 // Canonical within-day workout ordering. Stored in exercises.section (distinct
 // from exercise_type, which drives strength-tracking grouping in StrengthTab —
 // section is purely a slot label, never used for PR/strength charts).

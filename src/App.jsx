@@ -11,10 +11,11 @@ import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer } from "./components/RestTimer.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange } from "./features/workouts/WorkoutCharts.jsx";
+import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -1389,17 +1390,20 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   },[profile.id,profile.shared_program_owner_id,targetDay]);
 
   useEffect(()=>{loadEx();},[loadEx]);
-  useEffect(()=>{
-    if(!selected) return;
-    supabase.from("workout_logs").select("*").eq("client_id",profile.id).eq("exercise_id",selected).order("date")
-      .then(({data})=>setLogs(data||[]));
-  },[selected,profile.id,saved]);
 
   const selectedEx = exercises.find(e=>e.id===selected);
   const blockType = selectedEx?.block_type || "straight_set";
   const groupMembers = selectedEx
     ? exercises.filter((e) => e.day_of_week === selectedEx.day_of_week && e.group_id === selectedEx.group_id)
     : [];
+  // Grouped blocks need every member's logs (not just the currently-selected
+  // one) so the combined card can show a per-round completion checkmark.
+  const groupMemberIds = blockType==="straight_set" ? (selected?[selected]:[]) : groupMembers.map(m=>m.id);
+  useEffect(()=>{
+    if(!groupMemberIds.length) return;
+    supabase.from("workout_logs").select("*").eq("client_id",profile.id).in("exercise_id",groupMemberIds).order("date")
+      .then(({data})=>setLogs(data||[]));
+  },[groupMemberIds.join(","),profile.id,saved]);
 
   // Group the program's exercises into sequential "Day 1..N" for the compact
   // day header + selector below — one day shown at a time (prev/next to
@@ -1414,6 +1418,11 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     const next = dayGroups[(currentDayIndex + delta + dayGroups.length) % dayGroups.length];
     if(next) setSelected(next.exercises[0].id);
   };
+
+  // Collapse a superset/circuit's members into one navigable item — a
+  // grouped block should be one pill to swipe to (and one combined card),
+  // not one pill per exercise that happen to link to the same content.
+  const dayItems = currentDay ? groupIntoBlocks(currentDay.exercises) : [];
 
   // Which of the current day's exercises already have a logged set today —
   // drives the compact day header's "X of Y exercises" + progress bar.
@@ -1495,7 +1504,11 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   // heaviest weight ever logged for this exercise, with its reps — or, for
   // bodyweight moves, the best rep count. Only moves when a new log actually
   // beats it, so it doesn't flicker with chart data.
-  const bestSet = logs.reduce((best, l) => {
+  // Grouped blocks fetch every member's logs (for the round-completion
+  // checkmark below); the chart preview + Best Lift stay scoped to whichever
+  // single exercise is selected, same as before.
+  const selectedExLogs = logs.filter(l=>l.exercise_id===selected);
+  const bestSet = selectedExLogs.reduce((best, l) => {
     if (selectedEx?.is_bodyweight) {
       if (l.reps == null) return best;
       return (!best || l.reps > best.reps) ? { weight: null, reps: l.reps } : best;
@@ -1503,8 +1516,18 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     if (l.weight == null) return best;
     return (!best || l.weight > best.weight) ? { weight: l.weight, reps: l.reps } : best;
   }, null);
-  const chartData = logs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
+  const chartData = selectedExLogs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
   const targetRange = targetRepRange(selectedEx?.reps);
+  // Which rounds (set numbers) already have every member's data logged today
+  // — drives the per-round checkmark in the combined superset/circuit card.
+  const loggedRoundNums = new Set();
+  if (blockType!=="straight_set" && groupMembers.length) {
+    const today = todayStr();
+    const todayGroupLogs = logs.filter(l=>l.date===today);
+    const roundsLogged = {};
+    todayGroupLogs.forEach(l=>{ (roundsLogged[l.sets] = roundsLogged[l.sets] || new Set()).add(l.exercise_id); });
+    Object.entries(roundsLogged).forEach(([num,ids])=>{ if(groupMembers.every(m=>ids.has(m.id))) loggedRoundNums.add(Number(num)); });
+  }
 
   const setStepper = (i, field, delta) => {
     const n = [...sets];
@@ -1554,15 +1577,22 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
               a category mannequin icon, current one highlighted. */}
           {currentDay && (
             <div style={{display:"flex",gap:10,overflowX:"auto",paddingBottom:8,marginBottom:20}}>
-              {currentDay.exercises.map((ex,i)=>{
-                const isSel = selected===ex.id;
+              {dayItems.map((item,i)=>{
+                const isSel = item.members.some(m=>m.id===selected);
+                const isGroup = item.members.length>1;
+                const label = item.members.map(m=>m.name).join(" + ");
                 return (
-                  <button key={ex.id} onClick={()=>setSelected(ex.id)}
-                    style={{flexShrink:0,width:84,display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 8px",cursor:"pointer",
+                  <button key={item.id} onClick={()=>setSelected(item.id)}
+                    style={{flexShrink:0,width:isGroup?110:84,display:"flex",flexDirection:"column",alignItems:"center",gap:6,padding:"10px 8px",cursor:"pointer",position:"relative",
                       border:"1px solid "+(isSel?S.accent:S.border),background:isSel?"rgba(255,106,0,.08)":S.surface,borderRadius:10}}>
                     <div style={{width:20,height:20,borderRadius:"50%",background:isSel?S.accent:S.surface2,color:isSel?"white":S.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700}}>{i+1}</div>
-                    <WorkoutMannequin exerciseName={ex.name} size={32} color={isSel?S.accent:S.muted}/>
-                    <div style={{fontSize:10,fontWeight:600,color:isSel?S.accent:S.text,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{ex.name}</div>
+                    {isGroup
+                      ? <div style={{display:"flex",gap:2}}>
+                          {item.members.slice(0,2).map(m=><WorkoutMannequin key={m.id} exerciseName={m.name} size={26} color={isSel?S.accent:S.muted}/>)}
+                        </div>
+                      : <WorkoutMannequin exerciseName={item.members[0].name} size={32} color={isSel?S.accent:S.muted}/>}
+                    <div style={{fontSize:10,fontWeight:600,color:isSel?S.accent:S.text,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{label}</div>
+                    {isGroup && <span style={{position:"absolute",top:4,right:4,fontSize:8,fontWeight:700,color:S.accent2}}>{BLOCK_TYPE_SHORT[item.blockType]}</span>}
                   </button>
                 );
               })}
@@ -1576,31 +1606,54 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                     sets/reps + mannequin, then the always-visible set
                     tracker with a big "Log Set" action. */}
                 <Card style={{marginBottom:20}}>
-                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:16}}>
-                    <div style={{flex:1,minWidth:180}}>
-                      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24}}>{selectedEx.name}</div>
-                      <div style={{fontSize:12,color:S.muted}}>{[dayLabelOf[selectedEx.id],selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
-                    </div>
-                    <div style={{display:"flex",alignItems:"center",gap:20}}>
-                      <div style={{display:"flex",gap:20}}>
-                        <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Sets</div>
-                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.sets??"—"}</div>
-                        </div>
-                        <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
-                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.reps??"—"}</div>
-                        </div>
-                        <div style={{textAlign:"center"}}>
-                          <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Best Lift</div>
-                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:bestSet?S.accent2:S.text}}>
-                            {bestSet ? (selectedEx.is_bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}${bestSet.reps?` × ${bestSet.reps}`:""}`) : "—"}
+                  {blockType==="straight_set" ? (
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:16}}>
+                      <div style={{flex:1,minWidth:180}}>
+                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24}}>{selectedEx.name}</div>
+                        <div style={{fontSize:12,color:S.muted}}>{[dayLabelOf[selectedEx.id],selectedEx.category].filter(Boolean).join(" · ")||"Unscheduled"}{selectedEx.is_bodyweight?" · bodyweight":""}</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:20}}>
+                        <div style={{display:"flex",gap:20}}>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Sets</div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.sets??"—"}</div>
+                          </div>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.reps??"—"}</div>
+                          </div>
+                          <div style={{textAlign:"center"}}>
+                            <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Best Lift</div>
+                            <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:bestSet?S.accent2:S.text}}>
+                              {bestSet ? (selectedEx.is_bodyweight ? `${bestSet.reps} reps` : `${bestSet.weight}${bestSet.reps?` × ${bestSet.reps}`:""}`) : "—"}
+                            </div>
                           </div>
                         </div>
+                        <WorkoutMannequin exerciseName={selectedEx.name} size={64} color={S.accent}/>
                       </div>
-                      <WorkoutMannequin exerciseName={selectedEx.name} size={64} color={S.accent}/>
                     </div>
-                  </div>
+                  ) : (
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap",marginBottom:16}}>
+                      <div style={{flex:1,minWidth:180}}>
+                        <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:24}}>{groupMembers.map(m=>m.name).join(" + ")}</div>
+                          <span style={{fontSize:9,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:S.accent2,border:"1px solid "+S.accent2,borderRadius:4,padding:"2px 6px"}}>{BLOCK_TYPE_LABEL[blockType]}</span>
+                        </div>
+                        <div style={{fontSize:12,color:S.muted}}>{dayLabelOf[selectedEx.id]||"Unscheduled"}</div>
+                      </div>
+                      <div style={{display:"flex",alignItems:"center",gap:16}}>
+                        <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>
+                          {groupMembers.map(m=>(
+                            <div key={m.id} style={{textAlign:"center"}}>
+                              <div style={{fontSize:10,fontWeight:600,color:S.text,marginBottom:4,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.name}</div>
+                              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{m.sets??"—"}<span style={{fontSize:12,color:S.muted}}> × </span>{m.reps??"—"}</div>
+                            </div>
+                          ))}
+                        </div>
+                        <WorkoutMannequin exerciseName={groupMembers[0]?.name} size={56} color={S.accent}/>
+                      </div>
+                    </div>
+                  )}
                   {isMobile && selectedEx.notes && (
                     <div style={{fontSize:12,color:S.muted,marginBottom:16,lineHeight:1.6,background:S.surface2,border:"1px solid "+S.border,padding:"10px 14px"}}>
                       <span style={{color:S.accent,fontWeight:700,textTransform:"uppercase",fontSize:9,letterSpacing:1}}>Coaching Cue&nbsp;</span>{selectedEx.notes}
@@ -1643,13 +1696,18 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                     </>
                   ) : (
                     <div style={{padding:16,background:S.surface2,border:"1px solid "+S.border}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:14,flexWrap:"wrap",gap:8}}>
-                        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>{groupMembers.map(m=>m.name).join(" + ")}</div>
-                        <div style={{fontSize:11,color:S.muted}}>{BLOCK_TYPE_LABEL[blockType]}</div>
-                      </div>
-                      {rounds.map((round,i)=>(
+                      <div style={{fontSize:11,color:S.muted,marginBottom:14}}>Log each round for both exercises below</div>
+                      {rounds.map((round,i)=>{
+                        const roundLogged = loggedRoundNums.has(i+1);
+                        return (
                         <div key={i} style={{marginBottom:14,paddingBottom:14,borderBottom:i<rounds.length-1?"1px solid "+S.border:"none"}}>
-                          <div style={{fontSize:11,color:S.muted,marginBottom:8}}>Round {i+1}</div>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                            <span style={{fontSize:11,color:S.muted}}>Round {i+1}</span>
+                            <div style={{width:18,height:18,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,
+                              background:roundLogged?S.accent2:"transparent",border:roundLogged?"none":"1px solid "+S.border,color:roundLogged?"#0B0B0D":S.border,fontSize:11,fontWeight:700}}>
+                              {roundLogged?"✓":""}
+                            </div>
+                          </div>
                           {blockType==="circuit_for_time" ? (
                             <input type="text" placeholder="total time (e.g. 8:45)" value={round.time}
                               onChange={e=>{const n=[...rounds];n[i]={...n[i],time:e.target.value};setRounds(n);}}
@@ -1686,7 +1744,8 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                             </div>
                           )}
                         </div>
-                      ))}
+                        );
+                      })}
                       <div style={{display:"flex",gap:10,marginTop:14,alignItems:"center"}}>
                         <Btn onClick={handleLogGroup} disabled={saving}>{saving?"Saving...":"Save Session"}</Btn>
                         <button onClick={()=>setRounds([...rounds,blankRound(groupMembers)])} style={{background:"none",border:"1px solid "+S.border,color:S.text,padding:"8px 14px",fontSize:10,fontWeight:600,cursor:"pointer",textTransform:"uppercase",letterSpacing:"1px"}}>+ Add Round</button>
@@ -1733,6 +1792,13 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
               )}
             </div>
           )}
+
+          {/* Raw log review, separate from the trend graphs above (which
+              stay scoped to whichever exercise is currently selected for
+              logging) — a closed-by-default dropdown per day so the client
+              can review any day's full history without it turning the page
+              into a never-ending list. */}
+          <ClientWorkoutReview profile={profile}/>
         </>
       )}
     </div>
@@ -2401,22 +2467,12 @@ function AssessmentBar({ profile }) {
 }
 
 function ClientProgram({ profile }) {
-  const [exercises, setExercises] = useState([]);
   const [program, setProgram] = useState(null);
   const [phaseHistory, setPhaseHistory] = useState([]);
   const [roadmap, setRoadmap] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase
-      .from("exercises")
-      .select("*")
-      .eq("client_id", trainingOwnerId(profile))
-      .order("order_index")
-      .then(({ data }) => {
-        setExercises(data || []);
-        setLoading(false);
-      });
     supabase
       .from("programs")
       .select("id,name,phase,phase_note")
@@ -2426,6 +2482,7 @@ function ClientProgram({ profile }) {
       .maybeSingle()
       .then(({ data }) => {
         setProgram(data || null);
+        setLoading(false);
         if (data) supabase.from("program_phases").select("*").eq("program_id", data.id).order("order_index")
           .then(({ data: planned }) => setRoadmap(planned || []));
       });
@@ -2439,9 +2496,6 @@ function ClientProgram({ profile }) {
   }, [profile.id, profile.shared_program_owner_id]);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
-
-  // Group into sequential "Day 1..N" folders (see groupByDay).
-  const dayGroups = groupByDay(exercises);
 
   return (
     <div>
@@ -2483,51 +2537,13 @@ function ClientProgram({ profile }) {
         </Card>
       )}
       <AssessmentBar profile={profile} />
-      {exercises.length === 0 ? (
-        <Card style={{ textAlign: "center", padding: 48 }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>🏋</div>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No program yet</div>
-          <div style={{ color: S.muted, fontSize: 13 }}>{profile.client_type === "program_only" ? "Your program will appear here once it's ready." : "Your coach will generate your program soon."}</div>
-        </Card>
-      ) : (
-        dayGroups.map(({ day, exercises: dayExs, label }) => (
-          <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length > 1 ? "s" : ""}${dayExs[0]?.category ? ` · ${dayExs[0].category}` : ""}`}>
-            <div style={{ overflowX: "auto" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
-              <thead>
-                <tr>
-                  {["Exercise", "Section", "Sets", "Reps", "Notes"].map((h) => (
-                    <th key={h} style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, textAlign: "left", padding: "8px 14px", borderBottom: "1px solid " + S.border }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {dayExs.map((ex) => (
-                  <tr key={ex.id}>
-                    <td style={{ padding: "10px 14px", fontSize: 13, fontWeight: 500, borderBottom: "1px solid " + S.border }}>
-                      {ex.name}
-                      {ex.is_bodyweight && <span style={{ marginLeft: 8, fontSize: 9, color: S.muted }}>BW</span>}
-                    </td>
-                    <td style={{ padding: "10px 14px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.section || "—"}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.sets ?? "—"}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 13, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.reps ?? "—"}</td>
-                    <td style={{ padding: "10px 14px", fontSize: 12, color: S.muted, borderBottom: "1px solid " + S.border }}>{ex.notes || "—"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            </div>
-          </DayFolder>
-        ))
-      )}
-      {exercises.length > 0 && (
-        <div style={{ marginTop: 24 }}>
-          <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, margin: "0 2px 12px" }}>Workout Logging</div>
-          <DayFolder title="Log Your Workouts" meta="Record your sets">
-            <Workouts profile={profile} embedded />
-          </DayFolder>
-        </div>
-      )}
+      {/* Same day/exercise navigation coaching clients get on the Workouts
+          tab — a swipeable pill selector, not a click-to-expand day table.
+          Program-only clients used to see both: this read-only per-day
+          table AND the swipeable Workouts UI wrapped in its own "Log Your
+          Workouts" accordion below it — two navigation systems stacked on
+          one page. Rendering Workouts directly here replaces both. */}
+      <Workouts profile={profile} embedded />
     </div>
   );
 }
