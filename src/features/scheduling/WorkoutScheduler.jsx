@@ -104,14 +104,14 @@ function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
                 <div style={{ fontSize: 10, fontWeight: 700, color: occupant ? S.text : S.muted, marginTop: 5, whiteSpace: "nowrap" }}>{occupant ? occupant.label : "Rest"}</div>
               </button>
               {isOpen && (
-                <div style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0, zIndex: 20, background: S.surface, border: "1px solid " + S.border, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 20px rgba(0,0,0,.45)" }}>
+                <div style={{ position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)", width: 150, maxWidth: "90vw", zIndex: 20, background: S.surface, border: "1px solid " + S.border, borderRadius: 8, overflow: "hidden", boxShadow: "0 8px 20px rgba(0,0,0,.45)" }}>
                   <button onClick={() => assign(weekday, "__rest__")}
-                    style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12, fontWeight: 600, background: "transparent", border: "none", color: S.muted, cursor: "pointer" }}>
+                    style={{ display: "block", width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", background: "transparent", border: "none", color: S.muted, cursor: "pointer" }}>
                     Rest Day
                   </button>
                   {dayGroups.map((g, i) => (
                     <button key={g.day} onClick={() => assign(weekday, g.day)}
-                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12, fontWeight: 600, background: "transparent", border: "none", color: S.text, cursor: "pointer" }}>
+                      style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", textAlign: "left", padding: "9px 12px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", background: "transparent", border: "none", color: S.text, cursor: "pointer" }}>
                       <span style={{ width: 8, height: 8, borderRadius: "50%", background: DAY_GROUP_COLORS[i % DAY_GROUP_COLORS.length], flexShrink: 0 }} />
                       {g.label}
                     </button>

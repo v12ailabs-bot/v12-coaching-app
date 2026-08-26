@@ -8,6 +8,7 @@ import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
+import { PhaseAlertsPanel } from "./PhaseAlertsPanel.jsx";
 import { ClientMessagesPanel } from "./ClientMessagesPanel.jsx";
 import { QuickAnalytics } from "./QuickAnalytics.jsx";
 import { CheckInOverview } from "./CheckInOverview.jsx";
@@ -45,6 +46,7 @@ export function CoachHome({ setPage, openClient }) {
   const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [goalsByClient, setGoalsByClient] = useState({});
   const [programByClient, setProgramByClient] = useState({});
+  const [phaseAlerts, setPhaseAlerts] = useState([]);
   // Last real activity per client, from whichever of the four data sources a
   // client actually writes to (daily check-in, weekly check-in, workout log,
   // progress photo) — not just daily_checkins. A client who only logs
@@ -63,7 +65,10 @@ export function CoachHome({ setPage, openClient }) {
       const { data: cl } = await supabase.from("profiles").select("*").neq("email", COACH_EMAIL).neq("archived", true);
       const list = cl || [];
       const allIds = list.map((c) => c.id);
-      const coachedIds = list.filter((c) => c.client_type !== "program_only").map((c) => c.id);
+      // Starter has no coach relationship either (same as program_only) --
+      // without excluding it too, a Starter signup would wrongly show up on
+      // the coaching Needs Attention / Client Overview board.
+      const coachedIds = list.filter((c) => c.client_type !== "program_only" && c.client_type !== "starter").map((c) => c.id);
 
       const { data: ur } = await supabase.from("upgrade_requests").select("*").eq("status", "pending").order("created_at", { ascending: false });
       setUpgrades(ur || []);
@@ -108,9 +113,43 @@ export function CoachHome({ setPage, openClient }) {
       const goalsMap = {}; (cg || []).forEach((g) => { goalsMap[g.client_id] = g; });
 
       const programMap = {};
+      const phaseAlertsList = [];
       if (allIds.length) {
-        const { data: progs } = await supabase.from("programs").select("client_id,name,phase").in("client_id", allIds).order("created_at", { ascending: false });
+        const { data: progs } = await supabase.from("programs").select("id,client_id,name,phase,start_date").in("client_id", allIds).order("created_at", { ascending: false });
         (progs || []).forEach((p) => { if (!programMap[p.client_id]) programMap[p.client_id] = p; });
+
+        // "Phase ending soon" reminder: the coach shouldn't have to remember
+        // to check every client's roadmap manually. Only meaningful for
+        // coaching clients (program-only/starter have no coach relationship
+        // to remind); a phase counts as ending when today is within 7 days
+        // of its planned week_end (past or future — a phase that's already
+        // run past its end date without the coach moving it forward still
+        // needs a nudge, not silence).
+        const currentPrograms = Object.values(programMap).filter((p) => coachedIds.includes(p.client_id));
+        if (currentPrograms.length) {
+          const { data: allPhases } = await supabase.from("program_phases").select("*")
+            .in("program_id", currentPrograms.map((p) => p.id)).order("order_index");
+          const phasesByProgram = {};
+          (allPhases || []).forEach((ph) => { (phasesByProgram[ph.program_id] = phasesByProgram[ph.program_id] || []).push(ph); });
+          const today = todayStr();
+          currentPrograms.forEach((prog) => {
+            const phases = phasesByProgram[prog.id] || [];
+            const idx = phases.findIndex((ph) => ph.phase === prog.phase);
+            if (idx === -1 || !prog.start_date) return;
+            const current = phases[idx];
+            if (current.week_end == null) return;
+            const endDate = new Date(prog.start_date + "T00:00:00Z");
+            endDate.setUTCDate(endDate.getUTCDate() + current.week_end * 7 - 1);
+            const endStr = endDate.toISOString().slice(0, 10);
+            const daysUntilEnd = Math.round((new Date(endStr) - new Date(today)) / 86400000);
+            if (daysUntilEnd <= 7) {
+              phaseAlertsList.push({
+                clientId: prog.client_id, phase: current.phase, endDate: endStr, daysUntilEnd,
+                nextPhase: phases[idx + 1]?.phase || null,
+              });
+            }
+          });
+        }
       }
 
       // Merge the four "did something" signals into one last-activity date
@@ -135,7 +174,7 @@ export function CoachHome({ setPage, openClient }) {
       setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
       setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setLastActivityByClient(lastActivity); setLoading(false);
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
     })();
   }, []);
 
@@ -147,7 +186,7 @@ export function CoachHome({ setPage, openClient }) {
   };
   const lastActivityLabel = (since) => (since == null ? "Never" : since === 0 ? "Today" : since + "d ago");
 
-  const coachedList = clients.filter((c) => c.client_type !== "program_only");
+  const coachedList = clients.filter((c) => c.client_type !== "program_only" && c.client_type !== "starter");
   const programOnlyList = clients.filter((c) => c.client_type === "program_only");
 
   // One coached client's full assessment — same assessClientRisk the
@@ -313,6 +352,7 @@ export function CoachHome({ setPage, openClient }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
           <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} />
+          <PhaseAlertsPanel alerts={phaseAlerts} nameOf={nameOf} openClient={openClient} />
           <ClientMessagesPanel messages={messages} nameOf={nameOf} openClient={openClient} />
         </div>
       </div>

@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, trainingOwnerId, todayStr } from "../../theme.jsx";
 import { Card, Btn, ProgressRing } from "../../components/ui/index.js";
+import { totalWeeksFromPhases } from "../../components/ProgramRoadmap.jsx";
 
 // Clamped so a program that's run past its planned length (or one whose
 // start_date is in the future) never renders an impossible "Week 14 of 12" —
@@ -48,19 +49,34 @@ const TONE_COLOR = { positive: S.success, warning: S.warning, negative: S.danger
 // sees, surfaced as a status ring instead of buried in plain text.
 export function ClientHero({ profile, risk, goalScore, setPage }) {
   const [program, setProgram] = useState(null);
+  const [totalWeeks, setTotalWeeks] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("programs").select("phase,phase_note,weeks,start_date")
+    supabase.from("programs").select("id,phase,phase_note,weeks,start_date")
       .eq("client_id", trainingOwnerId(profile)).order("created_at", { ascending: false })
       .limit(1).maybeSingle()
-      .then(({ data }) => { setProgram(data || null); setLoading(false); });
+      .then(async ({ data }) => {
+        setProgram(data || null);
+        // The program's real length comes from the coach's own roadmap
+        // (program_phases), not the separate programs.weeks number, which
+        // can silently drift out of sync with it — e.g. a coach plans a
+        // 6-month/24-week roadmap one phase at a time while programs.weeks
+        // is still whatever the last AI generation defaulted it to (12).
+        if (data?.id) {
+          const { data: phases } = await supabase.from("program_phases").select("week_end").eq("program_id", data.id);
+          setTotalWeeks(totalWeeksFromPhases(phases, data.weeks));
+        } else {
+          setTotalWeeks(data?.weeks ?? null);
+        }
+        setLoading(false);
+      });
   }, [profile.id, profile.shared_program_owner_id]);
 
   if (loading) return null;
   if (!program?.phase) return null;
 
-  const week = weekOf(program.start_date, program.weeks);
+  const week = weekOf(program.start_date, totalWeeks);
   const status = deriveStatus(risk, goalScore);
   const ringValue = status.label === "Not Enough Data" ? 0 : (goalScore?.overallScore ?? risk?.adh?.score ?? 0);
   const statusText = status.label === "Behind" && risk?.flags?.[0]?.clientMessage
@@ -73,9 +89,9 @@ export function ClientHero({ profile, risk, goalScore, setPage }) {
       <div style={{ flex: 1, minWidth: 200 }}>
         <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Current Phase</div>
         <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, color: S.text, lineHeight: 1 }}>{program.phase}</div>
-        {week && program.weeks && (
+        {week && totalWeeks && (
           <div style={{ fontSize: 14, color: S.text, marginTop: 6 }}>
-            Week <strong>{week}</strong> of {program.weeks}
+            Week <strong>{week}</strong> of {totalWeeks}
           </div>
         )}
         {program.phase_note && <div style={{ fontSize: 13, color: S.muted, marginTop: 8, lineHeight: 1.6, maxWidth: 420 }}>{program.phase_note}</div>}

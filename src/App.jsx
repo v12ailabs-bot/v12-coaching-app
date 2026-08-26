@@ -2615,7 +2615,7 @@ function ClientProgram({ profile }) {
   useEffect(() => {
     supabase
       .from("programs")
-      .select("id,name,phase,phase_note")
+      .select("id,name,phase,phase_note,start_date")
       .eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false })
       .limit(1)
@@ -2658,7 +2658,7 @@ function ClientProgram({ profile }) {
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
           {roadmap.length > 0 && (
             <div style={{ marginTop: 18 }}>
-              <ProgramRoadmap phases={roadmap} currentPhase={program.phase} />
+              <ProgramRoadmap phases={roadmap} currentPhase={program.phase} startDate={program.start_date} />
             </div>
           )}
           {phaseHistory.length > 0 && (

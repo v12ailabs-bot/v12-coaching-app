@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
-import { ProgramRoadmap } from "../../../components/ProgramRoadmap.jsx";
+import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { DAY_ORDER, PHASES, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
 
 // Append-only Program Phase log — every phase change is a new row, never an
@@ -268,7 +268,7 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
   );
 }
 
-const blankRoadmapRow = () => ({ phase: "", week_start: "", week_end: "" });
+const blankRoadmapRow = () => ({ phase: "", week_start: "", week_end: "", note: "" });
 
 // The coach's forward-looking plan for this program's roadmap (program_phases —
 // separate from the append-only program_phase_history above). Freely editable:
@@ -283,11 +283,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [msg, setMsg] = useState(null);
 
   const load = useCallback(async () => {
-    const { data: prog } = await supabase.from("programs").select("id,phase").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: prog } = await supabase.from("programs").select("id,phase,start_date").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
-      setRows((planned || []).map((p) => ({ phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "" })));
+      setRows((planned || []).map((p) => ({ phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "" })));
     } else {
       setRows([]);
     }
@@ -314,6 +314,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
       const payload = clean.map((r, i) => ({
         program_id: program.id, client_id: clientId, phase: r.phase.trim(), order_index: i,
         week_start: r.week_start === "" ? null : parseInt(r.week_start), week_end: r.week_end === "" ? null : parseInt(r.week_end),
+        note: r.note.trim() || null,
       }));
       const { error: insErr } = await supabase.from("program_phases").insert(payload);
       error = insErr;
@@ -335,20 +336,28 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          {rows.map((r, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8, flexWrap: "wrap" }}>
-              <span style={{ fontSize: 11, color: S.muted, width: 18 }}>{i + 1}</span>
-              <input value={r.phase} onChange={(e) => updateRow(i, "phase", e.target.value)} placeholder="Phase name"
-                style={{ flex: "1 1 160px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-              <input type="number" value={r.week_start} onChange={(e) => updateRow(i, "week_start", e.target.value)} placeholder="Week start"
-                style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-              <input type="number" value={r.week_end} onChange={(e) => updateRow(i, "week_end", e.target.value)} placeholder="Week end"
-                style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-              <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === 0 ? "default" : "pointer", padding: "6px 9px", opacity: i === 0 ? 0.4 : 1 }}>↑</button>
-              <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} title="Move down" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === rows.length - 1 ? "default" : "pointer", padding: "6px 9px", opacity: i === rows.length - 1 ? 0.4 : 1 }}>↓</button>
-              <button onClick={() => setRows((r2) => r2.filter((_, j) => j !== i))} title="Remove" style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
-            </div>
-          ))}
+          {rows.map((r, i) => {
+            const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
+            return (
+              <div key={i} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < rows.length - 1 ? "1px solid " + S.border : "none" }}>
+                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <span style={{ fontSize: 11, color: S.muted, width: 18 }}>{i + 1}</span>
+                  <input value={r.phase} onChange={(e) => updateRow(i, "phase", e.target.value)} placeholder="Phase name"
+                    style={{ flex: "1 1 160px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
+                  <input type="number" value={r.week_start} onChange={(e) => updateRow(i, "week_start", e.target.value)} placeholder="Week start"
+                    style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
+                  <input type="number" value={r.week_end} onChange={(e) => updateRow(i, "week_end", e.target.value)} placeholder="Week end"
+                    style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
+                  <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === 0 ? "default" : "pointer", padding: "6px 9px", opacity: i === 0 ? 0.4 : 1 }}>↑</button>
+                  <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} title="Move down" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === rows.length - 1 ? "default" : "pointer", padding: "6px 9px", opacity: i === rows.length - 1 ? 0.4 : 1 }}>↓</button>
+                  <button onClick={() => setRows((r2) => r2.filter((_, j) => j !== i))} title="Remove" style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
+                </div>
+                {range && <div style={{ fontSize: 11, color: S.accent2, marginTop: 4, marginLeft: 26 }}>{range}</div>}
+                <input value={r.note} onChange={(e) => updateRow(i, "note", e.target.value)} placeholder="Note for this phase (shown when the client or coach clicks it on the roadmap)"
+                  style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
+              </div>
+            );
+          })}
           <button onClick={() => setRows((r) => [...r, blankRoadmapRow()])}
             style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "8px 14px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px", marginTop: 4 }}>
             + Add Phase
@@ -360,7 +369,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Preview</div>
-              <ProgramRoadmap phases={rows.filter((r) => r.phase.trim()).map((r) => ({ phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end }))} currentPhase={program.phase} />
+              <ProgramRoadmap phases={rows.filter((r) => r.phase.trim()).map((r) => ({ phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end, note: r.note }))} currentPhase={program.phase} startDate={program.start_date} />
             </div>
           )}
         </>

@@ -13,7 +13,7 @@ export function ProgramRoadmapCard({ profile, setPage }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("programs").select("id,phase").eq("client_id", trainingOwnerId(profile))
+    supabase.from("programs").select("id,phase,start_date").eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false }).limit(1).maybeSingle()
       .then(async ({ data }) => {
         setProgram(data || null);
@@ -30,7 +30,7 @@ export function ProgramRoadmapCard({ profile, setPage }) {
   return (
     <Card>
       <CardTitle>Your Program Roadmap</CardTitle>
-      <ProgramRoadmap phases={phases} currentPhase={program?.phase} />
+      <ProgramRoadmap phases={phases} currentPhase={program?.phase} startDate={program?.start_date} />
       <div style={{ marginTop: 14 }}><Btn sm onClick={() => setPage("program")}>View Full Program Details</Btn></div>
     </Card>
   );
