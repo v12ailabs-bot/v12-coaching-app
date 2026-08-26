@@ -86,7 +86,7 @@ export function ClientHero({ profile, risk, goalScore, setPage }) {
           {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
         </div>
         <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6, marginBottom: 14 }}>{statusText}</div>
-        <Btn sm onClick={() => setPage("program")}>View Details</Btn>
+        <Btn sm onClick={() => setPage("progress")}>View Details</Btn>
       </div>
     </Card>
   );

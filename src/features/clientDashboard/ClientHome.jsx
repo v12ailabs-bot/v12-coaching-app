@@ -14,6 +14,7 @@ import { ProgressSnapshot } from "./ProgressSnapshot.jsx";
 import { ProgressChart } from "./ProgressChart.jsx";
 import { UpcomingCard } from "./UpcomingCard.jsx";
 import { ProgramRoadmapCard } from "./ProgramRoadmapCard.jsx";
+import { ReminderCircles } from "./ReminderCircles.jsx";
 
 // Composed client dashboard. Each section below is a self-contained,
 // self-fetching component (see ./*.jsx) — this file only loads the data
@@ -76,18 +77,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
       <NewSummaryBanner profile={profile} setPage={setPage} />
       <InvoiceCard profile={profile} />
 
-      {!doneToday && (
-        <div style={{ background: "rgba(255,106,0,.09)", border: "1px solid rgba(255,106,0,.25)", padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>Reminder: Daily check-in not done yet.</span>
-          <Btn sm onClick={() => setPage("daily")}>Do it now</Btn>
-        </div>
-      )}
-      {!weeklyDone && (
-        <div style={{ background: "rgba(0,201,167,.10)", border: "1px solid rgba(0,201,167,.28)", padding: "13px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 13, fontWeight: 500 }}>Your weekly check-in is due this week — it's how your coach adjusts your plan.</span>
-          <Btn sm teal onClick={() => setPage("weekly")}>Start weekly</Btn>
-        </div>
-      )}
+      <ReminderCircles profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} />
 
       <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} setPage={setPage} /></div>
 

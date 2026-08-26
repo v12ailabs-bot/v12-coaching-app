@@ -27,14 +27,18 @@ function NameCell({ row, openClient }) {
   );
 }
 
+// Matches the Coach Dashboard's MetricCard treatment (bold Bebas Neue
+// numeral first, bar as a supporting element underneath) instead of a plain
+// muted percentage under a thin track — the same figure deserves the same
+// visual weight wherever it shows up.
 function ProgressBar({ value }) {
   if (value == null) return <span style={{ fontSize: 12, color: S.muted }}>—</span>;
   return (
     <>
-      <div style={{ height: 6, background: S.surface2, borderRadius: 3, overflow: "hidden" }}>
-        <div style={{ width: value + "%", height: "100%", background: S.accent }} />
+      <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, lineHeight: 1, color: S.text }}>{value}<span style={{ fontSize: 11, color: S.muted }}>%</span></div>
+      <div style={{ height: 8, background: S.surface2, borderRadius: 4, overflow: "hidden", marginTop: 4 }}>
+        <div style={{ width: value + "%", height: "100%", background: S.accent, borderRadius: 4 }} />
       </div>
-      <div style={{ fontSize: 11, color: S.muted, marginTop: 3 }}>{value}%</div>
     </>
   );
 }

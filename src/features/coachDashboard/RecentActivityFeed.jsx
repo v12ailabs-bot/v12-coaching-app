@@ -65,9 +65,9 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
       ) : (
         <div style={{ maxHeight: events.length > SCROLL_AFTER ? 360 : "none", overflowY: "auto" }}>
           {events.map((e, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "9px 2px", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 12.5 }}>
-              <span><strong>{nameOf(e.client_id)}</strong> {e.text}</span>
-              <span style={{ color: S.muted, whiteSpace: "nowrap" }}>{relTime(e.created_at)}</span>
+            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "12px 4px", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 13 }}>
+              <span><strong style={{ fontWeight: 600 }}>{nameOf(e.client_id)}</strong> {e.text}</span>
+              <span style={{ color: S.muted, fontSize: 11, whiteSpace: "nowrap" }}>{relTime(e.created_at)}</span>
             </div>
           ))}
         </div>

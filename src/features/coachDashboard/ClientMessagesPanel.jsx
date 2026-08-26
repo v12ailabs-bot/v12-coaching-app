@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { S, useIsMobile } from "../../theme.jsx";
-import { Card } from "../../components/ui/index.js";
+import { Card, StatusBadge } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
 
 // Same `messages` data (weekly check-in questions/adjustments/low-confidence/
@@ -25,8 +25,8 @@ export function ClientMessagesPanel({ messages, nameOf, openClient }) {
             <div style={{ fontSize: 10, color: S.muted, whiteSpace: "nowrap" }}>{m.date}</div>
           </div>
           {m.items.slice(0, 2).map((it, j) => (
-            <div key={j} style={{ marginBottom: 4 }}>
-              <span style={{ padding: "2px 7px", fontSize: 9, fontWeight: 600, marginRight: 6, background: it.tone === "red" ? "rgba(255,107,91,.16)" : "rgba(250,204,21,.14)", color: it.tone === "red" ? S.danger : S.warning }}>{it.label}</span>
+            <div key={j} style={{ marginBottom: 4, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+              <StatusBadge label={it.label} tone={it.tone === "red" ? "red" : "amber"} />
               {it.text && <span style={{ fontSize: 12, color: S.text }}>{it.text.length > 90 ? it.text.slice(0, 90) + "…" : it.text}</span>}
             </div>
           ))}

@@ -225,6 +225,7 @@ export function GlobalStyles() {
            page — the coach shouldn't have to scroll back up to switch tabs. */
         .client-tabs-sticky { position: sticky; top: 54px; z-index: 90; background: ${S.bg}; padding: 6px 0; }
         .daily-habits-grid { grid-template-columns: minmax(0,1fr) !important; }
+        .templates-grid { grid-template-columns: minmax(0,1fr) !important; }
       }
       /* Phone landscape: the max-width breakpoints above are width-only, and
          most phones' landscape width (roughly 650-950px) falls right under
@@ -239,6 +240,12 @@ export function GlobalStyles() {
         .client-workspace { grid-template-columns: minmax(0,1fr) minmax(0,320px) !important; }
         .overview-row-2 { grid-template-columns: 1fr 1fr !important; }
         .crm-layout { grid-template-columns: minmax(0,3fr) minmax(0,1fr) !important; }
+        /* Workout page: exercise card + rest-timer/today's-workout column.
+           useIsMobile() is width-only (max-width: 720px), so a narrower
+           phone rotated to landscape (~650-720px wide) still read as
+           "mobile" and got forced to a single column despite having the
+           same room a wider landscape phone already gets for free. */
+        .workout-main-grid { grid-template-columns: minmax(0,1fr) 300px !important; }
       }
     `}</style>
   );

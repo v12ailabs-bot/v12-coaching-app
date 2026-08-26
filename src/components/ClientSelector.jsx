@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { S, avatarFrom, COLORS } from "../theme.jsx";
-import { StatusBadge, Tabs } from "./ui/index.js";
+import { StatusBadge } from "./ui/index.js";
 
 // Searchable, scrollable client directory for the Clients split workspace.
 // Pure UI: takes the already-loaded client list and reports the selected id
@@ -53,17 +53,32 @@ export function ClientSelector({ clients, selectedId, onSelect, showViewTabs = t
         style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "14px 16px", fontSize: 15, outline: "none", borderRadius: 10 }}
       />
       {showViewTabs && (
-        <Tabs
-          compact
-          tabs={[
+        // A 2x2 grid, not the shared horizontally-scrolling Tabs bar — four
+        // labels with count badges ("Program Only" alone is 12+ characters)
+        // never fit this column's ~280px of usable width in one row without
+        // scrolling to see the rest.
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+          {[
             { key: "all", label: "All", badge: clients.length },
             { key: "coaching", label: "Coaching", badge: coachingCount },
             { key: "program_only", label: "Program Only", badge: programOnlyCount },
             { key: "archived", label: "Archived", badge: archivedCount },
-          ]}
-          active={activeView}
-          onChange={setView}
-        />
+          ].map((t) => {
+            const isActive = t.key === activeView;
+            return (
+              <button key={t.key} onClick={() => setView(t.key)}
+                style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "8px 6px", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  cursor: "pointer", borderRadius: 8, border: "1px solid " + (isActive ? S.accent : S.border),
+                  background: isActive ? "rgba(255,106,0,.12)" : "transparent", color: isActive ? S.accent : S.text }}>
+                <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>{t.label}</span>
+                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 10, flexShrink: 0,
+                  background: isActive ? "rgba(255,106,0,.16)" : S.surface2, color: isActive ? S.accent : S.muted }}>
+                  {t.badge}
+                </span>
+              </button>
+            );
+          })}
+        </div>
       )}
 
       <div style={{ maxHeight: 560, overflowY: "auto", border: "1px solid " + S.border, borderRadius: 10, background: S.surface }}>

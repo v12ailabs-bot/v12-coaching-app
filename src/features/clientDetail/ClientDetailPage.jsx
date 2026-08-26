@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, useIsMobile } from "../../theme.jsx";
-import { PageTitle, Tabs, Modal } from "../../components/ui/index.js";
+import { PageTitle, Modal } from "../../components/ui/index.js";
 import { ClientSelector } from "../../components/ClientSelector.jsx";
 import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
@@ -451,11 +451,9 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
               <div style={{ minWidth:0 }}>
                 <ClientDetailHeader client={client} lastCheckin={lastCheckin} onArchiveToggle={setArchived}
                   onSettingsClick={()=>setShowSettingsModal(true)}
-                  onOpenProgress={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}/>
-                <div className="client-tabs-sticky">
-                  <Tabs tabs={tabs} active={validTab} onChange={setActiveTab}/>
-                </div>
-                <div style={{ marginTop:20 }}>
+                  onOpenProgress={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}
+                  tabs={tabs} activeTab={validTab} onTabChange={setActiveTab}/>
+                <div>
                   {validTab === "overview" && (
                     <div className="overview-grid" style={{ display:"flex", flexDirection:"column", gap:20 }}>
                       {/* Row 1: Progress | Client Insights — the reference mockup's

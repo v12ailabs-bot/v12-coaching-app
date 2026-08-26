@@ -37,13 +37,13 @@ export function RecentNotes({ nameOf, openClient }) {
         <div style={{ maxHeight: notes.length > SCROLL_AFTER ? 420 : "none", overflowY: "auto" }}>
           {notes.map((n, i) => (
             <div key={n.id} onClick={() => openClient(n.client_id)}
-              style={{ padding: "9px 2px", borderBottom: i < notes.length - 1 ? "1px solid " + S.border : "none", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
+              style={{ padding: "12px 4px", borderBottom: i < notes.length - 1 ? "1px solid " + S.border : "none", cursor: "pointer", display: "flex", gap: 10, alignItems: "flex-start" }}>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                  <span style={{ fontSize: 12.5, fontWeight: 600, color: S.text }}>{nameOf(n.client_id)}</span>
+                  <span style={{ fontSize: 13, fontWeight: 600, color: S.text }}>{nameOf(n.client_id)}</span>
                   <span style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap" }}>{(n.created_at || "").slice(0, 10)}</span>
                 </div>
-                <div style={{ fontSize: 12, color: S.muted, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.body}</div>
+                <div style={{ fontSize: 12.5, color: S.muted, marginTop: 3, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{n.body}</div>
               </div>
               <button onClick={(e) => remove(e, n.id)} title="Remove note"
                 style={{ background: "none", border: "none", color: S.muted, cursor: "pointer", fontSize: 15, padding: "0 2px", flexShrink: 0, lineHeight: 1 }}>×</button>

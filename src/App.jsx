@@ -583,10 +583,16 @@ function TopBar({ profile, isCoach, onLogout }) {
     <div className="topbar" style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
       <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:S.accent,flexShrink:0}}>V12</div>
       <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
-        {!isCoach && profile?.dashboard_url && (
-          <a href={profile.dashboard_url} target="_blank" rel="noopener noreferrer"
-            style={{fontSize:11,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",color:S.accent2,textDecoration:"none",border:"1px solid "+S.border,padding:"7px 12px"}}>
-            ↗ My Dashboard
+        {/* Coaching clients get this as one of the ReminderCircles on their
+            Home page instead (folded in alongside Daily/Weekly) — only
+            program-only clients (who don't land on that page) still need it
+            here. Circular, not the old rectangular pill — small and easy to
+            miss was the reported problem, but a bigger rectangle wasn't the
+            fix; a properly sized icon button is. */}
+        {!isCoach && profile?.client_type==="program_only" && profile?.dashboard_url && (
+          <a href={profile.dashboard_url} target="_blank" rel="noopener noreferrer" title="Open your Notion dashboard"
+            style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,textDecoration:"none"}}>
+            📊
           </a>
         )}
         <span style={{fontSize:13,color:S.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{profile?.name||profile?.email}</span>
@@ -2129,7 +2135,11 @@ function TemplatesPanel() {
       )}
 
       {templates.length===0 && !editing && (
-        <Card style={{textAlign:"center",padding:40,color:S.muted}}>No templates yet. Create your first one.</Card>
+        <Card style={{textAlign:"center",padding:40,color:S.muted}}>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:S.text,marginBottom:6}}>No templates yet</div>
+          <div style={{fontSize:13,marginBottom:16}}>Create your first template to standardize your training blueprints.</div>
+          <Btn teal onClick={startNew}>+ New Template</Btn>
+        </Card>
       )}
 
       {templates.length>0 && (
@@ -2143,31 +2153,59 @@ function TemplatesPanel() {
         </div>
       )}
 
-      {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
-        <Card key={t.id}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{t.name}</div>
-                {t.category && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.neon}}>{t.category}</span>}
-                {t.is_builtin && <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:S.muted}}>· Built-in</span>}
-              </div>
-              <div style={{display:"flex",gap:14,fontSize:11,color:S.muted,margin:"4px 0 10px"}}>
-                {t.goal && <span>{t.goal}</span>}
-                {t.days_per_week && <span>{t.days_per_week} days/week</span>}
-              </div>
-              {t.description && <div style={{fontSize:13,marginBottom:8}}>{t.description}</div>}
-              {t.structure && <div style={{fontSize:12,color:S.muted,lineHeight:1.7,whiteSpace:"pre-wrap"}}>{t.structure}</div>}
-            </div>
-            <div style={{display:"flex",flexDirection:"column",gap:8,flexShrink:0}}>
-              <Btn sm teal onClick={()=>duplicate(t)}>Duplicate</Btn>
-              {!t.is_builtin && <Btn sm teal onClick={()=>startEdit(t)}>Edit</Btn>}
-              {!t.is_builtin && <Btn sm danger onClick={()=>remove(t)}>Delete</Btn>}
-            </div>
-          </div>
-        </Card>
-      ))}
+      {/* Grid instead of a stacked single-column list — the description +
+          structure blueprint text (which can run long) is dropped from the
+          card face; it's still fully editable via Edit, and duplicate/edit/
+          delete no longer eat a whole column of vertical button stack. */}
+      <div className="templates-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16}}>
+        {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
+          <TemplateCard key={t.id} t={t} onDuplicate={duplicate} onEdit={startEdit} onDelete={remove}/>
+        ))}
+      </div>
     </div>
+  );
+}
+
+const TEMPLATE_CATEGORY_STYLE = {
+  Hybrid: { icon: "⚡", color: "#F59E0B" }, "Fat Loss": { icon: "🔥", color: "#EF4444" },
+  Muscle: { icon: "💪", color: "#8B5CF6" }, Strength: { icon: "🏋", color: "#3B82F6" },
+  Athletic: { icon: "🏆", color: "#00C9A7" }, Beginner: { icon: "👑", color: "#FF6A00" },
+  Home: { icon: "🏠", color: "#22C55E" }, General: { icon: "📋", color: "#A1A1AA" },
+};
+
+function TemplateCard({ t, onDuplicate, onEdit, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const style = TEMPLATE_CATEGORY_STYLE[t.category] || TEMPLATE_CATEGORY_STYLE.General;
+  return (
+    <Card style={{ display:"flex", flexDirection:"column", height:"100%", position:"relative" }}>
+      <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:10}}>
+        <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,background:style.color+"26",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{style.icon}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:17,lineHeight:1.2}}>{t.name}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",fontSize:10,letterSpacing:1,textTransform:"uppercase",color:style.color,marginTop:3,flexWrap:"wrap"}}>
+            <span>{t.category||"General"}</span>
+            {t.days_per_week && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· {t.days_per_week} days/week</span>}
+            {t.is_builtin && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· Built-in</span>}
+          </div>
+        </div>
+        {!t.is_builtin && (
+          <div style={{position:"relative",flexShrink:0}}>
+            <button onClick={()=>setMenuOpen(o=>!o)} title="More actions" aria-label="More actions"
+              style={{width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:"transparent",border:"none",color:S.muted,fontSize:16}}>⋮</button>
+            {menuOpen && (
+              <div style={{position:"absolute",right:0,top:28,zIndex:10,background:S.surface,border:"1px solid "+S.border,borderRadius:8,overflow:"hidden",minWidth:110,boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}>
+                <button onClick={()=>{setMenuOpen(false);onEdit(t);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",fontSize:12,fontWeight:600,background:"transparent",border:"none",color:S.text,cursor:"pointer"}}>Edit</button>
+                <button onClick={()=>{setMenuOpen(false);onDelete(t);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",fontSize:12,fontWeight:600,background:"transparent",border:"none",color:S.danger,cursor:"pointer"}}>Delete</button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+      <div style={{fontSize:12.5,color:S.muted,lineHeight:1.5,flex:1,marginBottom:14}}>
+        {t.description || (t.goal ? `Goal: ${t.goal}` : "No description yet.")}
+      </div>
+      <Btn sm teal onClick={()=>onDuplicate(t)}>📄 Duplicate</Btn>
+    </Card>
   );
 }
 
