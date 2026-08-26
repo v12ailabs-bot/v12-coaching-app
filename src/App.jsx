@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert } from "./components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard } from "./components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
@@ -1922,6 +1922,8 @@ function MetricsDashboard() {
   const sum = (list, key) => list.reduce((a, r) => a + (Number(r[key]) || 0), 0);
   const METRIC_KEYS = ["dms_sent", "sales_conversations", "calls_booked", "clients_closed", "revenue_today"];
   const METRIC_LABEL = { dms_sent: "DMs Sent", sales_conversations: "Sales Conversations", calls_booked: "Calls Booked", clients_closed: "Clients Closed", revenue_today: "Revenue" };
+  const METRIC_ICON = { dms_sent: "💬", sales_conversations: "🗣", calls_booked: "📞", clients_closed: "🤝", revenue_today: "💰" };
+  const METRIC_COLOR = { dms_sent: "#3B82F6", sales_conversations: "#8B5CF6", calls_booked: "#F59E0B", clients_closed: S.accent2, revenue_today: S.accent };
   const currentWeekStart = isoWeekStart(dateStr);
   // How many days of the current week have actually happened (Monday=1 .. Sunday=7),
   // so a week that just started isn't judged against the full 7-day target.
@@ -1934,10 +1936,16 @@ function MetricsDashboard() {
     METRIC_KEYS.forEach((k) => { point[k] = sum(list, k); });
     return point;
   });
+  // "Behind" is a routine under-target week (50-90% of pace) — it used to
+  // share the same coral/danger tint as "Red Flag" (just softer), which made
+  // coral read as the default "not hitting the number" color instead of
+  // something reserved for weeks that actually need attention. Only "Red
+  // Flag" (under 50% of pace) keeps coral now; "Behind" gets the same
+  // neutral amber treatment as every other lower-emphasis flag in the app.
   const badge = (status) => !status ? null : (
     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "3px 8px", marginLeft: 6,
-      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : status === "Red Flag" ? S.danger : "rgba(255,107,91,.14)",
-      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : status === "Red Flag" ? "white" : S.danger }}>{status}</span>
+      background: status === "Ahead" ? "rgba(0,201,167,.14)" : status === "On Track" ? "rgba(198,255,0,.14)" : status === "Red Flag" ? S.danger : "rgba(250,204,21,.14)",
+      color: status === "Ahead" ? S.accent2 : status === "On Track" ? S.neon : status === "Red Flag" ? "white" : S.warning }}>{status}</span>
   );
 
   return (
@@ -1948,11 +1956,22 @@ function MetricsDashboard() {
         <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>Enter what you did since your last save — it adds to today's total below, then clears so you can log the next batch.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(160px,1fr))", gap: 14, marginBottom: 16 }}>
           {METRIC_KEYS.map((k) => (
-            <Fld key={k} label={`${METRIC_LABEL[k]} — today: ${k === "revenue_today" ? "$" + (todayRow?.[k] || 0) : (todayRow?.[k] || 0)}`}>
+            <div key={k} style={{ border: "1px solid " + S.border, borderTop: "3px solid " + METRIC_COLOR[k], borderRadius: 10, padding: "12px 14px", background: S.surface }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>
+                <span>{METRIC_ICON[k]}</span>{METRIC_LABEL[k]}
+              </div>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, color: S.text, marginBottom: 8 }}>
+                {k === "revenue_today" ? "$" + (todayRow?.[k] || 0) : (todayRow?.[k] || 0)}
+                <span style={{ fontSize: 10, color: S.muted, fontFamily: "inherit", letterSpacing: 0.5, textTransform: "uppercase" }}> today</span>
+              </div>
               <Inp type="number" value={adds[k]} onChange={(e) => setAdd(k, e.target.value)} placeholder="Add..." />
-            </Fld>
+            </div>
           ))}
-          <Fld label="Active Clients (current count)"><Inp type="number" value={snapshot.active_clients} onChange={(e) => setSnap("active_clients", e.target.value)} /></Fld>
+          <div style={{ border: "1px solid " + S.border, borderTop: "3px solid " + S.muted, borderRadius: 10, padding: "12px 14px", background: S.surface }}>
+            <div style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>👥 Active Clients</div>
+            <div style={{ fontSize: 11, color: S.muted, marginBottom: 8 }}>Current count, not an add</div>
+            <Inp type="number" value={snapshot.active_clients} onChange={(e) => setSnap("active_clients", e.target.value)} />
+          </div>
         </div>
         <div style={{ display: "flex", gap: 20, flexWrap: "wrap", marginBottom: 16 }}>
           {[["content_posted", "Content Posted"], ["content_created", "Content Created"], ["content_recorded", "Content Recorded"]].map(([k, label]) => (
@@ -2227,6 +2246,7 @@ const ASSESSMENT_TEXT = [
 const BLANK_ASSESSMENT = { email:"", nervous_system_recruitment:5, muscular_density_to_size:5, metabolic_work_capacity:5, strengths:"", weaknesses:"", injuries:"", training_history:"", recovery_lifestyle:"", goal_focus:"", notes:"" };
 
 function AssessmentsPanel() {
+  const isMobile = useIsMobile();
   const [items, setItems] = useState([]);
   const [profiles, setProfiles] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -2234,6 +2254,8 @@ function AssessmentsPanel() {
   const [form, setForm] = useState(BLANK_ASSESSMENT);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
   const set = (k,v) => setForm(p=>({...p,[k]:v}));
 
   const load = async()=>{
@@ -2305,25 +2327,92 @@ function AssessmentsPanel() {
         </Card>
       )}
       {items.length===0 && !editing && <Card style={{textAlign:"center",padding:40,color:S.muted}}>No assessments yet. Create one before you generate a program.</Card>}
-      {items.map(a=>(
-        <Card key={a.email}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:16,flexWrap:"wrap"}}>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{display:"flex",alignItems:"baseline",gap:10,flexWrap:"wrap"}}>
-                <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20}}>{nameFor(a.email)||a.email}</div>
-                <span style={{fontSize:9,letterSpacing:1.5,textTransform:"uppercase",color:signedUp(a.email)?S.accent2:S.muted}}>{signedUp(a.email)?"Signed up":"Awaiting signup"}</span>
-              </div>
-              <div style={{fontSize:12,color:S.muted,marginTop:4}}>NS {a.nervous_system_recruitment??"—"} · MD {a.muscular_density_to_size??"—"} · MC {a.metabolic_work_capacity??"—"}{signedUp(a.email)?"":` · ${a.email}`}</div>
-              {a.strengths && <div style={{fontSize:12,color:S.muted,marginTop:6,lineHeight:1.6}}><b style={{color:S.text}}>Strengths:</b> {a.strengths}</div>}
-              {a.weaknesses && <div style={{fontSize:12,color:S.muted,marginTop:4,lineHeight:1.6}}><b style={{color:S.text}}>Weaknesses:</b> {a.weaknesses}</div>}
+      {items.length>0 && (()=>{
+        const draftCount = items.filter(a=>!signedUp(a.email)).length;
+        const signedCount = items.length - draftCount;
+        const pct = (n) => items.length ? Math.round((n/items.length)*100) : 0;
+        const filtered = items.filter(a=>{
+          if(statusFilter==="signed_up" && !signedUp(a.email)) return false;
+          if(statusFilter==="draft" && signedUp(a.email)) return false;
+          const q = query.trim().toLowerCase();
+          if(!q) return true;
+          return (nameFor(a.email)||"").toLowerCase().includes(q) || a.email.toLowerCase().includes(q);
+        });
+        return (
+          <>
+            <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:16}}>
+              <MetricCard icon="📋" label="Total Assessments" value={items.length} unit=""/>
+              <MetricCard icon="👥" label="Signed Up" value={signedCount} unit="" trend={{text:`${pct(signedCount)}% of total`,tone:"neutral"}}/>
+              <MetricCard icon="✎" label="Drafts" value={draftCount} unit="" trend={{text:`${pct(draftCount)}% of total`,tone:"neutral"}}/>
             </div>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
-              <Btn sm teal onClick={()=>startEdit(a)}>Edit</Btn>
-              <Btn sm danger onClick={()=>remove(a)}>Delete</Btn>
+            <div style={{display:"flex",gap:10,marginBottom:16,flexWrap:"wrap"}}>
+              <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search clients..."
+                style={{flex:1,minWidth:200,background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 14px",fontSize:13,outline:"none",borderRadius:8}}/>
+              <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}
+                style={{background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"10px 14px",fontSize:13,outline:"none",borderRadius:8}}>
+                <option value="all">All Status</option>
+                <option value="signed_up">Signed Up</option>
+                <option value="draft">Draft</option>
+              </select>
             </div>
-          </div>
-        </Card>
-      ))}
+            {filtered.length===0 ? (
+              <Card style={{textAlign:"center",padding:32,color:S.muted}}>No assessments match.</Card>
+            ) : isMobile ? (
+              filtered.map(a=>(
+                <Card key={a.email}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,marginBottom:8}}>
+                    <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18}}>{nameFor(a.email)||a.email}</div>
+                    <StatusBadge label={signedUp(a.email)?"Signed Up":"Draft"} tone={signedUp(a.email)?"green":"accent"}/>
+                  </div>
+                  <div style={{fontSize:12,color:S.muted,marginBottom:8}}>NS {a.nervous_system_recruitment??"—"} · MD {a.muscular_density_to_size??"—"} · MC {a.metabolic_work_capacity??"—"}</div>
+                  {a.strengths && <div style={{fontSize:12,color:S.muted,marginBottom:4,lineHeight:1.6}}><b style={{color:S.text}}>Strengths:</b> {a.strengths}</div>}
+                  {a.weaknesses && <div style={{fontSize:12,color:S.muted,marginBottom:10,lineHeight:1.6}}><b style={{color:S.text}}>Weaknesses:</b> {a.weaknesses}</div>}
+                  <div style={{display:"flex",gap:8}}>
+                    <Btn sm teal onClick={()=>startEdit(a)}>Edit</Btn>
+                    <Btn sm danger onClick={()=>remove(a)}>Delete</Btn>
+                  </div>
+                </Card>
+              ))
+            ) : (
+              <Card>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",minWidth:760}}>
+                    <thead>
+                      <tr>
+                        {["Client","Status","Score Summary","Strengths","Weaknesses","Actions"].map(h=>(
+                          <th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"8px 12px",borderBottom:"1px solid "+S.border}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map(a=>(
+                        <tr key={a.email}>
+                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border}}>
+                            <div style={{fontSize:13,fontWeight:600,color:S.text}}>{nameFor(a.email)||a.email}</div>
+                            <div style={{fontSize:11,color:S.muted}}>{a.email}</div>
+                          </td>
+                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border}}>
+                            <StatusBadge label={signedUp(a.email)?"Signed Up":"Draft"} tone={signedUp(a.email)?"green":"accent"}/>
+                          </td>
+                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
+                            NS {a.nervous_system_recruitment??"—"} · MD {a.muscular_density_to_size??"—"} · MC {a.metabolic_work_capacity??"—"}
+                          </td>
+                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:200}}>{a.strengths||"—"}</td>
+                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:200}}>{a.weaknesses||"—"}</td>
+                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
+                            <Btn sm teal onClick={()=>startEdit(a)}>Edit</Btn>{" "}
+                            <Btn sm danger onClick={()=>remove(a)}>Delete</Btn>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </Card>
+            )}
+          </>
+        );
+      })()}
     </div>
   );
 }
