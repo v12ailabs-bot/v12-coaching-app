@@ -234,11 +234,19 @@ export function GlobalStyles() {
          them out side by side, the way the desktop grid does. Scoped to the
          specific split layouts that were reported stacking (Clients, CRM) —
          not the sidebar/nav or the generic stat-tile grids, which weren't
-         reported broken and default to the portrait rules above. */
+         reported broken and default to the portrait rules above.
+
+         Two tiers, not one: the Clients page nests THREE fixed-width-ish
+         columns (320px directory, then inside that the workspace splits
+         again into content + a 320px quick-actions rail). Forcing all of
+         them on at the same ~560px threshold left the middle content column
+         with almost nothing at common phone-landscape widths (e.g. 700px -
+         320 directory - 320 rail - gaps = ~20px) — cramped, not fixed. The
+         directory+workspace split alone is fine that narrow; the inner
+         content+rail split and the overview cards' 2-up row need real room,
+         so they wait for the wider tier below. */
       @media (orientation: landscape) and (min-width: 560px) {
         .clients-layout { grid-template-columns: minmax(0,320px) minmax(0,1fr) !important; }
-        .client-workspace { grid-template-columns: minmax(0,1fr) minmax(0,320px) !important; }
-        .overview-row-2 { grid-template-columns: 1fr 1fr !important; }
         .crm-layout { grid-template-columns: minmax(0,3fr) minmax(0,1fr) !important; }
         /* Workout page: exercise card + rest-timer/today's-workout column.
            useIsMobile() is width-only (max-width: 720px), so a narrower
@@ -246,6 +254,10 @@ export function GlobalStyles() {
            "mobile" and got forced to a single column despite having the
            same room a wider landscape phone already gets for free. */
         .workout-main-grid { grid-template-columns: minmax(0,1fr) 300px !important; }
+      }
+      @media (orientation: landscape) and (min-width: 900px) {
+        .client-workspace { grid-template-columns: minmax(0,1fr) minmax(0,320px) !important; }
+        .overview-row-2 { grid-template-columns: 1fr 1fr !important; }
       }
     `}</style>
   );

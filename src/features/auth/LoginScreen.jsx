@@ -3,6 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, bS } from "../../theme.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
 import { IntakeForm } from "./IntakeForm.jsx";
+import { V12Logo } from "../../components/ui/index.js";
 
 export function LoginScreen() {
   const [tab, setTab] = useState("signin");
@@ -84,7 +85,7 @@ export function LoginScreen() {
     <div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 25% 50%,rgba(255,106,0,.13) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(0,201,167,.07) 0%,transparent 50%)"}}/>
       <div style={{position:"relative",zIndex:1,background:S.surface,border:"1px solid "+S.border,padding:"48px 40px",width:420,maxWidth:"95vw"}}>
-        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:56,color:S.accent,lineHeight:1}}>V12</div>
+        <V12Logo size={56}/>
         <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:2}}>System · Client Portal</div>
         <div style={{display:"flex",border:"1px solid "+S.border,marginBottom:28}}>
           {["signin","signup","apply"].map(t=>(

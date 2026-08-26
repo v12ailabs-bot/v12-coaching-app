@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard } from "./components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard, V12Logo } from "./components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
@@ -581,7 +581,7 @@ export default function App() {
 function TopBar({ profile, isCoach, onLogout }) {
   return (
     <div className="topbar" style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
-      <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30,color:S.accent,flexShrink:0}}>V12</div>
+      <V12Logo size={30}/>
       <div style={{display:"flex",alignItems:"center",gap:14,minWidth:0}}>
         {/* Coaching clients get this as one of the ReminderCircles on their
             Home page instead (folded in alongside Daily/Weekly) — only
@@ -1987,36 +1987,33 @@ function MetricsDashboard() {
       </Card>
       <Card>
         <CardTitle>Weekly Rollup</CardTitle>
-        <div style={{ fontSize: 11, color: S.muted, marginBottom: 12 }}>Ahead / On Track / Behind / Red Flag, based on pace toward the weekly target for each metric.</div>
-        <div style={{ overflowX: "auto" }}>
-          <table style={{ borderCollapse: "collapse", minWidth: 640, width: "100%" }}>
-            <thead>
-              <tr>
-                <th style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: S.muted }}>Week Of</th>
-                {METRIC_KEYS.map((k) => (<th key={k} style={{ padding: "6px 10px", fontSize: 10, color: S.muted }}>{METRIC_LABEL[k]}</th>))}
-              </tr>
-            </thead>
-            <tbody>
-              {weeks.map((wk) => {
-                const list = byWeek[wk];
-                return (
-                  <tr key={wk}>
-                    <td style={{ padding: "8px 10px", fontSize: 12, color: S.text }}>
-                      {wk}{wk === currentWeekStart && <span style={{ fontSize: 9, color: S.muted, marginLeft: 6 }}>(in progress, day {daysElapsedThisWeek}/7)</span>}
-                    </td>
-                    {METRIC_KEYS.map((k) => {
-                      const total = sum(list, k);
-                      return (
-                        <td key={k} style={{ padding: "8px 10px", fontSize: 12, color: S.text, whiteSpace: "nowrap" }}>
-                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}{badge(weekStatus(total, WEEKLY_TARGETS[k], daysElapsedFor(wk)))}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 16 }}>Ahead / On Track / Behind / Red Flag, based on pace toward the weekly target for each metric.</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {weeks.map((wk) => {
+            const list = byWeek[wk];
+            return (
+              <div key={wk} style={{ border: "1px solid " + S.border, borderRadius: 10, padding: "14px 16px", background: wk === currentWeekStart ? "rgba(255,106,0,.04)" : S.surface }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: S.text, marginBottom: 10 }}>
+                  Week of {wk}
+                  {wk === currentWeekStart && <span style={{ fontSize: 10, fontWeight: 600, color: S.accent, marginLeft: 8 }}>IN PROGRESS · DAY {daysElapsedThisWeek}/7</span>}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 14 }}>
+                  {METRIC_KEYS.map((k) => {
+                    const total = sum(list, k);
+                    return (
+                      <div key={k} style={{ borderLeft: "2px solid " + METRIC_COLOR[k], paddingLeft: 10 }}>
+                        <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 3 }}>{METRIC_LABEL[k]}</div>
+                        <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: S.text, whiteSpace: "nowrap" }}>
+                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}
+                        </div>
+                        <div style={{ marginTop: 3 }}>{badge(weekStatus(total, WEEKLY_TARGETS[k], daysElapsedFor(wk)))}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </Card>
       <CollapsibleSection title="Trends" summary={`last ${trendData.length} weeks`}>
@@ -2711,13 +2708,86 @@ function GenericNutritionGuide({ profile }) {
       <Card>
         <div style={{ fontSize: 13.5, lineHeight: 1.8 }}>{guide.body}</div>
       </Card>
+      {/* Logging what you actually ate isn't gated on having a personalized
+          plan — program-only clients get this fixed slot list same as
+          coaching clients with a plan, just with no calorie target to
+          compare against. */}
+      <TodaysMealsCard profile={profile} calorieTarget={null} />
     </div>
   );
 }
 
-// Quick manual macro entry for one prescribed meal — a number the client
-// already has from wherever they track (MyFitnessPal, a label, memory), not
-// a food-item search/database. Upserts on (client_id, date, meal), so
+// Fixed universal slots (per the approved mockup), independent of whatever
+// meals a coach's AI-generated plan happens to name/count — so logging still
+// works with no active plan, or for program-only clients who never get one.
+const MEAL_SLOTS = ["Breakfast", "Lunch", "Pre/Post-Workout", "Dinner", "Evening Snack"];
+
+// Shared "Today's Actuals" + "Today's Meals" logging block — used by both the
+// coaching Nutrition page (with a real calorie target) and the program-only
+// generic guide (no target, just logging). Self-fetching so either caller
+// can drop it in without threading meal-log state through.
+function TodaysMealsCard({ profile, calorieTarget }) {
+  const [mealLogs, setMealLogs] = useState([]);
+  const [todayCheckin, setTodayCheckin] = useState(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const today = todayStr();
+    Promise.all([
+      supabase.from("meal_logs").select("*").eq("client_id", profile.id).eq("date", today),
+      supabase.from("daily_checkins").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("date", today).maybeSingle(),
+    ]).then(([{ data: logs }, { data: checkin }]) => {
+      setMealLogs(logs || []);
+      setTodayCheckin(checkin || null);
+      setLoading(false);
+    });
+  }, [profile.id]);
+
+  if (loading) return null;
+
+  // Independent contributions to the same daily total, per Section 12:
+  // per-meal logs sum across meals, the daily check-in's whole-day nutrition
+  // fields are a separate number, and neither overwrites the other.
+  const sumField = (k) => mealLogs.reduce((s, m) => s + (Number(m[k]) || 0), 0) + (Number(todayCheckin?.[k]) || 0);
+  const hasAnyLogged = mealLogs.length > 0 || (todayCheckin && Object.values(todayCheckin).some((v) => v != null));
+
+  return (
+    <>
+      <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
+        <CardTitle>Today's Actuals</CardTitle>
+        {hasAnyLogged ? (
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
+            <span><strong style={{ color: S.text }}>{sumField("calories")}</strong> <span style={{ color: S.muted }}>{calorieTarget != null ? `/ ${calorieTarget} kcal` : "kcal"}</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("protein_g")}</strong><span style={{ color: S.muted }}>g protein</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: S.muted }}>Nothing logged yet today — log a meal below or fill in nutrition on your daily check-in.</div>
+        )}
+      </Card>
+      <Card>
+        <CardTitle>Today's Meals</CardTitle>
+        <div style={{ display: "flex", flexDirection: "column" }}>
+          {MEAL_SLOTS.map((label, i) => {
+            const existing = mealLogs.find((l) => l.meal === label) || null;
+            return (
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 4px", borderBottom: i < MEAL_SLOTS.length - 1 ? "1px solid " + S.border : "none" }}>
+                <span style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{label}</span>
+                <MealLogEntry profile={profile} mealLabel={label} existing={existing}
+                  onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row])} />
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </>
+  );
+}
+
+// Quick manual macro entry for one meal slot — a number the client already
+// has from wherever they track (MyFitnessPal, a label, memory), not a
+// food-item search/database. Upserts on (client_id, date, meal), so
 // re-logging the same meal the same day updates it instead of double-
 // counting a second row when summed into the day's actuals.
 function MealLogEntry({ profile, mealLabel, existing, onSaved }) {
@@ -2761,8 +2831,6 @@ function MealLogEntry({ profile, mealLabel, existing, onSaved }) {
 function Nutrition({ profile }) {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [todayCheckin, setTodayCheckin] = useState(null);
-  const [mealLogs, setMealLogs] = useState([]);
 
   useEffect(() => {
     if (profile.client_type === "program_only") { setLoading(false); return; }
@@ -2778,11 +2846,6 @@ function Nutrition({ profile }) {
         setPlan(data);
         setLoading(false);
       });
-    const today = todayStr();
-    supabase.from("daily_checkins").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("date", today).maybeSingle()
-      .then(({ data }) => setTodayCheckin(data || null));
-    supabase.from("meal_logs").select("*").eq("client_id", profile.id).eq("date", today)
-      .then(({ data }) => setMealLogs(data || []));
   }, [profile.id, profile.client_type]);
 
   if (profile.client_type === "program_only") return <GenericNutritionGuide profile={profile} />;
@@ -2798,18 +2861,14 @@ function Nutrition({ profile }) {
           <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No nutrition plan yet</div>
           <div style={{ color: S.muted, fontSize: 13 }}>Your coach will generate your plan soon.</div>
         </Card>
+        {/* Logging isn't blocked on having a plan — the fixed meal slots
+            below work whether or not a personalized target exists yet. */}
+        <TodaysMealsCard profile={profile} calorieTarget={null} />
       </div>
     );
   }
 
   const meals = Array.isArray(plan.meals) ? plan.meals : [];
-  // Today's actuals: per-meal logs (summed across meals) + the daily
-  // check-in's whole-day nutrition fields — independent contributions to the
-  // same total, per Section 12. Neither source overwrites the other; a day
-  // with only one, the other, both, or neither is all valid.
-  const sumField = (k) => mealLogs.reduce((s, m) => s + (Number(m[k]) || 0), 0) + (Number(todayCheckin?.[k]) || 0);
-  const loggedCalories = sumField("calories");
-  const hasAnyLogged = mealLogs.length > 0 || (todayCheckin && Object.values(todayCheckin).some((v) => v != null));
 
   return (
     <div>
@@ -2821,19 +2880,7 @@ function Nutrition({ profile }) {
         <Stat label="Fats" value={plan.fats_g ?? "—"} unit="g" />
       </div>
 
-      <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
-        <CardTitle>Today's Actuals</CardTitle>
-        {hasAnyLogged ? (
-          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
-            <span><strong style={{ color: S.text }}>{loggedCalories}</strong> <span style={{ color: S.muted }}>/ {plan.calories ?? "—"} kcal</span></span>
-            <span><strong style={{ color: S.text }}>{sumField("protein_g")}</strong><span style={{ color: S.muted }}>g protein</span></span>
-            <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>
-            <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>
-          </div>
-        ) : (
-          <div style={{ fontSize: 12, color: S.muted }}>Nothing logged yet today — log a meal below or fill in nutrition on your daily check-in.</div>
-        )}
-      </Card>
+      <TodaysMealsCard profile={profile} calorieTarget={plan.calories} />
 
       {(plan.guidelines || plan.hydration) && (
         <Card>
@@ -2843,27 +2890,21 @@ function Nutrition({ profile }) {
         </Card>
       )}
 
-      {meals.map((m, i) => {
-        const mealLabel = m.meal || "Meal " + (i + 1);
-        const existing = mealLogs.find((l) => l.meal === mealLabel) || null;
-        return (
-          <DayFolder key={i} title={mealLabel} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
-            <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
-              {m.calories != null && <span>{m.calories} kcal</span>}
-              {m.protein_g != null && <span>P {m.protein_g}g</span>}
-              {m.carbs_g != null && <span>C {m.carbs_g}g</span>}
-              {m.fats_g != null && <span>F {m.fats_g}g</span>}
-            </div>
-            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8, marginBottom: 10 }}>
-              {(Array.isArray(m.items) ? m.items : []).map((it, j) => (
-                <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
-              ))}
-            </ul>
-            <MealLogEntry profile={profile} mealLabel={mealLabel} existing={existing}
-              onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== mealLabel), row])}/>
-          </DayFolder>
-        );
-      })}
+      {meals.map((m, i) => (
+        <DayFolder key={i} title={m.meal || "Meal " + (i + 1)} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
+          <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
+            {m.calories != null && <span>{m.calories} kcal</span>}
+            {m.protein_g != null && <span>P {m.protein_g}g</span>}
+            {m.carbs_g != null && <span>C {m.carbs_g}g</span>}
+            {m.fats_g != null && <span>F {m.fats_g}g</span>}
+          </div>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
+            {(Array.isArray(m.items) ? m.items : []).map((it, j) => (
+              <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
+            ))}
+          </ul>
+        </DayFolder>
+      ))}
 
       {Array.isArray(plan.supplements) && plan.supplements.length > 0 && (
         <Card>
