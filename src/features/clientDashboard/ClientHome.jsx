@@ -108,6 +108,8 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
         <HabitSummary profile={profile} setPage={setPage} />
       </div>
 
+      <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
+
       <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <NutritionMacroBars profile={profile} checkins={checkins} setPage={setPage} />
         <CheckInCard doneToday={doneToday} adherenceScore={risk.adh?.score} setPage={setPage} />
@@ -123,8 +125,6 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
         <ProgressSnapshot profile={profile} checkins={checkins} setPage={setPage} />
         <UpcomingCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} goToWorkouts={goToWorkouts} />
       </div>
-
-      <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
 
       {!isMobile && progressBlock}
     </div>
