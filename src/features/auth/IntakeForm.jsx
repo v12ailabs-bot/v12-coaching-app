@@ -21,8 +21,11 @@ function MultiSelectChips({ label, options, values, onChange }) {
 
 // Public intake application — reachable from LoginScreen without an account.
 // Writes to the `leads` table (shared with the in-app CRM + accept/reject flow)
-// with source="intake_form", status="applied".
-export function IntakeForm({ onDone }) {
+// with source="intake_form", status="applied". `requestedTier` (from the new
+// Get Started tier picker — "Program Only" or "Coaching") is display-only
+// plus a passthrough field on the submission; it does not change the
+// accept/reject/payment process itself, per spec.
+export function IntakeForm({ onDone, requestedTier }) {
   const [form, setForm] = useState({});
   const [currentInjuries, setCurrentInjuries] = useState([]);
   const [previousInjuries, setPreviousInjuries] = useState([]);
@@ -41,7 +44,7 @@ export function IntakeForm({ onDone }) {
     const res = await fetch("/api/submit-application", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, currentInjuries, previousInjuries, painTriggers }),
+      body: JSON.stringify({ ...form, currentInjuries, previousInjuries, painTriggers, requested_tier: requestedTier || null }),
     });
     const data = await res.json().catch(() => ({}));
     setSaving(false);
@@ -59,6 +62,9 @@ export function IntakeForm({ onDone }) {
 
   return (
     <div style={{ maxHeight: "70vh", overflowY: "auto", paddingRight: 4 }}>
+      {requestedTier && (
+        <div style={{ fontSize: 11, color: S.accent, fontWeight: 600, marginBottom: 16 }}>Applying for: {requestedTier}</div>
+      )}
       {INTAKE_FIELDS.map((f) => (
         <div key={f.key} style={{ marginBottom: 16 }}>
           <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{f.label}{f.required ? " *" : ""}</div>
