@@ -12,6 +12,9 @@ import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer } from "./components/RestTimer.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
 import { WorkoutScheduler } from "./features/scheduling/WorkoutScheduler.jsx";
+import { MacroCalculator } from "./features/library/MacroCalculator.jsx";
+import { StarterHome, StarterExpiredScreen } from "./features/clientDashboard/StarterHome.jsx";
+import { deriveLifecycleStatus, LIFECYCLE_STATUS } from "./lib/tierLifecycle.js";
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
@@ -612,15 +615,20 @@ function TopBar({ profile, isCoach, onLogout }) {
 const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
 const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule"];
 
-function Sidebar({ isCoach, programOnly, page, setPage }) {
+function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const isMobile = useIsMobile();
-  // Client nav is deliberately short — 5 tabs (4 for program-only, who have
-  // no check-in flow) so it fits a mobile bottom bar without crowding.
-  // Everything else (Program, Nutrition, Habits, Library) lives behind
-  // "More" (see MoreMenu); Daily/Weekly check-in live behind "Check-In"
-  // (see CheckInHome). Both are reachable directly too (e.g. dashboard
-  // reminders deep-link straight to "daily") — the nav is just the entry point.
-  const clientNav = programOnly
+  // Client nav is deliberately short — 5 tabs (4 for program-only/starter,
+  // who have no check-in flow) so it fits a mobile bottom bar without
+  // crowding. Everything else (Program, Nutrition, Habits, Library) lives
+  // behind "More" (see MoreMenu); Daily/Weekly check-in live behind
+  // "Check-In" (see CheckInHome). Both are reachable directly too (e.g.
+  // dashboard reminders deep-link straight to "daily") — the nav is just
+  // the entry point. Starter has no Progress tab at all (no body/goal
+  // tracking at that tier — spec Section 9) and no Plan tab (no
+  // personalized program) — just Home, Workouts, Schedule, Library.
+  const clientNav = isStarter
+    ? [{id:"starterhome",icon:"⚡",label:"Home",short:"Home"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"schedule",icon:"🗓",label:"Schedule",short:"Schedule"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
+    : programOnly
     ? [{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
     : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
@@ -1285,13 +1293,19 @@ function ResourceCard({ r }) {
   );
 }
 
-function Resources() {
+function Resources({ profile }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     supabase.from("resources").select("*").eq("published", true).order("created_at", { ascending: false })
       .then(({ data }) => { setItems(data || []); setLoading(false); });
+    // Onboarding step 3 ("Visit the Library") is the one checklist item with
+    // no other derivable signal — record it once, best-effort, without
+    // overwriting an existing timestamp.
+    if (profile && !profile.library_visited_at) {
+      supabase.from("profiles").update({ library_visited_at: new Date().toISOString() }).eq("id", profile.id);
+    }
   }, []);
 
   if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
@@ -1307,6 +1321,7 @@ function Resources() {
   return (
     <div>
       <PageTitle title="Library" sub="Guides, recipes, and resources — organized into folders. New here? Open Getting Started." />
+      <MacroCalculator />
       {folders.map(([folder, list]) => (
         <DayFolder key={folder} title={folder} meta={`${list.length} item${list.length === 1 ? "" : "s"}`}>
           {list.length === 0 ? (
@@ -2931,11 +2946,12 @@ function Nutrition({ profile }) {
 
 function Shell({ profile, isCoach, logout, page, setPage, children, wide }) {
   const programOnly = !isCoach && profile?.client_type === "program_only";
+  const isStarter = !isCoach && profile?.client_type === "starter";
   return (
     <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
       <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
-        <Sidebar isCoach={isCoach} programOnly={programOnly} page={page} setPage={setPage} />
+        <Sidebar isCoach={isCoach} programOnly={programOnly} isStarter={isStarter} page={page} setPage={setPage} />
         {/* `wide` (Coach Overview only) uses the full available width instead
             of the app's standard 1180px column — that page's grid/tile
             panels were reading cramped with a lot of unused whitespace past
@@ -3031,7 +3047,8 @@ function MoreMenu({ programOnly, setPage }) {
 
 function ClientDashboard({ profile, logout }) {
   const programOnly = profile.client_type === "program_only";
-  const [page, setPage] = useState(programOnly ? "program" : "dashboard");
+  const isStarter = profile.client_type === "starter";
+  const [page, setPage] = useState(isStarter ? "starterhome" : programOnly ? "program" : "dashboard");
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
   // "today" (Today card's "View Full Workout") vs "next" (Upcoming card's
   // "Next Workout") — the Workouts page's default exercise selection needs
@@ -3057,6 +3074,21 @@ function ClientDashboard({ profile, logout }) {
     );
   }
 
+  // Starter's own expiration screen (spec 9H) — checked after the generic
+  // access_until lockout above (a coach-set fixed-term end date, unrelated
+  // to Starter's 30-day entitlement) but before the welcome gate, since an
+  // expired Starter shouldn't see the portal welcome at all.
+  if (isStarter && deriveLifecycleStatus(profile) === LIFECYCLE_STATUS.STARTER_EXPIRED) {
+    return (
+      <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
+        <TopBar profile={profile} isCoach={false} onLogout={logout} />
+        <main className="main-content" style={{ padding: "28px 32px", maxWidth: 680, margin: "0 auto" }}>
+          <StarterExpiredScreen profile={profile} logout={logout} />
+        </main>
+      </div>
+    );
+  }
+
   // One-time welcome gate on first login; marks the profile so it never reappears.
   // An optional target page lets the welcome drop the user straight into the
   // Library (Getting Started). Guard the type — the plain "Enter" Btn passes a
@@ -3067,7 +3099,12 @@ function ClientDashboard({ profile, logout }) {
     await supabase.from("profiles").update({ welcome_seen: true }).eq("id", profile.id);
   };
 
-  if (!welcomed) {
+  {/* ClientWelcome's copy (V12 assessment, coach-built program, pillars) is
+      written for coaching/program-only clients — none of it applies to a
+      $15/30-day Starter signup, which gets its own "Get Started" checklist
+      on StarterHome instead. Skip this gate entirely for Starter rather
+      than show a welcome screen promising things Starter doesn't include. */}
+  if (!welcomed && !isStarter) {
     return (
       <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
         <TopBar profile={profile} isCoach={false} onLogout={logout} />
@@ -3080,18 +3117,19 @@ function ClientDashboard({ profile, logout }) {
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
-      {page === "dashboard" && !programOnly && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
-      {page === "program" && <ClientProgram profile={profile} />}
-      {page === "checkin" && !programOnly && <CheckInHome profile={profile} setPage={setPage} />}
-      {page === "daily" && !programOnly && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
-      {page === "weekly" && !programOnly && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
-      {page === "progress" && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
+      {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
+      {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
+      {page === "program" && !isStarter && <ClientProgram profile={profile} />}
+      {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
+      {page === "daily" && !programOnly && !isStarter && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "weekly" && !programOnly && !isStarter && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "progress" && !isStarter && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} setPage={setPage} />}
-      {page === "nutrition" && <Nutrition profile={profile} />}
-      {page === "habits" && !programOnly && (
+      {page === "nutrition" && !isStarter && <Nutrition profile={profile} />}
+      {page === "habits" && !programOnly && !isStarter && (
         <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
       )}
-      {page === "resources" && <Resources />}
+      {page === "resources" && <Resources profile={profile} />}
       {page === "schedule" && (
         <div><PageTitle title="Schedule" sub="Build your own workout pattern — not locked to a fixed weekly structure" /><WorkoutScheduler clientId={profile.id} trainOwnerId={trainingOwnerId(profile)}/></div>
       )}
