@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, CollapsibleSection } from "../../../components/ui/index.js";
-import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, LogEntryList, withinReviewWindow, REVIEW_WINDOW_DAYS } from "../../workouts/WorkoutCharts.jsx";
+import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay, LogEntryList, withinReviewWindow, REVIEW_WINDOW_DAYS } from "../../workouts/WorkoutCharts.jsx";
 import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
@@ -16,7 +16,7 @@ function ReviewItem({ item, logsByExercise }) {
   const allLogs = item.members.flatMap((m) => (logsByExercise[m.id] || []).map((l) => ({ ...l, exerciseName: m.name })));
   const primary = item.members[0];
   const primaryLogs = logsByExercise[primary.id] || [];
-  const chartData = primaryLogs.reduce((acc, log) => { const e = acc.find((a) => a.date === log.date); if (!e) acc.push({ date: log.date, weight: log.weight, reps: log.reps }); return acc; }, []);
+  const chartData = topSetPerDay(primaryLogs, primary.is_bodyweight);
   const dataKey = primary.is_bodyweight ? "reps" : "weight";
   const last = chartData[chartData.length - 1];
   const prev = chartData[chartData.length - 2];

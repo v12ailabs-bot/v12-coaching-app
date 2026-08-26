@@ -10,7 +10,7 @@ import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer } from "./components/RestTimer.jsx";
-import { WeightOverTimeChart, TopSetRepsChart, targetRepRange } from "./features/workouts/WorkoutCharts.jsx";
+import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
@@ -1516,7 +1516,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     if (l.weight == null) return best;
     return (!best || l.weight > best.weight) ? { weight: l.weight, reps: l.reps } : best;
   }, null);
-  const chartData = selectedExLogs.reduce((acc,log)=>{const ex=acc.find(a=>a.date===log.date);if(!ex)acc.push({date:log.date,weight:log.weight,reps:log.reps});return acc;},[]);
+  const chartData = topSetPerDay(selectedExLogs, selectedEx?.is_bodyweight);
   const targetRange = targetRepRange(selectedEx?.reps);
   // Which rounds (set numbers) already have every member's data logged today
   // — drives the per-round checkmark in the combined superset/circuit card.

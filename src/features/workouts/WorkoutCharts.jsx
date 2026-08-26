@@ -16,6 +16,8 @@ export function targetRepRange(reps) {
   return min < max ? { min, max } : null;
 }
 
+export { topSetPerDay } from "../../lib/workoutLogs.js";
+
 // Set-log rows older than this are dropped from workout-review lists (not
 // from the underlying data, and not from Best Lift/trend, which stay
 // all-time) so months of training don't turn a review list into a
