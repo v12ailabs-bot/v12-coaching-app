@@ -227,32 +227,24 @@ export function GlobalStyles() {
         .daily-habits-grid { grid-template-columns: minmax(0,1fr) !important; }
         .templates-grid { grid-template-columns: minmax(0,1fr) !important; }
       }
-      /* Phone landscape: the max-width breakpoints above are width-only, and
-         most phones' landscape width (roughly 650-950px) falls right under
-         them — so rotating to landscape kept these sections stacked in a
-         single column even though there's plenty of horizontal room to lay
-         them out side by side, the way the desktop grid does. Scoped to the
-         specific split layouts that were reported stacking (Clients, CRM) —
-         not the sidebar/nav or the generic stat-tile grids, which weren't
-         reported broken and default to the portrait rules above.
-
-         Two tiers, not one: the Clients page nests FOUR fixed-width-ish
-         regions end to end — the 216px sidebar nav, the 320px client
-         directory, the main content, and (inside that) a 320px quick-
-         actions rail. Forcing the inner content+rail split on too early
-         left the content column overflowing INTO the rail's track (CSS
-         grid doesn't clip an overflowing child — it just paints over the
-         next column), which read as text fragments bleeding through behind
-         the rail's buttons, not merely "cramped". A rough budget: 216
-         (sidebar) + 320 (directory) + a livable ~450 minimum for content +
-         320 (rail) + gaps ≈ 1400px — nothing resembling a phone, even a
-         large one in landscape, ever reaches that, so the inner split
-         below is effectively a desktop/small-laptop-width tier now, not a
-         "bigger landscape phone" one. The outer directory+workspace split
-         alone is fine much narrower, since it's only one 320px column
-         competing with content, not two. */
+      /* Phone landscape: the max-width breakpoints above are width-only, so
+         they already apply in landscape too whenever the rotated width is
+         still ≤980px/≤720px — which covers every real phone. The Clients
+         page specifically (directory + workspace, and inside that a
+         quick-actions rail) kept getting a forced 2-column split here that
+         looked fine in isolation but, once you add the always-present
+         216px sidebar nav on top of it, overflowed one column into the
+         next — content bleeding through behind the rail's buttons, not
+         merely "cramped". Simplest correct fix: on a phone, landscape gets
+         the exact same full-width single-column stack as portrait — a
+         search bar that fills the width with everything else stacked
+         underneath it — rather than trying to force a side-by-side split
+         into a budget that doesn't have room for it. CRM's kanban+Today
+         split and the workout page's exercise+timer split are narrower
+         (one 320px-ish column competing with content, not the Clients
+         page's stack of three), so those still get the wider-landscape
+         treatment below. */
       @media (orientation: landscape) and (min-width: 560px) {
-        .clients-layout { grid-template-columns: minmax(0,320px) minmax(0,1fr) !important; }
         .crm-layout { grid-template-columns: minmax(0,3fr) minmax(0,1fr) !important; }
         /* Workout page: exercise card + rest-timer/today's-workout column.
            useIsMobile() is width-only (max-width: 720px), so a narrower
