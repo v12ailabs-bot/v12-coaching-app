@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, RG, Btn, Alert } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, RG, Btn, Alert, ProgressRing } from "../../components/ui/index.js";
 import { PROGRAM_HABITS, streakBack } from "../../lib/constants.js";
 import { StrengthTab } from "./StrengthTab.jsx";
 import { ProgressPhotos } from "./PhotosSection.jsx";
@@ -87,6 +87,13 @@ export function ProgramProgress({ profile }) {
   const goalDiff = goal && lastWeight != null
     ? Math.round(((goal.direction === "increase" ? lastWeight - goal.baseline_value : goal.baseline_value - lastWeight)) * 10) / 10
     : null;
+  // Percent-to-goal, from real logged data only — never a placeholder. Null
+  // (not 0) until there's at least one weight log to compute against, so the
+  // ring can tell "0% progress" apart from "no data yet".
+  const totalNeeded = goal ? Math.abs(goal.target_value - goal.baseline_value) : null;
+  const pctToGoal = goal && goalDiff != null && totalNeeded
+    ? Math.max(0, Math.min(100, Math.round((goalDiff / totalNeeded) * 100)))
+    : null;
 
   // Missed sessions: scheduled program days (by weekday) in the last 14 days
   // that have already passed with no matching workout_logs entry.
@@ -122,6 +129,14 @@ export function ProgramProgress({ profile }) {
         <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
           <CardTitle>Goal — {DIRECTION_VERB[goal.direction] || goal.direction} {goal.target_value}{goal.unit} by {goal.target_date}</CardTitle>
           <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>Started {goal.baseline_date} at {goal.baseline_value}{goal.unit}</div>
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+            <ProgressRing value={pctToGoal ?? 0} size={96} color={S.accent2} caption="TO GOAL" />
+            <div style={{ fontSize: 13, color: S.text, maxWidth: 320 }}>
+              {pctToGoal != null
+                ? <><strong style={{ color: S.accent2 }}>{pctToGoal}%</strong> on track to hit your target by {goal.target_date}.</>
+                : "Log a bodyweight check-in to start tracking your progress toward this goal."}
+            </div>
+          </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(140px,1fr))", gap: 16 }}>
             <Stat label="Starting Point" value={goal.baseline_value} unit={goal.unit} />
             <Stat label="Current Weight" value={lastWeight ?? "—"} unit={lastWeight != null ? goal.unit : ""} />
@@ -146,10 +161,15 @@ export function ProgramProgress({ profile }) {
       {missedSessions.length > 0 && (
         <Card style={{ borderLeft: "3px solid " + S.danger }}>
           <CardTitle>Missed Sessions</CardTitle>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Scheduled program days in the last 14 with no logged workout:</div>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Scheduled program days in the last 14 with no logged workout:</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             {missedSessions.map((d) => (
-              <span key={d} style={{ fontSize: 11, fontWeight: 600, padding: "4px 10px", background: "rgba(255,107,91,.1)", border: "1px solid rgba(255,107,91,.3)", color: S.danger }}>{d}</span>
+              <div key={d} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 14px", borderRadius: 10, background: S.surface2, border: "1px solid " + S.border }}>
+                <span style={{ width: 8, height: 8, borderRadius: "50%", background: S.danger, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, fontWeight: 600, color: S.text }}>
+                  {new Date(d + "T00:00:00Z").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                </span>
+              </div>
             ))}
           </div>
         </Card>
