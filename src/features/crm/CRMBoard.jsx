@@ -6,6 +6,7 @@ import { COLUMNS } from "./crmHelpers.js";
 import { LeadCard } from "./LeadCard.jsx";
 import { LeadModal } from "./LeadModal.jsx";
 import { TodayPanel } from "./TodayPanel.jsx";
+import { PendingStarterCheckouts } from "./PendingStarterCheckouts.jsx";
 
 const selStyle = { background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 12px", fontSize: 12, outline: "none" };
 
@@ -111,6 +112,8 @@ export function CRMBoard() {
         </div>
         <Btn onClick={() => setShowAdd(true)}>+ Add Lead</Btn>
       </div>
+
+      <PendingStarterCheckouts />
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 20 }}>
         <input

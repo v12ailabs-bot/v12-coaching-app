@@ -5,6 +5,48 @@ import { COACH_EMAIL } from "../../lib/constants.js";
 import { IntakeForm } from "./IntakeForm.jsx";
 import { V12Logo } from "../../components/ui/index.js";
 
+// Starter's self-serve $15/30-day signup: only an email up front, no
+// password (see StarterActivation) and no account until payment confirms.
+// A minimal functional entry point -- the full "Choose Your Path" tier
+// picker (spec Section 14) is a separate visual redesign, held for later.
+function StarterCheckoutForm() {
+  const [email, setEmail] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [msg, setMsg] = useState(null);
+
+  const submit = async () => {
+    setLoading(true); setMsg(null);
+    try {
+      const r = await fetch("/api/starter-checkout", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+      const data = await r.json().catch(() => ({}));
+      if (r.ok && data.checkoutUrl) { window.location.href = data.checkoutUrl; return; }
+      setMsg({ ok: false, text: data.error || "Something went wrong. Please try again." });
+    } catch {
+      setMsg({ ok: false, text: "Something went wrong. Please try again." });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
+        Starter — $15 for 30 days of workouts, logging, and the macro calculator. No coach approval needed. Enter your email to continue to payment.
+      </div>
+      <div style={{ marginBottom: 16 }}>
+        <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Email</div>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@gmail.com"
+          style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }} />
+      </div>
+      {msg && <div style={{ color: S.accent, fontSize: 12, marginBottom: 12 }}>{msg.text}</div>}
+      <button onClick={submit} disabled={loading || !email}
+        style={{ ...bS({ width: "100%", padding: 14 }), background: S.accent, color: "white", opacity: loading || !email ? 0.5 : 1 }}>
+        {loading ? "Please wait..." : "Continue to Payment — $15"}
+      </button>
+    </>
+  );
+}
+
 export function LoginScreen() {
   const [tab, setTab] = useState("signin");
   const [email, setEmail] = useState("");
@@ -87,16 +129,18 @@ export function LoginScreen() {
       <div style={{position:"relative",zIndex:1,background:S.surface,border:"1px solid "+S.border,padding:"48px 40px",width:420,maxWidth:"95vw"}}>
         <V12Logo size={56}/>
         <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:2}}>System · Client Portal</div>
-        <div style={{display:"flex",border:"1px solid "+S.border,marginBottom:28}}>
-          {["signin","signup","apply"].map(t=>(
+        <div style={{display:"flex",border:"1px solid "+S.border,marginBottom:28,flexWrap:"wrap"}}>
+          {["signin","signup","starter","apply"].map(t=>(
             <button key={t} onClick={()=>{setTab(t);setError("");setSuccess("");}}
-              style={{flex:1,padding:10,fontSize:12,fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase",cursor:"pointer",border:"none",background:tab===t?S.accent:"transparent",color:tab===t?"white":S.muted}}>
-              {t==="signin"?"Sign In":t==="signup"?"Create Account":"Apply"}
+              style={{flex:"1 1 0",minWidth:70,padding:10,fontSize:11,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"none",background:tab===t?S.accent:"transparent",color:tab===t?"white":S.muted}}>
+              {t==="signin"?"Sign In":t==="signup"?"Create Account":t==="starter"?"Starter":"Apply"}
             </button>
           ))}
         </div>
         {tab==="apply" ? (
           <IntakeForm onDone={()=>setTab("signin")} />
+        ) : tab==="starter" ? (
+          <StarterCheckoutForm />
         ) : (
           <>
             {tab==="signup" && F("Full Name","text",name,setName,"Your full name")}
