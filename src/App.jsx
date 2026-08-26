@@ -2715,9 +2715,54 @@ function GenericNutritionGuide({ profile }) {
   );
 }
 
+// Quick manual macro entry for one prescribed meal — a number the client
+// already has from wherever they track (MyFitnessPal, a label, memory), not
+// a food-item search/database. Upserts on (client_id, date, meal), so
+// re-logging the same meal the same day updates it instead of double-
+// counting a second row when summed into the day's actuals.
+function MealLogEntry({ profile, mealLabel, existing, onSaved }) {
+  const [open, setOpen] = useState(false);
+  const [form, setForm] = useState({ calories: existing?.calories ?? "", protein_g: existing?.protein_g ?? "", carbs_g: existing?.carbs_g ?? "", fats_g: existing?.fats_g ?? "" });
+  const [saving, setSaving] = useState(false);
+  const num = (v) => (v === "" || v == null ? null : Number(v));
+
+  const save = async () => {
+    setSaving(true);
+    const { data } = await supabase.from("meal_logs").upsert({
+      client_id: profile.id, date: todayStr(), meal: mealLabel,
+      calories: num(form.calories), protein_g: num(form.protein_g), carbs_g: num(form.carbs_g), fats_g: num(form.fats_g),
+    }, { onConflict: "client_id,date,meal" }).select().maybeSingle();
+    setSaving(false); setOpen(false);
+    onSaved(data);
+  };
+
+  if (!open) {
+    return (
+      <Btn sm teal onClick={() => setOpen(true)}>
+        {existing ? `Logged: ${existing.calories ?? "—"} kcal · Edit` : "+ Log"}
+      </Btn>
+    );
+  }
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+      {[["calories", "Calories"], ["protein_g", "Protein (g)"], ["carbs_g", "Carbs (g)"], ["fats_g", "Fats (g)"]].map(([k, label]) => (
+        <Fld key={k} label={label}>
+          <Inp type="number" value={form[k]} onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.value }))} placeholder="0" />
+        </Fld>
+      ))}
+      <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+        <Btn sm onClick={save} disabled={saving}>{saving ? "Saving..." : "Save"}</Btn>
+        <button onClick={() => setOpen(false)} style={{ padding: "8px 14px", fontSize: 11, background: "transparent", color: S.muted, border: "1px solid " + S.border, cursor: "pointer" }}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
 function Nutrition({ profile }) {
   const [plan, setPlan] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [todayCheckin, setTodayCheckin] = useState(null);
+  const [mealLogs, setMealLogs] = useState([]);
 
   useEffect(() => {
     if (profile.client_type === "program_only") { setLoading(false); return; }
@@ -2733,6 +2778,11 @@ function Nutrition({ profile }) {
         setPlan(data);
         setLoading(false);
       });
+    const today = todayStr();
+    supabase.from("daily_checkins").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("date", today).maybeSingle()
+      .then(({ data }) => setTodayCheckin(data || null));
+    supabase.from("meal_logs").select("*").eq("client_id", profile.id).eq("date", today)
+      .then(({ data }) => setMealLogs(data || []));
   }, [profile.id, profile.client_type]);
 
   if (profile.client_type === "program_only") return <GenericNutritionGuide profile={profile} />;
@@ -2753,6 +2803,13 @@ function Nutrition({ profile }) {
   }
 
   const meals = Array.isArray(plan.meals) ? plan.meals : [];
+  // Today's actuals: per-meal logs (summed across meals) + the daily
+  // check-in's whole-day nutrition fields — independent contributions to the
+  // same total, per Section 12. Neither source overwrites the other; a day
+  // with only one, the other, both, or neither is all valid.
+  const sumField = (k) => mealLogs.reduce((s, m) => s + (Number(m[k]) || 0), 0) + (Number(todayCheckin?.[k]) || 0);
+  const loggedCalories = sumField("calories");
+  const hasAnyLogged = mealLogs.length > 0 || (todayCheckin && Object.values(todayCheckin).some((v) => v != null));
 
   return (
     <div>
@@ -2764,6 +2821,20 @@ function Nutrition({ profile }) {
         <Stat label="Fats" value={plan.fats_g ?? "—"} unit="g" />
       </div>
 
+      <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
+        <CardTitle>Today's Actuals</CardTitle>
+        {hasAnyLogged ? (
+          <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
+            <span><strong style={{ color: S.text }}>{loggedCalories}</strong> <span style={{ color: S.muted }}>/ {plan.calories ?? "—"} kcal</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("protein_g")}</strong><span style={{ color: S.muted }}>g protein</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>
+            <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: S.muted }}>Nothing logged yet today — log a meal below or fill in nutrition on your daily check-in.</div>
+        )}
+      </Card>
+
       {(plan.guidelines || plan.hydration) && (
         <Card>
           <CardTitle>Guidelines</CardTitle>
@@ -2772,21 +2843,27 @@ function Nutrition({ profile }) {
         </Card>
       )}
 
-      {meals.map((m, i) => (
-        <DayFolder key={i} title={m.meal || "Meal " + (i + 1)} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
-          <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
-            {m.calories != null && <span>{m.calories} kcal</span>}
-            {m.protein_g != null && <span>P {m.protein_g}g</span>}
-            {m.carbs_g != null && <span>C {m.carbs_g}g</span>}
-            {m.fats_g != null && <span>F {m.fats_g}g</span>}
-          </div>
-          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8 }}>
-            {(Array.isArray(m.items) ? m.items : []).map((it, j) => (
-              <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
-            ))}
-          </ul>
-        </DayFolder>
-      ))}
+      {meals.map((m, i) => {
+        const mealLabel = m.meal || "Meal " + (i + 1);
+        const existing = mealLogs.find((l) => l.meal === mealLabel) || null;
+        return (
+          <DayFolder key={i} title={mealLabel} meta={[m.time, m.calories != null ? `${m.calories} kcal` : null].filter(Boolean).join(" · ")}>
+            <div style={{ display: "flex", gap: 16, fontSize: 11, color: S.muted, marginBottom: 12, flexWrap: "wrap" }}>
+              {m.calories != null && <span>{m.calories} kcal</span>}
+              {m.protein_g != null && <span>P {m.protein_g}g</span>}
+              {m.carbs_g != null && <span>C {m.carbs_g}g</span>}
+              {m.fats_g != null && <span>F {m.fats_g}g</span>}
+            </div>
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.8, marginBottom: 10 }}>
+              {(Array.isArray(m.items) ? m.items : []).map((it, j) => (
+                <li key={j}>{typeof it === "string" ? it : it?.name || JSON.stringify(it)}</li>
+              ))}
+            </ul>
+            <MealLogEntry profile={profile} mealLabel={mealLabel} existing={existing}
+              onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== mealLabel), row])}/>
+          </DayFolder>
+        );
+      })}
 
       {Array.isArray(plan.supplements) && plan.supplements.length > 0 && (
         <Card>
