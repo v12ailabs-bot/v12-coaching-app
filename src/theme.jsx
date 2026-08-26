@@ -212,20 +212,23 @@ export function GlobalStyles() {
            each column to unreadable width. */
         .crm-columns { grid-auto-flow: column; grid-template-columns: none !important;
           grid-auto-columns: minmax(78vw, 1fr); overflow-x: auto; }
-        /* Client workspace's content + Quick Actions/Notes rail — stack so
-           the rail reads as a section below the tabs instead of a squeezed
-           sidebar. */
-        .client-workspace { grid-template-columns: minmax(0,1fr) !important; }
-        /* Overview grid's 2-up rows (Progress/Insights, Roadmap/History)
-           collapse to single-column stacked cards on mobile instead of
-           squeezing two cards side by side. */
-        .overview-row-2 { grid-template-columns: minmax(0,1fr) !important; }
         /* Tabs bar stays pinned below the fixed 54px topbar while the tab
            content scrolls underneath it, instead of scrolling away with the
            page — the coach shouldn't have to scroll back up to switch tabs. */
         .client-tabs-sticky { position: sticky; top: 54px; z-index: 90; background: ${S.bg}; padding: 6px 0; }
         .daily-habits-grid { grid-template-columns: minmax(0,1fr) !important; }
         .templates-grid { grid-template-columns: minmax(0,1fr) !important; }
+      }
+      /* client-workspace/overview-row-2 collapse for anything under the
+         1300px "split" tier below (see that rule's comment for the budget
+         math) — NOT scoped to the same 720px breakpoint as the rules above.
+         Leaving them in the 720px block left a 720-1300px gap (exactly
+         where most phones land in landscape) where neither override
+         applied, falling back to the raw unconditional 2-column default and
+         reproducing the same overflow/bleed-through this was meant to fix. */
+      @media (max-width: 1299px) {
+        .client-workspace { grid-template-columns: minmax(0,1fr) !important; }
+        .overview-row-2 { grid-template-columns: minmax(0,1fr) !important; }
       }
       /* Phone landscape: the max-width breakpoints above are width-only, so
          they already apply in landscape too whenever the rotated width is
