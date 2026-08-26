@@ -2173,7 +2173,7 @@ function TemplatesPanel() {
           structure blueprint text (which can run long) is dropped from the
           card face; it's still fully editable via Edit, and duplicate/edit/
           delete no longer eat a whole column of vertical button stack. */}
-      <div className="templates-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:16}}>
+      <div className="templates-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:18}}>
         {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
           <TemplateCard key={t.id} t={t} onDuplicate={duplicate} onEdit={startEdit} onDelete={remove}/>
         ))}
@@ -2194,11 +2194,11 @@ function TemplateCard({ t, onDuplicate, onEdit, onDelete }) {
   const style = TEMPLATE_CATEGORY_STYLE[t.category] || TEMPLATE_CATEGORY_STYLE.General;
   return (
     <Card style={{ display:"flex", flexDirection:"column", height:"100%", position:"relative" }}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:12,marginBottom:10}}>
-        <div style={{width:36,height:36,borderRadius:"50%",flexShrink:0,background:style.color+"26",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>{style.icon}</div>
+      <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:12}}>
+        <div style={{width:44,height:44,borderRadius:"50%",flexShrink:0,background:style.color+"26",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{style.icon}</div>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:17,lineHeight:1.2}}>{t.name}</div>
-          <div style={{display:"flex",gap:8,alignItems:"center",fontSize:10,letterSpacing:1,textTransform:"uppercase",color:style.color,marginTop:3,flexWrap:"wrap"}}>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,lineHeight:1.2}}>{t.name}</div>
+          <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,letterSpacing:1,textTransform:"uppercase",color:style.color,marginTop:4,flexWrap:"wrap"}}>
             <span>{t.category||"General"}</span>
             {t.days_per_week && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· {t.days_per_week} days/week</span>}
             {t.is_builtin && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· Built-in</span>}
@@ -2217,7 +2217,7 @@ function TemplateCard({ t, onDuplicate, onEdit, onDelete }) {
           </div>
         )}
       </div>
-      <div style={{fontSize:12.5,color:S.muted,lineHeight:1.5,flex:1,marginBottom:14}}>
+      <div style={{fontSize:13.5,color:S.muted,lineHeight:1.6,flex:1,marginBottom:16}}>
         {t.description || (t.goal ? `Goal: ${t.goal}` : "No description yet.")}
       </div>
       <Btn sm teal onClick={()=>onDuplicate(t)}>📄 Duplicate</Btn>
@@ -2384,19 +2384,19 @@ function AssessmentsPanel() {
                     <tbody>
                       {filtered.map(a=>(
                         <tr key={a.email}>
-                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border}}>
-                            <div style={{fontSize:13,fontWeight:600,color:S.text}}>{nameFor(a.email)||a.email}</div>
-                            <div style={{fontSize:11,color:S.muted}}>{a.email}</div>
+                          <td style={{padding:"16px",borderBottom:"1px solid "+S.border}}>
+                            <div style={{fontSize:14,fontWeight:600,color:S.text}}>{nameFor(a.email)||a.email}</div>
+                            <div style={{fontSize:12,color:S.muted}}>{a.email}</div>
                           </td>
-                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border}}>
+                          <td style={{padding:"16px",borderBottom:"1px solid "+S.border}}>
                             <StatusBadge label={signedUp(a.email)?"Signed Up":"Draft"} tone={signedUp(a.email)?"green":"accent"}/>
                           </td>
-                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
+                          <td style={{padding:"16px",fontSize:13,color:S.muted,borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
                             NS {a.nervous_system_recruitment??"—"} · MD {a.muscular_density_to_size??"—"} · MC {a.metabolic_work_capacity??"—"}
                           </td>
-                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:200}}>{a.strengths||"—"}</td>
-                          <td style={{padding:"12px",fontSize:12,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:200}}>{a.weaknesses||"—"}</td>
-                          <td style={{padding:"12px",borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
+                          <td style={{padding:"16px",fontSize:13,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:280}}>{a.strengths||"—"}</td>
+                          <td style={{padding:"16px",fontSize:13,color:S.muted,borderBottom:"1px solid "+S.border,maxWidth:280}}>{a.weaknesses||"—"}</td>
+                          <td style={{padding:"16px",borderBottom:"1px solid "+S.border,whiteSpace:"nowrap"}}>
                             <Btn sm teal onClick={()=>startEdit(a)}>Edit</Btn>{" "}
                             <Btn sm danger onClick={()=>remove(a)}>Delete</Btn>
                           </td>
@@ -3112,7 +3112,7 @@ function CoachDashboard({ profile, logout }) {
   const openClient = (id, opts) => { setOpenClientId(id); setOpenSectionKey(opts?.section || null); setPage("clients"); };
 
   return (
-    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard" || page === "clients" || page === "crm"}>
+    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard" || page === "clients" || page === "crm" || page === "templates" || page === "assess"}>
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
       {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
         initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}
