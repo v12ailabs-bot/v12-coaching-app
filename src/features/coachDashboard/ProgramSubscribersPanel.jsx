@@ -1,20 +1,20 @@
 import { S } from "../../theme.jsx";
-import { Card } from "../../components/ui/index.js";
-import { SectionTitle } from "./SectionTitle.jsx";
+import { CollapsibleSection } from "../../components/ui/index.js";
 
 const SCROLL_AFTER = 8;
 
 // Program-only clients have no coach relationship, no check-in feature, and
 // no risk/goal tracking — At Risk and Inactive don't apply to them, so they
 // get their own simple list instead of being mixed into (and skewing) the
-// coaching Client Overview table above. Scrolls internally (sticky header)
-// once the roster grows past SCROLL_AFTER, same pattern as Client Overview.
+// coaching Client Overview table above. Collapsed by default (a dropdown,
+// not an always-open table) so a large Program Only roster doesn't push the
+// coaching board further down the page by default. Scrolls internally
+// (sticky header) once open and the roster grows past SCROLL_AFTER.
 export function ProgramSubscribersPanel({ rows, openClient }) {
   if (rows.length === 0) return null;
   const scrolls = rows.length > SCROLL_AFTER;
   return (
-    <Card>
-      <SectionTitle>Program Subscribers <span style={{ fontSize: 12, color: S.muted, fontWeight: 400, marginLeft: 6 }}>({rows.length})</span></SectionTitle>
+    <CollapsibleSection title="Program Subscribers" summary={`${rows.length} client${rows.length === 1 ? "" : "s"}`}>
       <div style={{ fontSize: 12, color: S.muted, marginBottom: 14 }}>Self-guided program access, no coaching relationship — listed separately from coaching clients above.</div>
       <div style={{ overflow: "auto", maxHeight: scrolls ? 420 : "none" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
@@ -36,6 +36,6 @@ export function ProgramSubscribersPanel({ rows, openClient }) {
           </tbody>
         </table>
       </div>
-    </Card>
+    </CollapsibleSection>
   );
 }

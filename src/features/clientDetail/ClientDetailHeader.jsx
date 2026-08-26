@@ -1,21 +1,24 @@
 import { S, RADIUS, avatarFrom } from "../../theme.jsx";
-import { StatusBadge, Btn, Tabs } from "../../components/ui/index.js";
+import { StatusBadge } from "../../components/ui/index.js";
+
+const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋" };
 
 // Always-visible top strip across every tab — name, program type, contact,
 // Active/Archived status, last check-in, and access-until (so a fixed-term
 // client's end date is visible at a glance instead of only living inside the
 // gear-icon settings modal). There's no "next check-in" scheduling concept
 // anywhere in the app (no cadence field, no reschedule action) — this shows
-// the real "last check-in" date as plain text, with a separate "Progress"
-// button to open the full Progress view (the date itself isn't the click
-// target). The gear icon still opens Client Settings (goal / access date /
-// client type / training location) for editing — account configuration, not
-// day-to-day client status — but the access date itself is now readable
-// without opening it.
+// the real "last check-in" date as plain text next to a circular Progress
+// button (color-matched to the same circle language as the client-facing
+// reminder circles) rather than a plain rectangular button. Settings gets
+// its own circle in a distinct color so the two are never confused at a
+// glance.
 //
 // The Overview/Goals/Nutrition/Program Phase tab strip lives inside this
 // same card, directly under the identity row, instead of as a separate bar
-// underneath it — one visual unit instead of two stacked ones.
+// underneath it — one visual unit instead of two stacked ones. Rendered as
+// bold pill buttons (not the shared underline Tabs primitive) so they read
+// as substantial, clickable destinations rather than small text labels.
 export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpenProgress, onSettingsClick, tabs, activeTab, onTabChange }) {
   return (
     <div style={{ marginBottom: 20 }}>
@@ -30,29 +33,33 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
           </div>
           <div style={{ fontSize: 13, color: S.text, marginTop: 4 }}>{client.goal || "No goal set"}</div>
           <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{client.email}</div>
-        </div>
-        <div style={{ textAlign: "right", flexShrink: 0 }}>
-          <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Last check-in</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: S.text, marginBottom: client.access_until ? 2 : 8 }}>{lastCheckin || "No check-ins yet"}</div>
           {client.access_until && (
-            <div style={{ fontSize: 11, color: S.muted, marginBottom: 8 }}>Access until <strong style={{ color: S.text }}>{client.access_until}</strong></div>
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Access until <strong style={{ color: S.text }}>{client.access_until}</strong></div>
           )}
-          <Btn sm onClick={onOpenProgress}>Progress</Btn>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
-            <button
-              onClick={() => onArchiveToggle(client, !client.archived)}
-              style={{ padding: "6px 12px", fontSize: 10, fontWeight: 600, letterSpacing: "1px", textTransform: "uppercase", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}
-            >
-              {client.archived ? "Unarchive" : "Archive"}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 22, flexShrink: 0 }}>
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6, whiteSpace: "nowrap" }}>{lastCheckin || "No check-ins"}</div>
+            <button onClick={onOpenProgress} title="Open Progress" aria-label="Open Progress"
+              style={{ width: 50, height: 50, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px solid " + S.accent2, background: "rgba(0,201,167,.14)", color: S.accent2, fontSize: 19 }}>
+              📈
             </button>
-            <button
-              onClick={onSettingsClick}
-              title="Client settings"
-              aria-label="Client settings"
-              style={{ width: 30, height: 30, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted, fontSize: 14, borderRadius: RADIUS.sm }}
-            >
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: S.accent2, marginTop: 5 }}>Progress</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <button onClick={() => onArchiveToggle(client, !client.archived)} title={client.archived ? "Unarchive" : "Archive"} aria-label={client.archived ? "Unarchive" : "Archive"}
+              style={{ width: 50, height: 50, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px solid " + S.border, background: "transparent", color: S.muted, fontSize: 18 }}>
+              {client.archived ? "↺" : "🗄"}
+            </button>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: S.muted, marginTop: 5 }}>{client.archived ? "Unarchive" : "Archive"}</div>
+          </div>
+          <div style={{ textAlign: "center" }}>
+            <button onClick={onSettingsClick} title="Client settings" aria-label="Client settings"
+              style={{ width: 50, height: 50, borderRadius: "50%", display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "2px solid #8B5CF6", background: "rgba(139,92,246,.14)", color: "#8B5CF6", fontSize: 19 }}>
               ⚙
             </button>
+            <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "#8B5CF6", marginTop: 5 }}>Settings</div>
           </div>
         </div>
       </div>
@@ -60,8 +67,25 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
           detaches this to the top of the viewport on scroll) never has to
           fight the identity row's rounded-card box above it. Matching side
           borders + bottom-only radius make the two read as one card. */}
-      <div className="client-tabs-sticky" style={{ background: S.surface, border: "1px solid " + S.border, borderTop: "none", borderRadius: `0 0 ${RADIUS.lg}px ${RADIUS.lg}px`, padding: "0 20px" }}>
-        <Tabs tabs={tabs} active={activeTab} onChange={onTabChange} />
+      <div className="client-tabs-sticky" style={{ background: S.surface, border: "1px solid " + S.border, borderTop: "none", borderRadius: `0 0 ${RADIUS.lg}px ${RADIUS.lg}px`, padding: "14px 20px" }}>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {tabs.map((t) => {
+            const isActive = t.key === activeTab;
+            return (
+              <button key={t.key} onClick={() => onTabChange(t.key)}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, padding: "10px 18px", borderRadius: 10, cursor: "pointer",
+                  border: "1px solid " + (isActive ? S.accent : S.border),
+                  background: isActive ? S.accent : "transparent",
+                  color: isActive ? "white" : S.text,
+                  flex: "1 1 140px", justifyContent: "center", minWidth: 130,
+                }}>
+                <span style={{ fontSize: 15 }}>{TAB_ICON[t.key] || "•"}</span>
+                <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 15, letterSpacing: 0.5 }}>{t.label}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
