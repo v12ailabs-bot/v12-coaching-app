@@ -41,7 +41,12 @@ export function ProgressSummaryCard({ client }) {
     <Card style={{ marginBottom: 0, height: "100%" }}>
       <CardTitle>Progress</CardTitle>
       <div style={{ fontSize: 12, color: S.text, marginBottom: 16 }}>{phase ? `Current phase: ${phase}` : "No program phase set yet"}</div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
+      {/* className (not just inline style) so the shared `.g2` responsive
+          rule collapses this to one column on narrow screens — this grid
+          had no class at all before, so it never collapsed on any screen
+          size and squeezed 4 MetricCards into 2 tight columns on a narrow
+          landscape phone. */}
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "repeat(2,1fr)", gap: 12 }}>
         <MetricCard label="Program Progress" value={goalScore?.overallScore ?? "—"} unit={goalScore?.overallScore != null ? "%" : ""} />
         <MetricCard label="Weight Change" value={weightChange != null ? (weightChange > 0 ? "+" : "") + weightChange.toFixed(1) : "—"} unit={weightChange != null ? "lb" : ""} />
         <MetricCard label="Training Adherence" value={adh.trainingRate} unit="%" />
