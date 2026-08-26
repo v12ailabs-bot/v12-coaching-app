@@ -236,15 +236,21 @@ export function GlobalStyles() {
          not the sidebar/nav or the generic stat-tile grids, which weren't
          reported broken and default to the portrait rules above.
 
-         Two tiers, not one: the Clients page nests THREE fixed-width-ish
-         columns (320px directory, then inside that the workspace splits
-         again into content + a 320px quick-actions rail). Forcing all of
-         them on at the same ~560px threshold left the middle content column
-         with almost nothing at common phone-landscape widths (e.g. 700px -
-         320 directory - 320 rail - gaps = ~20px) — cramped, not fixed. The
-         directory+workspace split alone is fine that narrow; the inner
-         content+rail split and the overview cards' 2-up row need real room,
-         so they wait for the wider tier below. */
+         Two tiers, not one: the Clients page nests FOUR fixed-width-ish
+         regions end to end — the 216px sidebar nav, the 320px client
+         directory, the main content, and (inside that) a 320px quick-
+         actions rail. Forcing the inner content+rail split on too early
+         left the content column overflowing INTO the rail's track (CSS
+         grid doesn't clip an overflowing child — it just paints over the
+         next column), which read as text fragments bleeding through behind
+         the rail's buttons, not merely "cramped". A rough budget: 216
+         (sidebar) + 320 (directory) + a livable ~450 minimum for content +
+         320 (rail) + gaps ≈ 1400px — nothing resembling a phone, even a
+         large one in landscape, ever reaches that, so the inner split
+         below is effectively a desktop/small-laptop-width tier now, not a
+         "bigger landscape phone" one. The outer directory+workspace split
+         alone is fine much narrower, since it's only one 320px column
+         competing with content, not two. */
       @media (orientation: landscape) and (min-width: 560px) {
         .clients-layout { grid-template-columns: minmax(0,320px) minmax(0,1fr) !important; }
         .crm-layout { grid-template-columns: minmax(0,3fr) minmax(0,1fr) !important; }
@@ -255,7 +261,7 @@ export function GlobalStyles() {
            same room a wider landscape phone already gets for free. */
         .workout-main-grid { grid-template-columns: minmax(0,1fr) 300px !important; }
       }
-      @media (orientation: landscape) and (min-width: 900px) {
+      @media (min-width: 1300px) {
         .client-workspace { grid-template-columns: minmax(0,1fr) minmax(0,320px) !important; }
         .overview-row-2 { grid-template-columns: 1fr 1fr !important; }
       }
