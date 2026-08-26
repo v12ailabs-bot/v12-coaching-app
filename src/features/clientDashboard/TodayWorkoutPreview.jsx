@@ -3,29 +3,37 @@ import { supabase } from "../../supabaseClient.js";
 import { S, trainingOwnerId } from "../../theme.jsx";
 import { Card, CardTitle, Btn } from "../../components/ui/index.js";
 import { phaseRankOf } from "../../lib/constants.js";
-
-const todayWeekday = () => new Date().toLocaleDateString("en-US", { weekday: "long" });
+import { resolveTodayDayOfWeek } from "../scheduling/WorkoutScheduler.jsx";
 
 // Slim preview of today's exercises, pulled from the same `exercises` rows
-// the full Workout Log reads — no separate "today's workout" data anywhere.
+// the full Workout Log reads — no separate "today's workout" data anywhere,
+// beyond an optional schedule override (see resolveTodayDayOfWeek) that lets
+// a client/coach assign a different day's workout to today instead of the
+// literal weekday it's normally keyed to.
 export function TodayWorkoutPreview({ profile, onViewFull }) {
   const [exercises, setExercises] = useState([]);
+  const [today, setToday] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile))
-      .then(({ data }) => { setExercises(data || []); setLoading(false); });
+    Promise.all([
+      supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile)),
+      resolveTodayDayOfWeek(profile.id),
+    ]).then(([{ data }, resolved]) => {
+      setExercises(data || []);
+      setToday(resolved);
+      setLoading(false);
+    });
   }, [profile.id, profile.shared_program_owner_id]);
 
   if (loading) return null;
 
-  const today = todayWeekday();
   const todays = exercises.filter((e) => e.day_of_week === today)
     .sort((a, b) => phaseRankOf(a) - phaseRankOf(b) || (a.order_index ?? 0) - (b.order_index ?? 0));
 
   return (
     <Card>
-      <CardTitle>Today · {today}</CardTitle>
+      <CardTitle>Today{today ? ` · ${today}` : ""}</CardTitle>
       {exercises.length === 0 ? (
         <div style={{ fontSize: 13, color: S.muted }}>Your coach will assign your program. Check back soon.</div>
       ) : todays.length === 0 ? (

@@ -11,6 +11,7 @@ import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer } from "./components/RestTimer.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
+import { WorkoutScheduler } from "./features/scheduling/WorkoutScheduler.jsx";
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
@@ -609,7 +610,7 @@ function TopBar({ profile, isCoach, onLogout }) {
 // decide which nav item highlights when the client is on one of the pages
 // it groups (e.g. still highlight "More" while on the Nutrition page).
 const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
-const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources"];
+const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule"];
 
 function Sidebar({ isCoach, programOnly, page, setPage }) {
   const isMobile = useIsMobile();
@@ -2998,11 +2999,13 @@ function MoreMenu({ programOnly, setPage }) {
   const items = programOnly
     ? [
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Your fuel plan" },
+        { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ]
     : [
         { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
+        { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
         { id: "habits", icon: "✅", label: "Habits", sub: "Daily habit tracker" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ];
@@ -3089,6 +3092,9 @@ function ClientDashboard({ profile, logout }) {
         <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
       )}
       {page === "resources" && <Resources />}
+      {page === "schedule" && (
+        <div><PageTitle title="Schedule" sub="Build your own workout pattern — not locked to a fixed weekly structure" /><WorkoutScheduler clientId={profile.id} trainOwnerId={trainingOwnerId(profile)}/></div>
+      )}
       {page === "more" && <MoreMenu programOnly={programOnly} setPage={setPage} />}
     </Shell>
   );

@@ -22,6 +22,7 @@ import { CoachConversations } from "./sections/ConversationLogSection.jsx";
 import { CheckinNotesPanel } from "./sections/CheckinNotesPanel.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
+import { WorkoutScheduler } from "../scheduling/WorkoutScheduler.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
 
 // Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
@@ -488,6 +489,10 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                     <>
                       <ProgramGenerateActions client={client} templateId={templateId} setTemplateId={setTemplateId}
                         templates={templates} generating={generating} genScope={genScope} genMsg={genMsg} onGenerate={generateProgram}/>
+                      {/* Section 11 — coach can control/modify a coaching
+                          client's schedule directly; same component the
+                          client uses to self-schedule. */}
+                      <WorkoutScheduler clientId={selected} trainOwnerId={trainOwnerId}/>
                       {/* Coach's monitoring/editing view (Section 9) — compact
                           phase+adherence header, scannable exercise list with
                           trend indicators, tap-to-expand into the same charts
