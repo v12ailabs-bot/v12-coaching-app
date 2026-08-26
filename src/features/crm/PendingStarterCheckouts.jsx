@@ -28,10 +28,10 @@ export function PendingStarterCheckouts() {
     setConfirming(id); setMsg(null);
     const { data: { session } } = await supabase.auth.getSession();
     try {
-      const r = await fetch("/api/admin-confirm-starter-payment", {
+      const r = await fetch("/api/starter-checkout", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-        body: JSON.stringify({ sessionId: id }),
+        body: JSON.stringify({ action: "confirm", sessionId: id }),
       });
       const data = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(data.error || "Failed to confirm.");
