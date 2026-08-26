@@ -21,10 +21,12 @@ const SORTS = {
 // 4-column mapping and what happens to closed_lost.
 export function CRMBoard() {
   const [leads, setLeads] = useState([]);
+  const [clientProfiles, setClientProfiles] = useState({}); // client_id -> profile, for converted leads' lifecycle badge
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusView, setStatusView] = useState("active"); // "active" | "closed_lost"
   const [dueOnly, setDueOnly] = useState(false);
+  const [followupOnly, setFollowupOnly] = useState(false);
   const [sortKey, setSortKey] = useState("follow_up");
   const [showAdd, setShowAdd] = useState(false);
   const [activeLeadId, setActiveLeadId] = useState(null);
@@ -32,6 +34,14 @@ export function CRMBoard() {
   const load = useCallback(async () => {
     const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
     setLeads(data || []);
+    const clientIds = [...new Set((data || []).map((l) => l.client_id).filter(Boolean))];
+    if (clientIds.length) {
+      const { data: profiles } = await supabase.from("profiles")
+        .select("id,client_type,starter_expires_at,program_payment_status,starter_purchase_count").in("id", clientIds);
+      setClientProfiles(Object.fromEntries((profiles || []).map((p) => [p.id, p])));
+    } else {
+      setClientProfiles({});
+    }
     setLoading(false);
   }, []);
   useEffect(() => { load(); }, [load]);
@@ -85,10 +95,12 @@ export function CRMBoard() {
   const q = search.trim().toLowerCase();
   let pool = leads.filter((l) => !q || (l.name || "").toLowerCase().includes(q) || (l.email || "").toLowerCase().includes(q));
   if (dueOnly) pool = pool.filter((l) => l.follow_up_date && l.follow_up_date <= today);
+  if (followupOnly) pool = pool.filter((l) => l.needs_sales_followup);
   pool = [...pool].sort(SORTS[sortKey].fn);
 
   const closedLostCount = leads.filter((l) => l.status === "closed_lost").length;
   const dueCount = leads.filter((l) => l.follow_up_date && l.follow_up_date <= today).length;
+  const followupCount = leads.filter((l) => l.needs_sales_followup).length;
   const activeLead = activeLeadId ? leads.find((l) => l.id === activeLeadId) : null;
 
   return (
@@ -115,6 +127,13 @@ export function CRMBoard() {
         >
           Follow-up due ({dueCount})
         </button>
+        <button
+          onClick={() => setFollowupOnly((v) => !v)}
+          title="Leads explicitly flagged as needing active sales follow-up — distinct from just existing in the pipeline"
+          style={{ padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", borderRadius: RADIUS.sm, border: "1px solid " + (followupOnly ? S.accent : S.border), background: followupOnly ? "rgba(255,106,0,.1)" : "transparent", color: followupOnly ? S.accent : S.muted }}
+        >
+          🚩 Needs Follow-Up ({followupCount})
+        </button>
         <select value={sortKey} onChange={(e) => setSortKey(e.target.value)} style={selStyle}>
           {Object.entries(SORTS).map(([k, s]) => <option key={k} value={k}>{s.label}</option>)}
         </select>
@@ -126,7 +145,9 @@ export function CRMBoard() {
             {pool.filter((l) => l.status === "closed_lost").length === 0 ? (
               <div style={{ color: S.muted, fontSize: 13 }}>No closed-lost leads.</div>
             ) : pool.filter((l) => l.status === "closed_lost").map((l) => (
-              <LeadCard key={l.id} lead={l} onClick={() => setActiveLeadId(l.id)} />
+              <LeadCard key={l.id} lead={l} clientProfile={l.client_id ? clientProfiles[l.client_id] : null}
+                onToggleFollowup={() => updateLead(l.id, { needs_sales_followup: !l.needs_sales_followup })}
+                onClick={() => setActiveLeadId(l.id)} />
             ))}
           </div>
         ) : (
@@ -143,7 +164,9 @@ export function CRMBoard() {
                     {colLeads.length === 0 ? (
                       <div style={{ fontSize: 11, color: S.muted, padding: "8px 0" }}>No leads here.</div>
                     ) : colLeads.map((l) => (
-                      <LeadCard key={l.id} lead={l} onClick={() => setActiveLeadId(l.id)} />
+                      <LeadCard key={l.id} lead={l} clientProfile={l.client_id ? clientProfiles[l.client_id] : null}
+                        onToggleFollowup={() => updateLead(l.id, { needs_sales_followup: !l.needs_sales_followup })}
+                        onClick={() => setActiveLeadId(l.id)} />
                     ))}
                   </div>
                   <button
