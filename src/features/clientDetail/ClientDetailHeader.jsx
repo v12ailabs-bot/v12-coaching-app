@@ -26,29 +26,19 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
         <div style={{ width: 52, height: 52, borderRadius: "50%", background: S.accent, color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 700, flexShrink: 0 }}>
           {avatarFrom(client.name || client.email)}
         </div>
-        {/* minWidth:0 (not a fixed floor) is required here — a landscape
-            phone's content column can be narrower than 200px once the
-            directory column is subtracted, and without this the identity
-            block refused to shrink below that floor and overflowed the
-            page instead of reflowing. Text lines truncate with an ellipsis
-            rather than wrapping/overflowing when squeezed. */}
-        <div style={{ flex: "1 1 0", minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", minWidth: 0 }}>
-            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, lineHeight: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "100%" }}>{client.name || "—"}</div>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 24, lineHeight: 1 }}>{client.name || "—"}</div>
             <StatusBadge label={client.archived ? "Archived" : "Active"} tone={client.archived ? "neutral" : "green"} />
           </div>
-          <div style={{ fontSize: 13, color: S.text, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.goal || "No goal set"}</div>
-          <div style={{ fontSize: 12, color: S.muted, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{client.email}</div>
+          <div style={{ fontSize: 13, color: S.text, marginTop: 4 }}>{client.goal || "No goal set"}</div>
+          <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{client.email}</div>
           {client.access_until && (
-            <div style={{ fontSize: 11, color: S.muted, marginTop: 4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>Access until <strong style={{ color: S.text }}>{client.access_until}</strong></div>
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Access until <strong style={{ color: S.text }}>{client.access_until}</strong></div>
           )}
         </div>
 
-        {/* flexWrap here (not flexShrink:0) so the three circles can drop to
-            their own line(s) instead of forcing a rigid ~200px-wide block
-            that could still be wider than a narrow landscape-phone content
-            column even after the identity block above gives up its floor. */}
-        <div style={{ display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap", justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 22, flexShrink: 0 }}>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6, whiteSpace: "nowrap" }}>{lastCheckin || "No check-ins"}</div>
             <button onClick={onOpenProgress} title="Open Progress" aria-label="Open Progress"
