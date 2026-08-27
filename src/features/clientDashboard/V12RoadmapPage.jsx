@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, trainingOwnerId } from "../../theme.jsx";
 import { PageTitle, Card } from "../../components/ui/index.js";
-import { JOURNEY_STEPS, JOURNEY_LENGTH_DAYS, daysSinceStart, currentJourneyStepIndex, journeyStepStatus } from "../../lib/v12Journey.js";
+import { JOURNEY_STEPS, JOURNEY_LENGTH_DAYS, daysSinceStart, currentJourneyStepIndex, journeyStepStatus, isStepDataComplete } from "../../lib/v12Journey.js";
 import { ONBOARDING_TASK_DEFS, fetchOnboardingTasks, isTaskActive, tasksByKey, onboardingComplete } from "../../lib/onboardingTasks.js";
 
 // Plain-language status for a client reading their own Day-0 gate -- no
@@ -21,6 +21,7 @@ function dayZeroStatusLine(def, task, active) {
 export function V12RoadmapPage({ profile }) {
   const [startDate, setStartDate] = useState(undefined);
   const [onboardingTasks, setOnboardingTasks] = useState(null);
+  const [checkinWeeks, setCheckinWeeks] = useState(null);
 
   useEffect(() => {
     supabase.from("programs").select("start_date").eq("client_id", trainingOwnerId(profile))
@@ -30,8 +31,14 @@ export function V12RoadmapPage({ profile }) {
 
   useEffect(() => { fetchOnboardingTasks(profile.id).then(setOnboardingTasks); }, [profile.id]);
 
-  if (startDate === undefined) return <div className="spinner" style={{ margin: "80px auto" }} />;
+  useEffect(() => {
+    supabase.from("weekly_checkins").select("week_number").eq("client_id", trainingOwnerId(profile)).not("week_number", "is", null)
+      .then(({ data }) => setCheckinWeeks(new Set((data || []).map((w) => w.week_number).filter((n) => n != null))));
+  }, [profile.id, profile.shared_program_owner_id]);
 
+  if (startDate === undefined || !onboardingTasks || !checkinWeeks) return <div className="spinner" style={{ margin: "80px auto" }} />;
+
+  const ctx = { onboardingDone: onboardingComplete(onboardingTasks), checkinWeeks };
   const day = daysSinceStart(startDate);
   const dayClamped = day == null ? 0 : Math.max(0, Math.min(day, JOURNEY_LENGTH_DAYS));
   const currentIndex = currentJourneyStepIndex(dayClamped);
@@ -61,24 +68,25 @@ export function V12RoadmapPage({ profile }) {
       )}
 
       {JOURNEY_STEPS.map((step, i) => {
-        const status = journeyStepStatus(i, currentIndex);
-        const expanded = status === "current" || status === "done" || journeyOver;
+        const status = journeyStepStatus(i, currentIndex, isStepDataComplete(step, ctx));
+        const expanded = status === "current" || status === "done" || status === "behind" || journeyOver;
         return (
-          <Card key={step.key} style={{ marginBottom: 14, opacity: status === "upcoming" && !journeyOver ? 0.65 : 1, border: "1px solid " + (status === "current" ? S.accent : S.border) }}>
+          <Card key={step.key} style={{ marginBottom: 14, opacity: status === "upcoming" && !journeyOver ? 0.65 : 1, border: "1px solid " + (status === "current" ? S.accent : status === "behind" ? S.warning : S.border) }}>
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <div style={{
                 width: 32, height: 32, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 700, fontSize: 14,
-                background: status === "done" ? S.success : status === "current" ? "rgba(255,106,0,.16)" : "transparent",
-                color: status === "done" ? "#0B0B0D" : status === "current" ? S.accent : S.muted,
-                border: status === "current" ? "2px solid " + S.accent : "1px solid " + S.border,
+                background: status === "done" ? S.success : status === "current" ? "rgba(255,106,0,.16)" : status === "behind" ? "rgba(250,204,21,.16)" : "transparent",
+                color: status === "done" ? "#0B0B0D" : status === "current" ? S.accent : status === "behind" ? S.warning : S.muted,
+                border: status === "current" ? "2px solid " + S.accent : status === "behind" ? "2px solid " + S.warning : "1px solid " + S.border,
               }}>
-                {status === "done" ? "✓" : i + 1}
+                {status === "done" ? "✓" : status === "behind" ? "!" : i + 1}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20 }}>{step.label} — {step.title}</div>
                 <div style={{ fontSize: 11, color: S.muted }}>{step.dayStart === step.dayEnd ? `Day ${step.dayStart}` : `Days ${step.dayStart}–${step.dayEnd}`}</div>
               </div>
               {status === "current" && <span style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.accent, fontWeight: 700, flexShrink: 0 }}>Current</span>}
+              {status === "behind" && <span style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.warning, fontWeight: 700, flexShrink: 0 }}>Incomplete</span>}
             </div>
             {expanded && (
               <>
