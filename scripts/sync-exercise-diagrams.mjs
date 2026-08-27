@@ -18,6 +18,12 @@
 // ---------------------------------------------------------------------------
 
 import { createClient } from "@supabase/supabase-js";
+import sharp from "sharp";
+
+// Rendered at 26-64px in the app; the Notion uploads came in at several MB
+// each (full-resolution phone photos/exports of line art). Resized once
+// here rather than shipping multi-MB PNGs to every workout card.
+const MAX_DIMENSION = 200;
 
 const DATA_SOURCE_ID = "237a8e98-9c5e-4bde-a9c6-b110084b184e";
 const NOTION_VERSION = "2025-09-03";
@@ -65,16 +71,20 @@ for (const page of await fetchAllPages()) {
 
   const file = files[0];
   const url = file.file?.url || file.external?.url;
-  const ext = (url.split("?")[0].split(".").pop() || "png").toLowerCase();
-  const path = `${slugify(muscleGroup)}.${ext}`;
+  const path = `${slugify(muscleGroup)}.png`;
 
   try {
     const imgRes = await fetch(url);
     if (!imgRes.ok) throw new Error(`download failed: ${imgRes.status}`);
-    const buf = Buffer.from(await imgRes.arrayBuffer());
-    const contentType = imgRes.headers.get("content-type") || `image/${ext}`;
+    const rawBuf = Buffer.from(await imgRes.arrayBuffer());
+    const beforeKb = Math.round(rawBuf.length / 1024);
+    // Normalized to PNG regardless of source format so every diagram is a
+    // consistent, transparency-safe output — resize is a no-op if the
+    // source is already smaller than MAX_DIMENSION.
+    const buf = await sharp(rawBuf).resize(MAX_DIMENSION, MAX_DIMENSION, { fit: "inside", withoutEnlargement: true }).png({ compressionLevel: 9 }).toBuffer();
+    console.log(`  ${muscleGroup}: ${beforeKb}KB -> ${Math.round(buf.length / 1024)}KB`);
 
-    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buf, { upsert: true, contentType });
+    const { error: upErr } = await supabase.storage.from(BUCKET).upload(path, buf, { upsert: true, contentType: "image/png" });
     if (upErr) throw upErr;
 
     const { data: pub } = supabase.storage.from(BUCKET).getPublicUrl(path);
