@@ -13,6 +13,23 @@ export const ONBOARDING_TASK_DEFS = [
 
 const DEF_BY_KEY = Object.fromEntries(ONBOARDING_TASK_DEFS.map((d) => [d.key, d]));
 
+// A client who already has a program/logged history predates this gate
+// entirely -- they were never asked to go through it, so backfilling
+// "not_started" rows the first time their data loads would wrongly nag
+// them (and their coach) forever for onboarding they already did months or
+// years ago. Any one of these existing signals is enough: profiles.
+// onboarding_complete (set once a coach generates their first AI program),
+// or real logged activity (covers program-only/self-service clients, who
+// never touch generate-program.js and so never get that flag set).
+async function isAlreadyEstablished(clientId) {
+  const [{ data: profile }, { data: ex }, { data: logs }] = await Promise.all([
+    supabase.from("profiles").select("onboarding_complete").eq("id", clientId).maybeSingle(),
+    supabase.from("exercises").select("id").eq("client_id", clientId).limit(1),
+    supabase.from("workout_logs").select("id").eq("client_id", clientId).limit(1),
+  ]);
+  return !!profile?.onboarding_complete || (ex || []).length > 0 || (logs || []).length > 0;
+}
+
 // Creates any missing task rows for a client (idempotent -- unique
 // constraint on client_id+task_key means a race just no-ops the loser).
 export async function ensureOnboardingTasks(clientId) {
@@ -20,8 +37,13 @@ export async function ensureOnboardingTasks(clientId) {
   const have = new Set((existing || []).map((r) => r.task_key));
   const missing = ONBOARDING_TASK_DEFS.filter((d) => !have.has(d.key));
   if (missing.length === 0) return;
+  const established = await isAlreadyEstablished(clientId);
+  const now = new Date().toISOString();
   await supabase.from("client_onboarding_tasks").insert(
-    missing.map((d) => ({ client_id: clientId, task_key: d.key, owner: d.owner, depends_on_key: d.dependsOn }))
+    missing.map((d) => ({
+      client_id: clientId, task_key: d.key, owner: d.owner, depends_on_key: d.dependsOn,
+      status: established ? "completed" : "not_started", completed_at: established ? now : null,
+    }))
   );
 }
 
