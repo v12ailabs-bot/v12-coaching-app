@@ -32,7 +32,7 @@ function ReviewItem({ item, logsByExercise }) {
     <div style={{ borderBottom: "1px solid " + S.border }}>
       <button onClick={() => setOpen((o) => !o)}
         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <WorkoutMannequin exerciseName={primary.name} size={28} color={S.muted} />
+        <WorkoutMannequin exerciseName={primary.name} size={44} color={S.muted} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {item.members.map((m) => m.name).join(" + ")}

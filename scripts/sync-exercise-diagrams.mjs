@@ -20,10 +20,11 @@
 import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 
-// Rendered at 26-64px in the app; the Notion uploads came in at several MB
-// each (full-resolution phone photos/exports of line art). Resized once
-// here rather than shipping multi-MB PNGs to every workout card.
-const MAX_DIMENSION = 200;
+// Rendered at up to 96px in the app (2-3x that for retina) -- 320px keeps
+// them crisp there. The Notion uploads came in at several MB each
+// (full-resolution phone photos/exports of line art); resized once here
+// rather than shipping multi-MB PNGs to every workout card.
+const MAX_DIMENSION = 320;
 
 const DATA_SOURCE_ID = "237a8e98-9c5e-4bde-a9c6-b110084b184e";
 const NOTION_VERSION = "2025-09-03";

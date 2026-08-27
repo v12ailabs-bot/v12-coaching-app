@@ -105,7 +105,13 @@ export function WorkoutMannequin({ exerciseName, size = 56, color }) {
   const { group } = muscleGroupForExercise(exerciseName);
   const imageUrl = diagrams?.[group];
   if (imageUrl) {
-    return <img src={imageUrl} alt={`${group} diagram`} width={size} height={size} style={{ objectFit: "contain" }} />;
+    // The source art is flat line-art, not a real 3D render -- this is a
+    // drop-shadow/highlight combo to give it some lift and depth rather
+    // than fabricating illustration that doesn't exist.
+    return (
+      <img src={imageUrl} alt={`${group} diagram`} width={size} height={size}
+        style={{ objectFit: "contain", filter: "drop-shadow(0 3px 4px rgba(0,0,0,.45)) drop-shadow(0 1px 0 rgba(255,255,255,.12))" }} />
+    );
   }
   const pose = poseForExercise(exerciseName);
   const Pose = POSES[pose];

@@ -1611,9 +1611,9 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                     <div style={{width:20,height:20,borderRadius:"50%",background:isSel?S.accent:S.surface2,color:isSel?"white":S.muted,display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:700}}>{i+1}</div>
                     {isGroup
                       ? <div style={{display:"flex",gap:2}}>
-                          {item.members.slice(0,2).map(m=><WorkoutMannequin key={m.id} exerciseName={m.name} size={26} color={isSel?S.accent:S.muted}/>)}
+                          {item.members.slice(0,2).map(m=><WorkoutMannequin key={m.id} exerciseName={m.name} size={40} color={isSel?S.accent:S.muted}/>)}
                         </div>
-                      : <WorkoutMannequin exerciseName={item.members[0].name} size={32} color={isSel?S.accent:S.muted}/>}
+                      : <WorkoutMannequin exerciseName={item.members[0].name} size={52} color={isSel?S.accent:S.muted}/>}
                     <div style={{fontSize:10,fontWeight:600,color:isSel?S.accent:S.text,textAlign:"center",lineHeight:1.2,overflow:"hidden",display:"-webkit-box",WebkitLineClamp:2,WebkitBoxOrient:"vertical"}}>{label}</div>
                     {isGroup && <span style={{position:"absolute",top:4,right:4,fontSize:8,fontWeight:700,color:S.accent2}}>{BLOCK_TYPE_SHORT[item.blockType]}</span>}
                   </button>
@@ -1652,7 +1652,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                             </div>
                           </div>
                         </div>
-                        <WorkoutMannequin exerciseName={selectedEx.name} size={64} color={S.accent}/>
+                        <WorkoutMannequin exerciseName={selectedEx.name} size={96} color={S.accent}/>
                       </div>
                     </div>
                   ) : (
@@ -1673,7 +1673,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                             </div>
                           ))}
                         </div>
-                        <WorkoutMannequin exerciseName={groupMembers[0]?.name} size={56} color={S.accent}/>
+                        <WorkoutMannequin exerciseName={groupMembers[0]?.name} size={84} color={S.accent}/>
                       </div>
                     </div>
                   )}
@@ -1806,7 +1806,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                     <Card style={{marginBottom:0}}>
                       <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:12}}>Coaching Cue</div>
                       <div style={{display:"flex",gap:12,alignItems:"center"}}>
-                        <WorkoutMannequin exerciseName={selectedEx.name} size={40} color={S.muted}/>
+                        <WorkoutMannequin exerciseName={selectedEx.name} size={60} color={S.muted}/>
                         <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>{selectedEx.notes}</div>
                       </div>
                     </Card>
