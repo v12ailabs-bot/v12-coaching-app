@@ -36,7 +36,15 @@ export function dateRangeForWeeks(startDate, weekStart, weekEnd) {
 // close pattern as the Progress popup on the client card) — works
 // identically wherever this component is used, coach or client side, since
 // it's the same component.
-export function ProgramRoadmap({ phases, currentPhase, startDate }) {
+const EXIT_CRITERIA_LABEL = { complete: "✓", incomplete: "○", na: "–" };
+const EXIT_CRITERIA_COLOR = { complete: S.success, incomplete: S.muted, na: S.muted };
+
+// `forCoach` gates the strategy detail a client shouldn't see per spec —
+// progression_strategy and the exit-criteria checklist are coaching/decision
+// detail, not something a client needs to parse. Objective/training/movement
+// focus are safe for both: they're the "why am I here" / "what are we
+// working on" language the client-facing roadmap is built around.
+export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = false }) {
   const [openIndex, setOpenIndex] = useState(null);
   if (!phases || phases.length === 0) return null;
 
@@ -74,6 +82,11 @@ export function ProgramRoadmap({ phases, currentPhase, startDate }) {
                   </div>
                 )}
                 {status === "current" && <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.accent, marginTop: 2, fontWeight: 700 }}>Current</div>}
+                {forCoach && p.exit_criteria?.length > 0 && (
+                  <div style={{ fontSize: 10, color: S.muted, marginTop: 2, whiteSpace: "nowrap" }}>
+                    {p.exit_criteria.filter((c) => c.status === "complete").length}/{p.exit_criteria.length} exit criteria
+                  </div>
+                )}
               </div>
               {i < phases.length - 1 && (
                 <div style={{
@@ -93,8 +106,41 @@ export function ProgramRoadmap({ phases, currentPhase, startDate }) {
               {dateRangeForWeeks(startDate, openPhase.week_start, openPhase.week_end) || `Weeks ${openPhase.week_start}-${openPhase.week_end}`}
             </div>
           )}
+          {openPhase.objective && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>
+                {forCoach ? "Objective" : "Why We're Here"}
+              </div>
+              <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6 }}>{openPhase.objective}</div>
+            </div>
+          )}
+          {(openPhase.training_focus || openPhase.movement_focus) && (
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+              {openPhase.training_focus && <span style={{ fontSize: 11, color: S.text, border: "1px solid " + S.border, borderRadius: 20, padding: "4px 10px" }}>{openPhase.training_focus}</span>}
+              {openPhase.movement_focus && <span style={{ fontSize: 11, color: S.text, border: "1px solid " + S.border, borderRadius: 20, padding: "4px 10px" }}>{openPhase.movement_focus}</span>}
+            </div>
+          )}
+          {forCoach && openPhase.progression_strategy && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Progression Strategy</div>
+              <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6 }}>{openPhase.progression_strategy}</div>
+            </div>
+          )}
+          {forCoach && openPhase.exit_criteria?.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>
+                Phase Exit Criteria — {openPhase.exit_criteria.filter((c) => c.status === "complete").length}/{openPhase.exit_criteria.length} Complete
+              </div>
+              {openPhase.exit_criteria.map((c, i) => (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: S.text, padding: "3px 0" }}>
+                  <span style={{ color: EXIT_CRITERIA_COLOR[c.status], fontWeight: 700 }}>{EXIT_CRITERIA_LABEL[c.status] || "○"}</span>
+                  {c.label}
+                </div>
+              ))}
+            </div>
+          )}
           <div style={{ fontSize: 13, color: openPhase.note ? S.text : S.muted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>
-            {openPhase.note || "No note for this phase yet."}
+            {openPhase.note || (!openPhase.objective && "No note for this phase yet.")}
           </div>
         </Modal>
       )}

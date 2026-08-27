@@ -14,6 +14,9 @@ import { ProgressSnapshot } from "./ProgressSnapshot.jsx";
 import { ProgressChart } from "./ProgressChart.jsx";
 import { UpcomingCard } from "./UpcomingCard.jsx";
 import { ProgramRoadmapCard } from "./ProgramRoadmapCard.jsx";
+import { NextActionsCard } from "./NextActionsCard.jsx";
+import { V12RoadmapCard } from "./V12RoadmapCard.jsx";
+import { CurrentMilestoneCard } from "./CurrentMilestoneCard.jsx";
 import { ReminderCircles } from "./ReminderCircles.jsx";
 
 // Composed client dashboard. Each section below is a self-contained,
@@ -107,6 +110,12 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
         <TodayWorkoutPreview profile={profile} onViewFull={() => goToWorkouts("today")} />
         <HabitSummary profile={profile} setPage={setPage} />
       </div>
+
+      <div style={{ marginBottom: 14 }}><NextActionsCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} goToWorkouts={goToWorkouts} /></div>
+
+      <div style={{ marginBottom: 14 }}><V12RoadmapCard profile={profile} setPage={setPage} /></div>
+
+      <div style={{ marginBottom: 14 }}><CurrentMilestoneCard profile={profile} /></div>
 
       <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
 

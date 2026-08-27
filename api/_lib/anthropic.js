@@ -638,3 +638,44 @@ Plain text only — no markdown headers, no bullet lists.`,
   });
   return message.content[0].text.trim();
 }
+
+// Advisory-only phase progression recommendation (Part 25/26 of the roadmap
+// spec) — mirrors generateGoalInsight's shape (single small call, real data
+// only, no invented numbers) but returns structured JSON instead of prose so
+// the coach UI can render recommendation/reasoning/suggested action as
+// separate fields with Approve/Modify/Hold/Reject actions. The AI never
+// writes to the program itself — this only ever produces a row the coach
+// reviews.
+export async function generatePhaseRecommendation({ profile = {}, phase = {}, exitCriteria = [], milestones = [] }) {
+  const data = {
+    phase_name: phase.phase,
+    objective: phase.objective,
+    training_focus: phase.training_focus,
+    movement_focus: phase.movement_focus,
+    progression_strategy: phase.progression_strategy,
+    exit_criteria: exitCriteria.map((c) => ({ label: c.label, status: c.status })),
+    milestones: milestones.map((m) => ({
+      exercise: m.exercise_name, category: m.category, baseline: m.baseline_value,
+      target: m.target_value, unit: m.unit, current: m.current_value,
+    })),
+  };
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 500,
+    messages: [
+      {
+        role: "user",
+        content: `You are an experienced strength coach reviewing a client's current training phase for ${profile.name || "the client"}. Use ONLY the data below — never invent numbers or claim progress that isn't shown.
+
+PHASE DATA: ${JSON.stringify(data)}
+
+Respond with ONLY valid JSON (no markdown fences), matching exactly this shape:
+{"recommendation": "one sentence, what to do next (e.g. continue current phase, adjust loading, consider transitioning)", "reasoning": "1-2 sentences citing the specific exit criteria / milestone numbers above that justify it", "suggested_action": "one short concrete next step for the coach"}
+If exit_criteria or milestones are empty, say so plainly rather than guessing readiness. This is a recommendation only — the coach decides, so don't phrase it as already decided.`,
+      },
+    ],
+  });
+  const raw = message.content[0].text.trim().replace(/^```json?\s*/i, "").replace(/```$/, "");
+  try { return JSON.parse(raw); }
+  catch { return { recommendation: raw, reasoning: null, suggested_action: null }; }
+}

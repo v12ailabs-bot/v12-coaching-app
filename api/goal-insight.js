@@ -1,11 +1,59 @@
-import { generateGoalInsight } from "./_lib/anthropic.js";
+import { generateGoalInsight, generatePhaseRecommendation } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 
-// POST /api/goal-insight  { goal_id }
+// Advisory phase-progression recommendation (Part 25/26 of the roadmap
+// spec) — separate request shape on this same route (not a new API file;
+// the Vercel Hobby plan is already at its 12-function cap). Never writes to
+// programs/exercises — only ever inserts a pending recommendation row the
+// coach approves/modifies/holds/rejects.
+async function handlePhaseRecommendation(req, res) {
+  const { phase_id } = req.body || {};
+  if (!phase_id) return res.status(400).json({ error: "phase_id is required" });
+  try {
+    const { data: phase } = await supabaseAdmin.from("program_phases").select("*").eq("id", phase_id).maybeSingle();
+    if (!phase) return res.status(404).json({ error: "Phase not found." });
+    const { data: program } = await supabaseAdmin.from("programs").select("id,client_id").eq("id", phase.program_id).maybeSingle();
+    if (!program) return res.status(404).json({ error: "Program not found." });
+
+    const [{ data: profile }, { data: milestones }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("name").eq("id", program.client_id).maybeSingle(),
+      supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
+    ]);
+
+    // Current value per exercise-tracked milestone, same "top set on most
+    // recent logged date" convention as MilestonesCard/currentExerciseValue.
+    const withCurrent = await Promise.all((milestones || []).map(async (m) => {
+      if (!m.exercise_name) return { ...m, current_value: null };
+      const { data: exs } = await supabaseAdmin.from("exercises").select("id").eq("client_id", program.client_id).ilike("name", m.exercise_name);
+      const ids = (exs || []).map((e) => e.id);
+      if (!ids.length) return { ...m, current_value: null };
+      const { data: logs } = await supabaseAdmin.from("workout_logs").select("date,weight,reps").in("exercise_id", ids).order("date", { ascending: false }).limit(10);
+      if (!logs?.length) return { ...m, current_value: null };
+      const key = m.unit === "reps" ? "reps" : "weight";
+      const values = logs.filter((l) => l.date === logs[0].date).map((l) => l[key]).filter((v) => v != null);
+      return { ...m, current_value: values.length ? Math.max(...values) : null };
+    }));
+
+    const rec = await generatePhaseRecommendation({ profile: profile || {}, phase, exitCriteria: phase.exit_criteria || [], milestones: withCurrent });
+
+    const { data: saved, error: insertErr } = await supabaseAdmin.from("program_phase_recommendations").insert({
+      program_id: program.id, client_id: program.client_id, phase: phase.phase,
+      recommendation_text: rec.recommendation, reasoning_text: rec.reasoning, suggested_action: rec.suggested_action,
+    }).select().maybeSingle();
+    if (insertErr) throw insertErr;
+
+    return res.status(200).json({ recommendation: saved });
+  } catch (e) {
+    console.error("phase-recommendation error:", e, "phase_id:", phase_id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -15,8 +63,9 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id } = req.body || {};
-  if (!goal_id) return res.status(400).json({ error: "goal_id is required" });
+  const { goal_id, phase_id } = req.body || {};
+  if (phase_id) return handlePhaseRecommendation(req, res);
+  if (!goal_id) return res.status(400).json({ error: "goal_id or phase_id is required" });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();

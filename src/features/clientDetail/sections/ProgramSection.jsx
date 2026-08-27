@@ -268,7 +268,11 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
   );
 }
 
-const blankRoadmapRow = () => ({ phase: "", week_start: "", week_end: "", note: "" });
+const blankRoadmapRow = () => ({
+  phase: "", week_start: "", week_end: "", note: "",
+  objective: "", training_focus: "", movement_focus: "", progression_strategy: "", exit_criteria: [],
+});
+const blankExitCriterion = () => ({ label: "", status: "incomplete" });
 
 // The coach's forward-looking plan for this program's roadmap (program_phases —
 // separate from the append-only program_phase_history above). Freely editable:
@@ -287,7 +291,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
-      setRows((planned || []).map((p) => ({ phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "" })));
+      setRows((planned || []).map((p) => ({
+        phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",
+        objective: p.objective || "", training_focus: p.training_focus || "", movement_focus: p.movement_focus || "",
+        progression_strategy: p.progression_strategy || "", exit_criteria: p.exit_criteria || [],
+      })));
     } else {
       setRows([]);
     }
@@ -315,6 +323,9 @@ export function ProgramRoadmapPlanner({ clientId }) {
         program_id: program.id, client_id: clientId, phase: r.phase.trim(), order_index: i,
         week_start: r.week_start === "" ? null : parseInt(r.week_start), week_end: r.week_end === "" ? null : parseInt(r.week_end),
         note: r.note.trim() || null,
+        objective: r.objective?.trim() || null, training_focus: r.training_focus?.trim() || null,
+        movement_focus: r.movement_focus?.trim() || null, progression_strategy: r.progression_strategy?.trim() || null,
+        exit_criteria: (r.exit_criteria || []).filter((c) => c.label.trim()),
       }));
       const { error: insErr } = await supabase.from("program_phases").insert(payload);
       error = insErr;
@@ -355,6 +366,43 @@ export function ProgramRoadmapPlanner({ clientId }) {
                 {range && <div style={{ fontSize: 11, color: S.accent2, marginTop: 4, marginLeft: 26 }}>{range}</div>}
                 <input value={r.note} onChange={(e) => updateRow(i, "note", e.target.value)} placeholder="Note for this phase (shown when the client or coach clicks it on the roadmap)"
                   style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
+                <textarea value={r.objective} onChange={(e) => updateRow(i, "objective", e.target.value)} rows={2}
+                  placeholder="Objective — what this phase is designed to accomplish (client sees this as &quot;Why We're Here&quot;)"
+                  style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none", resize: "vertical" }} />
+                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
+                  <input value={r.training_focus} onChange={(e) => updateRow(i, "training_focus", e.target.value)} placeholder="Training focus (e.g. Strength)"
+                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
+                  <input value={r.movement_focus} onChange={(e) => updateRow(i, "movement_focus", e.target.value)} placeholder="Movement focus (e.g. Unilateral stability)"
+                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
+                  <input value={r.progression_strategy} onChange={(e) => updateRow(i, "progression_strategy", e.target.value)} placeholder="Progression strategy (e.g. Double progression)"
+                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
+                </div>
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Phase Exit Criteria</div>
+                  {(r.exit_criteria || []).map((c, ci) => (
+                    <div key={ci} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
+                      <button type="button" onClick={() => {
+                        const cycle = { incomplete: "complete", complete: "na", na: "incomplete" };
+                        const next = (r.exit_criteria || []).map((x, xi) => xi === ci ? { ...x, status: cycle[x.status] } : x);
+                        updateRow(i, "exit_criteria", next);
+                      }} title="Cycle status" style={{ width: 26, height: 26, flexShrink: 0, background: "none", cursor: "pointer", fontWeight: 700,
+                        border: "1px solid " + S.border, color: c.status === "complete" ? S.success : S.muted }}>
+                        {c.status === "complete" ? "✓" : c.status === "na" ? "–" : "○"}
+                      </button>
+                      <input value={c.label} onChange={(e) => {
+                        const next = (r.exit_criteria || []).map((x, xi) => xi === ci ? { ...x, label: e.target.value } : x);
+                        updateRow(i, "exit_criteria", next);
+                      }} placeholder="e.g. Bench 205 lb x 5 reps"
+                        style={{ flex: 1, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "6px 10px", fontSize: 12, outline: "none" }} />
+                      <button type="button" onClick={() => updateRow(i, "exit_criteria", (r.exit_criteria || []).filter((_, xi) => xi !== ci))}
+                        style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
+                    </div>
+                  ))}
+                  <button type="button" onClick={() => updateRow(i, "exit_criteria", [...(r.exit_criteria || []), blankExitCriterion()])}
+                    style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "5px 10px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px" }}>
+                    + Add Criterion
+                  </button>
+                </div>
               </div>
             );
           })}
@@ -369,7 +417,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Preview</div>
-              <ProgramRoadmap phases={rows.filter((r) => r.phase.trim()).map((r) => ({ phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end, note: r.note }))} currentPhase={program.phase} startDate={program.start_date} />
+              <ProgramRoadmap forCoach phases={rows.filter((r) => r.phase.trim()).map((r) => ({
+                phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end,
+                note: r.note, objective: r.objective, training_focus: r.training_focus, movement_focus: r.movement_focus,
+                progression_strategy: r.progression_strategy, exit_criteria: r.exit_criteria,
+              }))} currentPhase={program.phase} startDate={program.start_date} />
             </div>
           )}
         </>

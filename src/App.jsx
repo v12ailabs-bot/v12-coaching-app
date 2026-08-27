@@ -17,6 +17,7 @@ import { StarterHome, StarterExpiredScreen } from "./features/clientDashboard/St
 import { deriveLifecycleStatus, LIFECYCLE_STATUS } from "./lib/tierLifecycle.js";
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
+import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks } from "./lib/constants.js";
@@ -613,7 +614,7 @@ function TopBar({ profile, isCoach, onLogout }) {
 // decide which nav item highlights when the client is on one of the pages
 // it groups (e.g. still highlight "More" while on the Nutrition page).
 const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
-const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule"];
+const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule", "v12roadmap"];
 
 function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const isMobile = useIsMobile();
@@ -3019,6 +3020,7 @@ function MoreMenu({ programOnly, setPage }) {
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ]
     : [
+        { id: "v12roadmap", icon: "🗺", label: "My Roadmap", sub: "Your first 30 days" },
         { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
@@ -3119,6 +3121,7 @@ function ClientDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
       {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
+      {page === "v12roadmap" && !programOnly && !isStarter && <V12RoadmapPage profile={profile} />}
       {page === "program" && !isStarter && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && !isStarter && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}

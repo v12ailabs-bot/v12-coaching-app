@@ -12,6 +12,9 @@ import { DailyHabitsPanel } from "./sections/DailyHabitsPanel.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
 import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
+import { OnboardingChecklist } from "./sections/OnboardingChecklist.jsx";
+import { MilestonesCard } from "./sections/MilestonesCard.jsx";
+import { AIRecommendationCard } from "./sections/AIRecommendationCard.jsx";
 import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
 import { CoachWorkoutReview } from "./sections/CoachWorkoutReview.jsx";
@@ -52,7 +55,7 @@ const TABS_FOR = (client) => [
 const SECTION_TAB = {
   "program-roadmap": "overview", "program-history": "overview", "progress": "overview",
   "insights": "overview", "habits": "overview", "assessment": "overview",
-  "goals": "goals", "nutrition": "nutrition",
+  "goals": "goals", "milestones": "goals", "nutrition": "nutrition",
   "program-phase": "program-phase", "exercises": "program-phase",
 };
 
@@ -477,13 +480,14 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                       {/* Row 4: V12 Assessment, full width — not its own tab
                           (see TABS_FOR), folded in here instead. */}
                       <div id="section-assessment">
+                        <OnboardingChecklist clientId={client.id} />
                         <AssessmentSection client={client} assess={assess} setAssess={setAssess}
                           saveAssessment={saveAssessment} savingAssess={savingAssess} assessMsg={assessMsg}
                           refreshFromNotion={refreshFromNotion} syncing={syncing}/>
                       </div>
                     </div>
                   )}
-                  {validTab === "goals" && <GoalsSection client={client} />}
+                  {validTab === "goals" && (<><div id="section-milestones"><MilestonesCard client={client} /></div><GoalsSection client={client} /></>)}
                   {validTab === "nutrition" && <CoachNutrition clientId={client.id} refreshKey={progTick} />}
                   {validTab === "program-phase" && (
                     <>
@@ -504,6 +508,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           onMessageClient={()=>setShowMessageModal(true)}/>
                       </div>
                       <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>openOverviewSection("program-roadmap")} />
+                      <AIRecommendationCard clientId={trainOwnerId} />
                       <div id="exercises-section-anchor">
                         <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
                           newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}

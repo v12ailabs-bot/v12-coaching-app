@@ -9,6 +9,9 @@ import { CoachStatCards } from "./CoachStatCards.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
 import { PhaseAlertsPanel } from "./PhaseAlertsPanel.jsx";
+import { OnboardingAlertsPanel } from "./OnboardingAlertsPanel.jsx";
+import { MilestoneAlertsPanel } from "./MilestoneAlertsPanel.jsx";
+import { isTaskActive, tasksByKey as toTasksByKey } from "../../lib/onboardingTasks.js";
 import { ClientMessagesPanel } from "./ClientMessagesPanel.jsx";
 import { QuickAnalytics } from "./QuickAnalytics.jsx";
 import { CheckInOverview } from "./CheckInOverview.jsx";
@@ -47,6 +50,8 @@ export function CoachHome({ setPage, openClient }) {
   const [goalsByClient, setGoalsByClient] = useState({});
   const [programByClient, setProgramByClient] = useState({});
   const [phaseAlerts, setPhaseAlerts] = useState([]);
+  const [onboardingAlerts, setOnboardingAlerts] = useState([]);
+  const [milestoneAlerts, setMilestoneAlerts] = useState([]);
   // Last real activity per client, from whichever of the four data sources a
   // client actually writes to (daily check-in, weekly check-in, workout log,
   // progress photo) — not just daily_checkins. A client who only logs
@@ -112,6 +117,60 @@ export function CoachHome({ setPage, openClient }) {
       const { data: cg } = coachedIds.length ? await supabase.from("client_goals").select("*").in("client_id", coachedIds).eq("status", "active").eq("metric_key", "bodyweight") : { data: [] };
       const goalsMap = {}; (cg || []).forEach((g) => { goalsMap[g.client_id] = g; });
 
+      // Day-0 onboarding gate: surface the client's next coach-owned step
+      // (assessment -> coach review -> roadmap confirmed) once it's active
+      // (its dependency is complete) and not yet done, so onboarding never
+      // silently stalls waiting on the coach.
+      const onboardingAlertsList = [];
+      if (coachedIds.length) {
+        const { data: obTasks } = await supabase.from("client_onboarding_tasks").select("*").in("client_id", coachedIds);
+        const byClientTasks = {};
+        (obTasks || []).forEach((t) => { (byClientTasks[t.client_id] = byClientTasks[t.client_id] || []).push(t); });
+        Object.entries(byClientTasks).forEach(([clientId, tasks]) => {
+          const byKey = toTasksByKey(tasks);
+          const nextCoachTask = tasks.find((t) => t.owner === "coach" && t.status !== "completed" && t.status !== "skipped" && isTaskActive(t, byKey));
+          if (nextCoachTask) onboardingAlertsList.push({ clientId, taskKey: nextCoachTask.task_key });
+        });
+      }
+
+      // Milestone achieved / approaching: read live off workout_logs (same
+      // exercise-based milestones MilestonesCard manages) so the coach never
+      // has to remember to go check a client's numbers manually.
+      const milestoneAlertsList = [];
+      if (coachedIds.length) {
+        const { data: milestones } = await supabase.from("client_goals").select("*")
+          .in("client_id", coachedIds).eq("status", "active").not("category", "is", null);
+        const exerciseMilestones = (milestones || []).filter((m) => m.exercise_name);
+        if (exerciseMilestones.length) {
+          const { data: allExercises } = await supabase.from("exercises").select("id,client_id,name")
+            .in("client_id", exerciseMilestones.map((m) => m.client_id));
+          const exIdsByClientName = {};
+          (allExercises || []).forEach((e) => { exIdsByClientName[`${e.client_id}|${e.name.toLowerCase()}`] = (exIdsByClientName[`${e.client_id}|${e.name.toLowerCase()}`] || []).concat(e.id); });
+          const allExIds = (allExercises || []).map((e) => e.id);
+          const { data: allLogs } = allExIds.length
+            ? await supabase.from("workout_logs").select("exercise_id,date,weight,reps").in("exercise_id", allExIds).order("date", { ascending: false })
+            : { data: [] };
+          const logsByExId = {};
+          (allLogs || []).forEach((l) => { (logsByExId[l.exercise_id] = logsByExId[l.exercise_id] || []).push(l); });
+          exerciseMilestones.forEach((m) => {
+            const exIds = exIdsByClientName[`${m.client_id}|${m.exercise_name.toLowerCase()}`] || [];
+            const logs = exIds.flatMap((id) => logsByExId[id] || []);
+            if (!logs.length) return;
+            const latestDate = logs.reduce((max, l) => (l.date > max ? l.date : max), logs[0].date);
+            const key = m.unit === "reps" ? "reps" : "weight";
+            const values = logs.filter((l) => l.date === latestDate).map((l) => l[key]).filter((v) => v != null);
+            if (!values.length) return;
+            const current = Math.max(...values);
+            const dir = m.direction || "increase";
+            const achieved = dir === "decrease" ? current <= m.target_value : current >= m.target_value;
+            const span = m.target_value - m.baseline_value;
+            const pct = span === 0 ? 100 : Math.round(((current - m.baseline_value) / span) * 100);
+            if (achieved) milestoneAlertsList.push({ clientId: m.client_id, exercise: m.exercise_name, kind: "achieved", pct });
+            else if (pct >= 90) milestoneAlertsList.push({ clientId: m.client_id, exercise: m.exercise_name, kind: "approaching", pct });
+          });
+        }
+      }
+
       const programMap = {};
       const phaseAlertsList = [];
       if (allIds.length) {
@@ -174,7 +233,7 @@ export function CoachHome({ setPage, openClient }) {
       setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
       setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
     })();
   }, []);
 
@@ -352,6 +411,8 @@ export function CoachHome({ setPage, openClient }) {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
           <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} />
+          <OnboardingAlertsPanel alerts={onboardingAlerts} nameOf={nameOf} openClient={openClient} />
+          <MilestoneAlertsPanel alerts={milestoneAlerts} nameOf={nameOf} openClient={openClient} />
           <PhaseAlertsPanel alerts={phaseAlerts} nameOf={nameOf} openClient={openClient} />
           <ClientMessagesPanel messages={messages} nameOf={nameOf} openClient={openClient} />
         </div>

@@ -30,17 +30,20 @@ function upcomingDates(n) {
 // weekday label is just which slot it is, not which day it has to happen.
 const weekdayOf = (dateStr) => new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { weekday: "long" });
 
-// Resolves which day_of_week group's exercises count as "today's workout"
-// for a client: an explicit schedule override for today if one exists
-// (including an explicit rest day -> day_of_week null), else the legacy
-// weekday auto-match every existing program already relies on -- so a
-// client who's never touched the scheduler sees exactly the behavior they
-// always have.
-export async function resolveTodayDayOfWeek(clientId) {
-  const today = localDateStr(new Date());
-  const { data } = await supabase.from("scheduled_workouts").select("day_of_week").eq("client_id", clientId).eq("date", today).maybeSingle();
+// Resolves which day_of_week group's exercises count as "the workout" for a
+// client on a given calendar date: an explicit schedule override for that
+// date if one exists (including an explicit rest day -> day_of_week null),
+// else the legacy weekday auto-match every existing program already relies
+// on -- so a client who's never touched the scheduler sees exactly the
+// behavior they always have.
+export async function resolveDayOfWeekFor(clientId, dateStr) {
+  const { data } = await supabase.from("scheduled_workouts").select("day_of_week").eq("client_id", clientId).eq("date", dateStr).maybeSingle();
   if (data) return data.day_of_week;
-  return weekdayOf(today);
+  return weekdayOf(dateStr);
+}
+
+export async function resolveTodayDayOfWeek(clientId) {
+  return resolveDayOfWeekFor(clientId, localDateStr(new Date()));
 }
 
 // Fixed Weekly mode: lock each workout-day slot (Day 1, Day 2, ...) to a
