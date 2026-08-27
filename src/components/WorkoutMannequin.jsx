@@ -1,14 +1,26 @@
+import { useState, useEffect } from "react";
 import { S } from "../theme.jsx";
+import { supabase } from "../supabaseClient.js";
+import { muscleGroupForExercise } from "../lib/exerciseMuscleGroup.js";
 
-// Small, reusable set of outlined line-art poses — one per movement category
-// — instead of per-exercise custom art or an icon font. No such illustration
-// existed anywhere in the codebase before this pass; this is the asset set
-// approved for the workout redesign.
+// The 4-pose SVG line-art set below was the original icon (approved for the
+// workout redesign, no per-exercise/muscle-group illustration existed
+// before it). It's now only the fallback while exercise_diagrams hasn't
+// loaded yet, or has no synced image for a given muscle group -- the
+// primary render is the real muscle-group diagram synced from Notion (see
+// scripts/sync-exercise-diagrams.mjs), matched via muscleGroupForExercise.
 //
-// Category -> pose is decided by name keywords (poseForExercise below), not
-// the `category` DB column — that column is dual-purpose (AI rows store a
-// training-pillar value like "Conditioning"; coach rows are free text) and
-// can't be trusted for a body-region mapping.
+// Fetched once per page load and shared across every WorkoutMannequin
+// instance (a workout screen renders this many times per render) rather
+// than one Supabase call per icon.
+let diagramsPromise = null;
+function loadDiagrams() {
+  if (!diagramsPromise) {
+    diagramsPromise = supabase.from("exercise_diagrams").select("muscle_group,image_url")
+      .then(({ data }) => Object.fromEntries((data || []).map((d) => [d.muscle_group, d.image_url])));
+  }
+  return diagramsPromise;
+}
 
 function UpperBodyPose({ size, color }) {
   return (
@@ -81,7 +93,20 @@ export function poseForExercise(name = "") {
   return "upper";
 }
 
+// `color` only affects the SVG fallback pose -- a synced diagram is a raster
+// image at whatever colors it was uploaded in, so it renders as-is. The
+// surrounding button/card already conveys selection via its own border and
+// background tint (see App.jsx's exercise selector pills), so dropping the
+// icon's own recoloring isn't a loss of the selection affordance.
 export function WorkoutMannequin({ exerciseName, size = 56, color }) {
+  const [diagrams, setDiagrams] = useState(null);
+  useEffect(() => { loadDiagrams().then(setDiagrams); }, []);
+
+  const { group } = muscleGroupForExercise(exerciseName);
+  const imageUrl = diagrams?.[group];
+  if (imageUrl) {
+    return <img src={imageUrl} alt={`${group} diagram`} width={size} height={size} style={{ objectFit: "contain" }} />;
+  }
   const pose = poseForExercise(exerciseName);
   const Pose = POSES[pose];
   return <Pose size={size} color={color || S.muted} />;

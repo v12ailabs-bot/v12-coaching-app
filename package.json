@@ -11,7 +11,9 @@
 "migrate:checkins": "node --env-file=.env scripts/migrate-checkins-sheet.js",
 "inspect:templates": "node --env-file=.env scripts/inspect-notion-templates.js",
 "create:templates": "node --env-file=.env scripts/create-notion-templates.js",
-"link:partners": "node --env-file=.env scripts/link-partners.js"
+"link:partners": "node --env-file=.env scripts/link-partners.js",
+"sync:diagrams": "node --env-file=.env scripts/sync-exercise-diagrams.mjs",
+"audit:diagrams": "node --env-file=.env scripts/audit-exercise-diagram-mapping.mjs"
 },
 "dependencies": {
 "@anthropic-ai/sdk": "^0.32.1",
