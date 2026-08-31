@@ -178,8 +178,14 @@ export function GlobalStyles() {
            neighbouring tabs. */
         .sidebar-label { display: block; width: 100%; max-width: 100%; overflow: hidden;
           text-overflow: ellipsis; line-height: 1.1; }
-        .main-content { padding: 18px 16px 84px !important; }
-        .topbar { padding: 0 14px !important; }
+        /* viewport-fit=cover (added for the PWA install experience) lets page
+           content extend under the iOS status bar/notch -- without this, the
+           sticky topbar (and anything above the fold) renders partly hidden
+           behind it. env(safe-area-inset-*) is 0 on anything that doesn't
+           have a notch/home-indicator, so this is a no-op elsewhere. */
+        .main-content { padding: 18px 16px calc(84px + env(safe-area-inset-bottom)) !important; }
+        .topbar { padding: env(safe-area-inset-top) 14px 0 14px !important; height: calc(54px + env(safe-area-inset-top)) !important; box-sizing: border-box !important; }
+        .sidebar { padding-bottom: env(safe-area-inset-bottom) !important; height: calc(58px + env(safe-area-inset-bottom)) !important; box-sizing: border-box !important; }
         .card { padding: 16px !important; }
         /* iOS Safari auto-zooms the whole page on focus for any input under
            16px, and never zooms back out — that's the "screen zooms in when

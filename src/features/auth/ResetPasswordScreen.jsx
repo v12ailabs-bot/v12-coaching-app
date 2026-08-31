@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, bS } from "../../theme.jsx";
+import { V12Logo } from "../../components/ui/index.js";
 
 // Shown after the client follows the emailed password-reset link. Supabase has
 // already established a short-lived recovery session, so updateUser is all that's
@@ -30,8 +31,8 @@ export function ResetPasswordScreen({ onDone }) {
     <div style={{minHeight:"100vh",background:S.bg,display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div style={{position:"absolute",inset:0,background:"radial-gradient(ellipse at 25% 50%,rgba(255,106,0,.13) 0%,transparent 60%),radial-gradient(ellipse at 80% 20%,rgba(0,201,167,.07) 0%,transparent 50%)"}}/>
       <div style={{position:"relative",zIndex:1,background:S.surface,border:"1px solid "+S.border,padding:"48px 40px",width:420,maxWidth:"95vw"}}>
-        <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:56,color:S.accent,lineHeight:1}}>V12</div>
-        <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:2}}>Set a new password</div>
+        <V12Logo size={56} />
+        <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:8}}>Set a new password</div>
         <div style={{marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>New Password</div>
           <input type="password" name="new-password" autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"

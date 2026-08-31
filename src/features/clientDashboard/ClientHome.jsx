@@ -10,9 +10,7 @@ import { TodayWorkoutPreview } from "./TodayWorkoutPreview.jsx";
 import { HabitSummary } from "./HabitSummary.jsx";
 import { NutritionMacroBars } from "./NutritionMacroBars.jsx";
 import { CheckInCard } from "./CheckInCard.jsx";
-import { ProgressSnapshot } from "./ProgressSnapshot.jsx";
 import { ProgressChart } from "./ProgressChart.jsx";
-import { UpcomingCard } from "./UpcomingCard.jsx";
 import { ProgramRoadmapCard } from "./ProgramRoadmapCard.jsx";
 import { NextActionsCard } from "./NextActionsCard.jsx";
 import { V12RoadmapCard } from "./V12RoadmapCard.jsx";
@@ -82,7 +80,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
 
       <ReminderCircles profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} />
 
-      <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} setPage={setPage} /></div>
+      <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} checkins={checkins} setPage={setPage} /></div>
 
       {risk.flags.length > 0 && (
         <div style={{ background: S.surface, border: "1px solid " + S.border, borderLeft: "3px solid " + (risk.severity >= 2 ? S.danger : S.warning), borderRadius: RADIUS.md, marginBottom: 14, overflow: "hidden" }}>
@@ -106,7 +104,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
         </div>
       )}
 
-      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <TodayWorkoutPreview profile={profile} onViewFull={() => goToWorkouts("today")} />
         <HabitSummary profile={profile} setPage={setPage} />
       </div>
@@ -119,23 +117,12 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
 
       <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
 
-      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <NutritionMacroBars profile={profile} checkins={checkins} setPage={setPage} />
         <CheckInCard doneToday={doneToday} adherenceScore={risk.adh?.score} setPage={setPage} />
       </div>
 
-      {/* Mobile only: Progress Over Time goes right after Nutrition Targets
-          instead of after the Program Roadmap, further down. Desktop keeps
-          its original spot at the very end (see below) — this is the same
-          `progressBlock` rendered in one of two positions, not duplicated. */}
-      {isMobile && <div style={{ marginBottom: 14 }}>{progressBlock}</div>}
-
-      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14 }}>
-        <ProgressSnapshot profile={profile} checkins={checkins} setPage={setPage} />
-        <UpcomingCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} goToWorkouts={goToWorkouts} />
-      </div>
-
-      {!isMobile && progressBlock}
+      {progressBlock}
     </div>
   );
 }

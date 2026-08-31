@@ -3,6 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, trainingOwnerId, todayStr } from "../../theme.jsx";
 import { Card, Btn, ProgressRing } from "../../components/ui/index.js";
 import { totalWeeksFromPhases } from "../../components/ProgramRoadmap.jsx";
+import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 
 // Clamped so a program that's run past its planned length (or one whose
 // start_date is in the future) never renders an impossible "Week 14 of 12" —
@@ -44,12 +45,16 @@ const STATUS_MESSAGE = {
 
 const TONE_COLOR = { positive: S.success, warning: S.warning, negative: S.danger, neutral: S.muted };
 
-// Hero card: the coach's existing phase selection (programs.phase, unchanged
-// mechanism) plus a real Week X of Y and the same risk assessment the coach
-// sees, surfaced as a status ring instead of buried in plain text.
-export function ClientHero({ profile, risk, goalScore, setPage }) {
+// Hero card: current phase + status ring (was ClientHero) merged with the
+// weight/BMI/photo snapshot (was the standalone ProgressSnapshot card) into
+// one card, per the mobile mockup's density — both sections drove the same
+// "View Progress" destination, so they now share one button instead of two.
+// Neither section requires the other: a client with no phase set yet still
+// sees their weight snapshot, and vice versa.
+export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
   const [program, setProgram] = useState(null);
   const [totalWeeks, setTotalWeeks] = useState(null);
+  const [photo, setPhoto] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -73,37 +78,89 @@ export function ClientHero({ profile, risk, goalScore, setPage }) {
       });
   }, [profile.id, profile.shared_program_owner_id]);
 
-  if (loading) return null;
-  if (!program?.phase) return null;
+  useEffect(() => {
+    (async () => {
+      const { data: rows } = await supabase.from("progress_photos").select("path,taken_on")
+        .eq("client_id", profile.id).order("taken_on", { ascending: false }).limit(1);
+      const row = rows?.[0];
+      if (row) {
+        const { data: signed } = await supabase.storage.from("progress-photos").createSignedUrl(row.path, 3600);
+        setPhoto({ ...row, url: signed?.signedUrl });
+      }
+    })();
+  }, [profile.id]);
 
-  const week = weekOf(program.start_date, totalWeeks);
-  const status = deriveStatus(risk, goalScore);
-  const ringValue = status.label === "Not Enough Data" ? 0 : (goalScore?.overallScore ?? risk?.adh?.score ?? 0);
-  const statusText = status.label === "Behind" && risk?.flags?.[0]?.clientMessage
+  if (loading) return null;
+
+  const hasPhase = !!program?.phase;
+  const weights = checkins.filter((c) => c.weight != null);
+  const latestWeight = weights.length ? weights[weights.length - 1].weight : null;
+  const weekAgo = weights.length ? weights.find((w) => w.date <= weights[weights.length - 1].date && new Date(weights[weights.length - 1].date) - new Date(w.date) >= 6 * 86400000) : null;
+  const delta = latestWeight != null && weekAgo ? +(latestWeight - weekAgo.weight).toFixed(1) : null;
+  const bmi = profile.client_type === "coaching" ? computeBMI(profile.height_in, latestWeight) : null;
+  const hasSnapshot = latestWeight != null || photo?.url;
+
+  if (!hasPhase && !hasSnapshot) return null;
+
+  const week = hasPhase ? weekOf(program.start_date, totalWeeks) : null;
+  const status = hasPhase ? deriveStatus(risk, goalScore) : null;
+  const ringValue = !status ? 0 : status.label === "Not Enough Data" ? 0 : (goalScore?.overallScore ?? risk?.adh?.score ?? 0);
+  const statusText = status && status.label === "Behind" && risk?.flags?.[0]?.clientMessage
     ? risk.flags[0].clientMessage
-    : STATUS_MESSAGE[status.label];
-  const statusColor = TONE_COLOR[status.tone];
+    : status ? STATUS_MESSAGE[status.label] : null;
+  const statusColor = status ? TONE_COLOR[status.tone] : S.muted;
 
   return (
-    <Card style={{ display: "flex", alignItems: "center", gap: 28, flexWrap: "wrap" }}>
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Current Phase</div>
-        <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 32, color: S.text, lineHeight: 1 }}>{program.phase}</div>
-        {week && totalWeeks && (
-          <div style={{ fontSize: 14, color: S.text, marginTop: 6 }}>
-            Week <strong>{week}</strong> of {totalWeeks}
+    <Card>
+      {hasPhase && (
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 9, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Current Phase</div>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, color: S.text, lineHeight: 1 }}>{program.phase}</div>
+            {week && totalWeeks && (
+              <div style={{ fontSize: 13, color: S.text, marginTop: 6 }}>
+                Week <strong>{week}</strong> of {totalWeeks}
+              </div>
+            )}
+            {program.phase_note && <div style={{ fontSize: 12, color: S.muted, marginTop: 8, lineHeight: 1.6 }}>{program.phase_note}</div>}
           </div>
-        )}
-        {program.phase_note && <div style={{ fontSize: 13, color: S.muted, marginTop: 8, lineHeight: 1.6, maxWidth: 420 }}>{program.phase_note}</div>}
-      </div>
-      <ProgressRing value={ringValue} size={110} color={statusColor} caption={status.label.toUpperCase()} />
-      <div style={{ flex: 1, minWidth: 200 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: statusColor, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-          {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
+          <ProgressRing value={ringValue} size={92} color={statusColor} caption={status.label.toUpperCase()} />
+          <div style={{ flex: 1, minWidth: 160 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: statusColor, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
+              {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
+            </div>
+            <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6 }}>{statusText}</div>
+          </div>
         </div>
-        <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6, marginBottom: 14 }}>{statusText}</div>
-        <Btn sm onClick={() => setPage("progress")}>View Details</Btn>
-      </div>
+      )}
+
+      {hasSnapshot && (
+        <div style={{ display: "flex", alignItems: "center", gap: 24, flexWrap: "wrap", marginTop: hasPhase ? 16 : 0, paddingTop: hasPhase ? 16 : 0, borderTop: hasPhase ? "1px solid " + S.border : "none" }}>
+          {latestWeight != null && (
+            <div>
+              <div style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Weight</div>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, lineHeight: 1 }}>{latestWeight}<span style={{ fontSize: 12, color: S.muted }}> lbs</span></div>
+              {delta != null && (
+                <div style={{ fontSize: 11, marginTop: 4, color: delta < 0 ? S.success : delta > 0 ? S.danger : S.muted }}>
+                  {delta === 0 ? "No change" : `${delta > 0 ? "▲" : "▼"} ${Math.abs(delta)} lbs this week`}
+                </div>
+              )}
+            </div>
+          )}
+          {bmi != null && (
+            <div>
+              <div style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>BMI (est.)</div>
+              <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 26, lineHeight: 1 }}>{bmi}</div>
+              <div style={{ fontSize: 11, marginTop: 4, color: S.muted }}>{bmiCategory(bmi)}</div>
+            </div>
+          )}
+          {photo?.url && (
+            <img src={photo.url} alt="Latest progress" style={{ width: 56, height: 56, objectFit: "cover", borderRadius: 8, border: "1px solid " + S.border }} />
+          )}
+        </div>
+      )}
+
+      <div style={{ marginTop: 16 }}><Btn sm onClick={() => setPage("progress")}>View Progress</Btn></div>
     </Card>
   );
 }

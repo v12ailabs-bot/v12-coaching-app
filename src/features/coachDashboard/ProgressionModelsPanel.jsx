@@ -126,7 +126,7 @@ export function ProgressionModelsPanel() {
                     <StatusBadge label={m.is_active ? "Active" : "Inactive"} tone={m.is_active ? "green" : "neutral"} />
                   </div>
                   {m.pillar_lean && <div style={{ fontSize: 10, color: S.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>{m.pillar_lean}</div>}
-                  <div style={{ fontSize: 12.5, color: S.text, opacity: 0.85, lineHeight: 1.6, marginBottom: 12, maxHeight: 90, overflow: "hidden", textOverflow: "ellipsis" }}>{m.methodology}</div>
+                  <div style={{ fontSize: 12.5, color: S.text, opacity: 0.85, lineHeight: 1.6, marginBottom: 12, maxHeight: 120, overflowY: "auto", paddingRight: 4 }}>{m.methodology}</div>
                   <div style={{ display: "flex", gap: 8 }}>
                     <Btn sm onClick={() => startEdit(m)}>Edit</Btn>
                     <button onClick={() => toggleActive(m)} style={{ padding: "6px 12px", fontSize: 10, fontWeight: 600, letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.muted }}>
