@@ -40,6 +40,10 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
           <Inp type="number" value={settings.height_in} onChange={e=>setSettings(p=>({...p,height_in:e.target.value}))} placeholder="e.g. 70"/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Used to estimate BMI alongside their logged weight — an estimate only.</div>
         </Fld>
+        <Fld label="Phone">
+          <Inp type="tel" value={settings.phone} onChange={e=>setSettings(p=>({...p,phone:e.target.value}))} placeholder="e.g. +1 555 123 4567"/>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Powers the "Call" action on the client's profile.</div>
+        </Fld>
       </div>
       <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
         Goal shows on this client's overview and their portal. Set it here to add or override it — your value then sticks through Notion syncs and program regenerations. Use "Reset to Notion" to load their Notion intake answer into the field; nothing changes until you click Save Settings.

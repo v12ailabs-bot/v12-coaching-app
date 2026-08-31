@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, CC } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn } from "../../components/ui/index.js";
+import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -23,6 +24,8 @@ export function Progress({ profile, coachView }) {
   const [target, setTarget] = useState(null);
   const [goal, setGoal] = useState(null);
   const [insight, setInsight] = useState(null);
+  const [heightIn, setHeightIn] = useState(profile.height_in ?? "");
+  const [savingHeight, setSavingHeight] = useState(false);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
@@ -65,6 +68,16 @@ export function Progress({ profile, coachView }) {
   // X-axis tick spacing scales with series length so full-history charts
   // (not just the last 14/30 days) don't overlap their date labels.
   const tickEvery = (n) => Math.max(1, Math.floor(n / 8));
+
+  const saveHeight = async () => {
+    if (!heightIn) return;
+    setSavingHeight(true);
+    await supabase.from("profiles").update({ height_in: Number(heightIn) }).eq("id", profile.id);
+    setSavingHeight(false);
+  };
+  const bmiWeekly = weekly.filter((w) => w.bodyweight != null && heightIn)
+    .map((w) => ({ week: w.week, bmi: computeBMI(Number(heightIn), w.bodyweight) }));
+  const currentBmi = bmiWeekly.length ? bmiWeekly[bmiWeekly.length - 1].bmi : computeBMI(Number(heightIn), lastWeight);
 
   return (
     <div>
@@ -163,23 +176,63 @@ export function Progress({ profile, coachView }) {
         </div>
       ))}
 
-      {tab==="measurements" && (weekly.length===0?emptyWeekly:(
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
-            <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={weekly}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
-                </LineChart>
-              </ResponsiveContainer>
-            </CC>
-          ))}
-        </div>
-      ))}
+      {tab==="measurements" && (
+        <>
+          {!heightIn ? (
+            <Card style={{marginBottom:20}}>
+              <CardTitle>BMI</CardTitle>
+              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>Set your height once to see a BMI estimate alongside your other measurements — it's an estimate only, since BMI doesn't account for body composition.</div>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <Fld label="Height (inches)"><Inp type="number" value={heightIn} onChange={e=>setHeightIn(e.target.value)} placeholder="e.g. 70"/></Fld>
+                <Btn onClick={saveHeight} disabled={savingHeight||!heightIn}>{savingHeight?"Saving...":"Save Height"}</Btn>
+              </div>
+            </Card>
+          ) : (
+            <Card style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
+                <CardTitle>BMI (estimate)</CardTitle>
+                <div style={{fontSize:11,color:S.muted}}>Height: {heightIn}in · <span onClick={()=>setHeightIn("")} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
+              </div>
+              {currentBmi != null && (
+                <div style={{marginBottom:12}}>
+                  <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{currentBmi}</span>
+                  <span style={{fontSize:12,color:S.muted,marginLeft:8}}>{bmiCategory(currentBmi)}</span>
+                </div>
+              )}
+            </Card>
+          )}
+          {weekly.length===0?emptyWeekly:(
+            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
+                <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={weekly}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                      <Tooltip {...TT}/>
+                      <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CC>
+              ))}
+              {bmiWeekly.length > 0 && (
+                <CC title="BMI Trend" sub="Weekly, from bodyweight + your height">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={bmiWeekly}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                      <Tooltip {...TT}/>
+                      <Line type="monotone" dataKey="bmi" stroke={S.accent} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CC>
+              )}
+            </div>
+          )}
+        </>
+      )}
 
       {tab==="strength" && <StrengthTab profile={profile}/>}
 

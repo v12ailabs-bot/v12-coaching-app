@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, useIsMobile } from "../../theme.jsx";
-import { PageTitle, Modal } from "../../components/ui/index.js";
+import { PageTitle, Modal, CollapsibleSection } from "../../components/ui/index.js";
 import { ClientSelector } from "../../components/ClientSelector.jsx";
 import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
+import { ClientOverviewMobile } from "./ClientOverviewMobile.jsx";
 import { ProgramGenerateActions } from "./sections/ProgramGenerateActions.jsx";
 import { ProgressSummaryCard } from "./sections/ProgressSummaryCard.jsx";
 import { ClientInsightCard } from "./sections/ClientInsightCard.jsx";
@@ -97,7 +98,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:"", phone:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -107,6 +108,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerMsg, setPartnerMsg] = useState(null);
   const [newAchievements, setNewAchievements] = useState([]);
+  const [railOpen, setRailOpen] = useState(false);
 
   // The id whose TRAINING rows (program + exercises) the selected client shares.
   // For a linked partner this is their owner; otherwise the client itself.
@@ -210,6 +212,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       access_until: c.access_until || "",
       is_local: !!c.is_local,
       height_in: c.height_in != null ? String(c.height_in) : "",
+      phone: c.phone || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
@@ -235,6 +238,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       access_until: settings.access_until || null,
       is_local: settings.is_local,
       height_in: settings.height_in ? Number(settings.height_in) : null,
+      phone: settings.phone.trim() || null,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -467,9 +471,24 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                 <ClientDetailHeader client={client} lastCheckin={lastCheckin} onArchiveToggle={setArchived}
                   onSettingsClick={()=>setShowSettingsModal(true)}
                   onOpenProgress={()=> showProgress ? setShowProgressModal(true) : openOverviewSection("program-roadmap")}
+                  onSendMessage={()=>setShowMessageModal(true)}
                   tabs={tabs} activeTab={validTab} onTabChange={setActiveTab}/>
+                {isMobile && (
+                  <div style={{ marginBottom: 20 }}>
+                    <ClientQuickActionsRail
+                      onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
+                      onUpdateNutrition={()=>{ if(window.confirm(`Regenerate ${client.name||client.email}'s nutrition plan now?`)) generateProgram(client,"nutrition"); }}
+                      onUpdateProgramPhase={()=>setActiveTab("program-phase")}
+                      onSendMessage={()=>setShowMessageModal(true)}
+                      onAddNote={()=>{ setRailOpen(true); requestAnimationFrame(()=>document.getElementById("section-coach-notes")?.scrollIntoView({behavior:"smooth",block:"start"})); }}
+                    />
+                  </div>
+                )}
                 <div>
-                  {validTab === "overview" && (
+                  {validTab === "overview" && isMobile && (
+                    <ClientOverviewMobile client={client} trainOwnerId={trainOwnerId} progTick={progTick} loadEx={loadEx} assess={assess} lastCheckin={lastCheckin} />
+                  )}
+                  {validTab === "overview" && !isMobile && (
                     <div className="overview-grid" style={{ display:"flex", flexDirection:"column", gap:20 }}>
                       {/* Row 1: Progress | Client Insights — the reference mockup's
                           "Current phase" + "Goals checklist" position/weight. */}
@@ -537,18 +556,36 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   visit, so they live here rather than as full-width Overview
                   rows. */}
               <div className="client-rail" style={{ display:"flex", flexDirection:"column", gap:16, minWidth:0 }}>
-                <ClientQuickActionsRail
-                  onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
-                  onUpdateNutrition={()=>{ if(window.confirm(`Regenerate ${client.name||client.email}'s nutrition plan now?`)) generateProgram(client,"nutrition"); }}
-                  onUpdateProgramPhase={()=>setActiveTab("program-phase")}
-                  onSendMessage={()=>setShowMessageModal(true)}
-                />
-                <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}
-                  partnerId={partnerId} setPartnerId={setPartnerId} savePartner={savePartner}
-                  savingPartner={savingPartner} partnerMsg={partnerMsg}/>
-                <CoachConversations clientId={client.id} />
-                <CheckinNotesPanel clientId={client.id} />
-                <CoachNotes clientId={client.id} />
+                {!isMobile && (
+                  <ClientQuickActionsRail
+                    onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
+                    onUpdateNutrition={()=>{ if(window.confirm(`Regenerate ${client.name||client.email}'s nutrition plan now?`)) generateProgram(client,"nutrition"); }}
+                    onUpdateProgramPhase={()=>setActiveTab("program-phase")}
+                    onSendMessage={()=>setShowMessageModal(true)}
+                    onAddNote={()=>document.getElementById("section-coach-notes")?.scrollIntoView({behavior:"smooth",block:"start"})}
+                  />
+                )}
+                {isMobile ? (
+                  <CollapsibleSection title="More" summary="Partner · Notes · Log" expanded={railOpen} onToggle={setRailOpen}>
+                    <div style={{ display:"flex", flexDirection:"column", gap:16 }}>
+                      <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}
+                        partnerId={partnerId} setPartnerId={setPartnerId} savePartner={savePartner}
+                        savingPartner={savingPartner} partnerMsg={partnerMsg}/>
+                      <CoachConversations clientId={client.id} />
+                      <CheckinNotesPanel clientId={client.id} />
+                      <div id="section-coach-notes"><CoachNotes clientId={client.id} /></div>
+                    </div>
+                  </CollapsibleSection>
+                ) : (
+                  <>
+                    <TrainingPartnerSection clients={clients} selected={selected} selClient={selClient}
+                      partnerId={partnerId} setPartnerId={setPartnerId} savePartner={savePartner}
+                      savingPartner={savingPartner} partnerMsg={partnerMsg}/>
+                    <CoachConversations clientId={client.id} />
+                    <CheckinNotesPanel clientId={client.id} />
+                    <div id="section-coach-notes"><CoachNotes clientId={client.id} /></div>
+                  </>
+                )}
               </div>
             </div>
           ) : (

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
-import { S, todayStr, localDateStr, avatarFrom } from "../../theme.jsx";
+import { S, todayStr, localDateStr, avatarFrom, useIsMobile } from "../../theme.jsx";
+import { CoachHomeMobile } from "./CoachHomeMobile.jsx";
 import { PageTitle, Card, Btn, CollapsibleSection } from "../../components/ui/index.js";
 import { COACH_EMAIL } from "../../lib/constants.js";
 import { assessClientRisk, adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
@@ -44,6 +45,7 @@ function groupByLabel(labels) {
 }
 
 export function CoachHome({ setPage, openClient }) {
+  const isMobile = useIsMobile();
   const [clients, setClients] = useState([]);
   const [byClient, setByClient] = useState({});
   const [weeklyRecent, setWeeklyRecent] = useState([]);
@@ -325,8 +327,10 @@ export function CoachHome({ setPage, openClient }) {
   // logged = completed, 1-5 = partial, 0 = missed.
   const ws = weekStartStr();
   const checkinCounts = { completed: 0, partial: 0, missed: 0 };
+  let totalCheckinsThisWeek = 0;
   coachedList.forEach((c) => {
     const daysLogged = new Set((byClient[c.id] || []).filter((r) => r.date >= ws).map((r) => r.date)).size;
+    totalCheckinsThisWeek += daysLogged;
     if (daysLogged >= 6) checkinCounts.completed++;
     else if (daysLogged >= 1) checkinCounts.partial++;
     else checkinCounts.missed++;
@@ -387,6 +391,39 @@ export function CoachHome({ setPage, openClient }) {
   const revenueTrendPct = lastMonthRevenue > 0 ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
   const leadsTrendPct = lastMonthLeads > 0 ? Math.round(((newLeads - lastMonthLeads) / lastMonthLeads) * 100) : null;
 
+  // Per-client trend line for the mobile "Client Overview" avatar row — same
+  // trailingCompletionPct formula the aggregate checkinSeries above already
+  // uses, just run once per client instead of averaged across all of them.
+  const sparklineByClient = {};
+  coachedList.forEach((c) => {
+    const series = [];
+    for (let i = WEEKLY_BUCKETS - 1; i >= 0; i--) {
+      const end = new Date(); end.setDate(end.getDate() - i * 7);
+      series.push({ label: localDateStr(end), value: Math.round(trailingCompletionPct(c.id, end)) });
+    }
+    sparklineByClient[c.id] = series;
+  });
+
+  if (isMobile) {
+    return (
+      <CoachHomeMobile
+        totalClients={coachedList.length} activeClients={coachedList.length - inactiveCount}
+        atRiskCount={needs.length} offlineCount={inactiveCount}
+        rows={rows} sparklineByClient={sparklineByClient}
+        checkinSeries={checkinSeries} checkinDeltaPct={deltaOf(checkinSeries)}
+        progressSeries={progressSeries} progressDeltaPct={deltaOf(progressSeries)}
+        checkinCounts={checkinCounts} totalCoached={coachedList.length} totalCheckinsThisWeek={totalCheckinsThisWeek}
+        needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts}
+        phaseAlerts={phaseAlerts} messages={messages}
+        programGroups={programGroups}
+        nameOf={nameOf} openClient={openClient} setPage={setPage}
+        clientIds={coachedList.map((c) => c.id)}
+        programSubscriberRows={programSubscriberRows}
+        monthlyRevenue={monthlyRevenue} revenueTrendPct={revenueTrendPct}
+      />
+    );
+  }
+
   return (
     <div>
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview" />
@@ -426,7 +463,7 @@ export function CoachHome({ setPage, openClient }) {
         <CheckInOverview counts={checkinCounts} total={coachedList.length} />
         <ProgramDistribution groups={programGroups} />
         <RecentActivityFeed nameOf={nameOf} clientIds={coachedList.map((c) => c.id)} />
-        <RecentNotes nameOf={nameOf} openClient={openClient} />
+        <RecentNotes nameOf={nameOf} openClient={openClient} clientIds={clients.map((c) => c.id)} />
       </div>
 
       <ProgramSubscribersPanel rows={programSubscriberRows} openClient={openClient} />

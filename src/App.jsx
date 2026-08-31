@@ -23,7 +23,7 @@ import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { ProgressionModelsPanel } from "./features/coachDashboard/ProgressionModelsPanel.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -906,7 +906,17 @@ function WeeklyCheckin({ profile, onDone }) {
     setSaved(true); setTimeout(onDone,1400);
   };
 
-  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>Weekly check-in logged!</div></div>;
+  if(saved) return (
+    <div style={{textAlign:"center",paddingTop:80}}>
+      <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600,marginBottom:20}}>Weekly check-in logged!</div>
+      <div>
+        <a href={V12_CALENDLY_URL} target="_blank" rel="noopener noreferrer"
+          style={{...bS({padding:"12px 24px"}),background:S.accent,color:"white",textDecoration:"none",display:"inline-block"}}>
+          Schedule Your Weekly Review →
+        </a>
+      </div>
+    </div>
+  );
 
   return (
     <div>

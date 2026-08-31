@@ -1,17 +1,33 @@
 import { S } from "../../theme.jsx";
-import { PageTitle } from "../../components/ui/index.js";
+import { PageTitle, Card, CardTitle } from "../../components/ui/index.js";
 import { V12RoadmapCard } from "./V12RoadmapCard.jsx";
 
 // Replaces the old per-client Notion dashboard link with an in-app page —
 // same evergreen reference a client can revisit any time, not a one-time
-// gate (that's ClientWelcome, shown once at first login). Trimmed to the
-// philosophy/expectations blurb only — the onboarding checklist and "what
-// happens next" steps in ClientWelcome are onboarding-specific and don't
-// belong in a page meant to stay relevant for the life of the account.
+// gate (that's ClientWelcome, shown once at first login). Condensed from the
+// real V12 Performance Coaching welcome doc (philosophy/what-it-is/what-it-
+// isn't/expectations/results) — not the full essay-length version, just the
+// parts worth a client re-reading months in.
 const PILLARS = [
   ["LOOK GOOD", "Bodybuilding volume for the physique — sarcoplasmic fullness and size."],
   ["MOVE GOOD", "Athletic conditioning and explosive power — work capacity that carries over to life."],
   ["PERFORM GOOD", "Powerlifting strength for a nervous system that recruits everything you've got."],
+];
+
+const RESULTS = [
+  "Steady, sustainable fat loss — without losing muscle",
+  "Progressive strength gains, bodyweight and weighted",
+  "Better endurance and work capacity",
+  "A leaner, more defined physique",
+  "Habits and discipline that outlast the program",
+];
+
+const EXPECTATIONS = [
+  "Follow the program as written — trust the process",
+  "Log every training session",
+  "Hit your nutrition targets consistently",
+  "Tell your coach if something isn't working",
+  "Submit your weekly check-in on time",
 ];
 
 export function ClientDashboardPage({ profile, setPage }) {
@@ -26,8 +42,10 @@ export function ClientDashboardPage({ profile, setPage }) {
         <div style={{ position: "relative" }}>
           <div style={{ fontSize: 10, letterSpacing: 4, textTransform: "uppercase", color: S.neon, marginBottom: 12 }}>V12 Performance Systems</div>
           <div style={{ fontSize: 15, color: S.text, opacity: 0.9, maxWidth: 620, lineHeight: 1.7 }}>
-            V12 is one hybrid system that builds the powerlifter's strength, the bodybuilder's physique, and the
-            athlete's engine — at the same time. You'll <span style={{ color: S.neon, fontWeight: 700 }}>look good, move good, and perform good</span>, all at once.
+            This isn't quick fixes or crash dieting — it's a structured system built on{" "}
+            <span style={{ color: S.neon, fontWeight: 700 }}>consistency, structure, and intelligent progression</span>,
+            combining hybrid calisthenics, strength training, and conditioning into real capability, not just aesthetics.
+            You'll <span style={{ color: S.neon, fontWeight: 700 }}>look good, move good, and perform good</span>, all at once.
           </div>
         </div>
       </div>
@@ -39,6 +57,21 @@ export function ClientDashboardPage({ profile, setPage }) {
             <div style={{ fontSize: 13, color: S.muted, marginTop: 8, lineHeight: 1.6 }}>{body}</div>
           </div>
         ))}
+      </div>
+
+      <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        <Card>
+          <CardTitle>What To Expect</CardTitle>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: S.text, lineHeight: 1.9 }}>
+            {RESULTS.map((r) => <li key={r}>{r}</li>)}
+          </ul>
+        </Card>
+        <Card>
+          <CardTitle>What's Expected Of You</CardTitle>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: S.text, lineHeight: 1.9 }}>
+            {EXPECTATIONS.map((e) => <li key={e}>{e}</li>)}
+          </ul>
+        </Card>
       </div>
 
       {/* Coaching clients' progression is AI-generated and lives in its own

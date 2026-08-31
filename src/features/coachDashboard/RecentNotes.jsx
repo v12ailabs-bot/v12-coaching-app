@@ -1,19 +1,25 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
-import { Card } from "../../components/ui/index.js";
+import { Card, Btn } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
 
 const SCROLL_AFTER = 10;
 
 // Most recent coach_notes across all clients (existing table, existing
-// per-client notes feature) — read-only except for delete, which removes the
-// note outright (same as the per-client Coach Notes section it's mirrored
-// from — no confirmation dialog there either). Scrolls internally once past
+// per-client notes feature) — delete, same as before, plus a "+ New Note"
+// inline create form (a team-wide note needs a client to attach to, same
+// as the per-client Coach Notes section this mirrors — picks the most
+// recently active client by default rather than forcing a full picker for
+// what's meant to be a quick team update). Scrolls internally once past
 // SCROLL_AFTER items instead of growing the page indefinitely.
-export function RecentNotes({ nameOf, openClient }) {
+export function RecentNotes({ nameOf, openClient, clientIds }) {
   const [notes, setNotes] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [adding, setAdding] = useState(false);
+  const [clientId, setClientId] = useState("");
+  const [body, setBody] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     supabase.from("coach_notes").select("id,client_id,body,created_at").order("created_at", { ascending: false }).limit(30)
@@ -26,9 +32,33 @@ export function RecentNotes({ nameOf, openClient }) {
     await supabase.from("coach_notes").delete().eq("id", id);
   };
 
+  const startAdd = () => { setAdding(true); setClientId((clientIds || [])[0] || ""); setBody(""); };
+  const save = async () => {
+    if (!clientId || !body.trim()) return;
+    setSaving(true);
+    const { data } = await supabase.from("coach_notes").insert({ client_id: clientId, body: body.trim() }).select("id,client_id,body,created_at").maybeSingle();
+    setSaving(false);
+    if (data) setNotes((prev) => [data, ...prev]);
+    setAdding(false); setBody("");
+  };
+
   return (
     <Card>
-      <SectionTitle>Notes &amp; Updates</SectionTitle>
+      <SectionTitle action={<Btn sm teal onClick={startAdd}>+ New Note</Btn>}>Notes &amp; Updates</SectionTitle>
+      {adding && (
+        <div style={{ background: S.surface2, border: "1px solid " + S.border, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+          <select value={clientId} onChange={(e) => setClientId(e.target.value)}
+            style={{ width: "100%", background: S.surface, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none", marginBottom: 8 }}>
+            {(clientIds || []).map((id) => <option key={id} value={id}>{nameOf(id)}</option>)}
+          </select>
+          <textarea rows={2} value={body} onChange={(e) => setBody(e.target.value)} placeholder="Note..."
+            style={{ width: "100%", background: S.surface, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none", resize: "vertical", marginBottom: 8 }} />
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn sm onClick={save} disabled={saving || !body.trim()}>{saving ? "Saving..." : "Save"}</Btn>
+            <button onClick={() => setAdding(false)} style={{ padding: "6px 12px", fontSize: 11, background: "transparent", color: S.muted, border: "1px solid " + S.border, cursor: "pointer" }}>Cancel</button>
+          </div>
+        </div>
+      )}
       {loading ? (
         <div className="spinner" style={{ margin: "20px auto" }} />
       ) : notes.length === 0 ? (

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
-import { S } from "../../theme.jsx";
+import { S, avatarFrom, COLORS } from "../../theme.jsx";
 import { Card } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
 import { fetchRecentMilestoneAchievements } from "../../lib/milestones.js";
@@ -58,6 +58,12 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
     })();
   }, [clientIds && clientIds.join(",")]);
 
+  // Stable per-client color from their position in `clientIds` (the same
+  // roster order every other panel builds from) — so a client's initial
+  // color stays consistent across Recent Activity, Client Overview, and
+  // Alerts, same identity system ClientSelector.jsx uses.
+  const colorOf = (id) => COLORS[Math.max(0, (clientIds || []).indexOf(id)) % COLORS.length];
+
   return (
     <Card>
       <SectionTitle>Recent Activity <span style={{ fontSize: 11, color: S.muted, fontWeight: 400, marginLeft: 6 }}>Last 48h</span></SectionTitle>
@@ -68,9 +74,12 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
       ) : (
         <div style={{ maxHeight: events.length > SCROLL_AFTER ? 360 : "none", overflowY: "auto" }}>
           {events.map((e, i) => (
-            <div key={i} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "12px 4px", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 13 }}>
-              <span><strong style={{ fontWeight: 600 }}>{nameOf(e.client_id)}</strong> {e.text}</span>
-              <span style={{ color: S.muted, fontSize: 11, whiteSpace: "nowrap" }}>{relTime(e.created_at)}</span>
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 4px", borderBottom: i < events.length - 1 ? "1px solid " + S.border : "none", fontSize: 13 }}>
+              <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, background: colorOf(e.client_id), color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>
+                {avatarFrom(nameOf(e.client_id))}
+              </div>
+              <span style={{ flex: 1, minWidth: 0 }}><strong style={{ fontWeight: 600 }}>{nameOf(e.client_id)}</strong> {e.text}</span>
+              <span style={{ color: S.muted, fontSize: 11, whiteSpace: "nowrap", flexShrink: 0 }}>{relTime(e.created_at)}</span>
             </div>
           ))}
         </div>

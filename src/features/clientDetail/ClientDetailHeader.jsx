@@ -1,7 +1,36 @@
-import { S, RADIUS, avatarFrom } from "../../theme.jsx";
+import { S, RADIUS, avatarFrom, useIsMobile } from "../../theme.jsx";
 import { StatusBadge } from "../../components/ui/index.js";
+import { V12_CALENDLY_URL } from "../../lib/constants.js";
 
 const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋" };
+
+// Mobile-only action row: Message / Call / Weekly Review / More. Call needs
+// a phone number on file (new profiles.phone field, set via Client Settings)
+// — there's no way to actually place a call without one, so it degrades to
+// a clear "no number on file" message instead of a dead tel: link.
+function MobileActionRow({ client, onSendMessage, onSettingsClick }) {
+  const call = () => {
+    if (client.phone) window.location.href = `tel:${client.phone}`;
+    else window.alert("No phone number on file — add one in Settings.");
+  };
+  const actions = [
+    { key: "message", icon: "💬", label: "Message", onClick: onSendMessage },
+    { key: "call", icon: "📞", label: "Call", onClick: call },
+    { key: "review", icon: "🗓", label: "Weekly Review", onClick: () => window.open(V12_CALENDLY_URL, "_blank", "noopener") },
+    { key: "more", icon: "⋯", label: "More", onClick: onSettingsClick },
+  ];
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 8, marginTop: 14 }}>
+      {actions.map((a) => (
+        <button key={a.key} onClick={a.onClick}
+          style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "10px 4px", background: S.surface2, border: "1px solid " + S.border, borderRadius: RADIUS.sm, color: S.text, cursor: "pointer" }}>
+          <span style={{ fontSize: 16 }}>{a.icon}</span>
+          <span style={{ fontSize: 10, fontWeight: 600 }}>{a.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
 
 // Always-visible top strip across every tab — name, program type, contact,
 // Active/Archived status, last check-in, and access-until (so a fixed-term
@@ -19,7 +48,8 @@ const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-
 // underneath it — one visual unit instead of two stacked ones. Rendered as
 // bold pill buttons (not the shared underline Tabs primitive) so they read
 // as substantial, clickable destinations rather than small text labels.
-export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpenProgress, onSettingsClick, tabs, activeTab, onTabChange }) {
+export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpenProgress, onSettingsClick, onSendMessage, tabs, activeTab, onTabChange }) {
+  const isMobile = useIsMobile();
   return (
     <div style={{ marginBottom: 20 }}>
       <div style={{ background: S.surface, border: "1px solid " + S.border, borderBottom: "none", borderRadius: `${RADIUS.lg}px ${RADIUS.lg}px 0 0`, padding: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
@@ -36,9 +66,12 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
           {client.access_until && (
             <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Access until <strong style={{ color: S.text }}>{client.access_until}</strong></div>
           )}
+          {isMobile && client.created_at && (
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 4 }}>Client since {client.created_at.slice(0, 10)}</div>
+          )}
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: 22, flexShrink: 0 }}>
+        {!isMobile && <div style={{ display: "flex", alignItems: "center", gap: 22, flexShrink: 0 }}>
           <div style={{ textAlign: "center" }}>
             <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6, whiteSpace: "nowrap" }}>{lastCheckin || "No check-ins"}</div>
             <button onClick={onOpenProgress} title="Open Progress" aria-label="Open Progress"
@@ -61,8 +94,9 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
             </button>
             <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase", color: "#8B5CF6", marginTop: 5 }}>Settings</div>
           </div>
-        </div>
+        </div>}
       </div>
+      {isMobile && <MobileActionRow client={client} onSendMessage={onSendMessage} onSettingsClick={onSettingsClick} />}
       {/* Sibling, not nested, so the mobile sticky rule (.client-tabs-sticky
           detaches this to the top of the viewport on scroll) never has to
           fight the identity row's rounded-card box above it. Matching side

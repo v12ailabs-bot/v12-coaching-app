@@ -6,7 +6,7 @@ import { SectionTitle } from "./SectionTitle.jsx";
 // Sparkline per the "trend" figure spec: a de-emphasized line (S.muted) with
 // only the current/latest point picked out in the accent color — not a full
 // chart, so no axes/gridlines/legend.
-function Sparkline({ data, color }) {
+export function Sparkline({ data, color }) {
   if (!data || data.filter((d) => d.value != null).length < 2) {
     return <div style={{ width: "100%", height: 36 }} />;
   }
@@ -28,7 +28,7 @@ function Sparkline({ data, color }) {
   );
 }
 
-function TrendPill({ deltaPct }) {
+export function TrendPill({ deltaPct }) {
   if (deltaPct == null) return null;
   const tone = deltaPct > 0 ? { bg: "rgba(0,201,167,.14)", fg: S.accent2 } : deltaPct < 0 ? { bg: "rgba(255,107,91,.14)", fg: S.danger } : { bg: S.surface, fg: S.muted };
   const arrow = deltaPct > 0 ? "↑" : deltaPct < 0 ? "↓" : "→";
