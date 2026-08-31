@@ -105,33 +105,73 @@ export function Progress({ profile, coachView }) {
         ))}
       </div>
 
-      {tab==="weight" && (daily.length===0&&weightSeries.length===0?empty:(
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <CC title="Bodyweight Trend" sub={goal?`Daily + weekly check-ins · target ${goal.target_value}${goal.unit}`:"Daily + weekly check-ins"}>
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={weightSeries}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(weightSeries.length)}/>
-                <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                <Tooltip {...TT}/>
-                {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
-                <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{r:2}}/>
-              </LineChart>
-            </ResponsiveContainer>
-          </CC>
-          <CC title="Workout Completion" sub="Full history">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={daily.map(d=>({...d,done:d.workout==="completed"?1:0}))}>
-                <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
-                <YAxis tick={false}/>
-                <Tooltip {...TT} formatter={v=>[v?"Done":"Rest/Missed",""]}/>
-                <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
-              </BarChart>
-            </ResponsiveContainer>
-          </CC>
-        </div>
-      ))}
+      {tab==="weight" && (
+        <>
+          {!savedHeight ? (
+            <Card style={{marginBottom:20}}>
+              <CardTitle>BMI</CardTitle>
+              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>Set your height once to see a BMI estimate alongside your weight — it's an estimate only, since BMI doesn't account for body composition.</div>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <Fld label="Height (inches)"><Inp type="number" value={heightIn} onChange={e=>setHeightIn(e.target.value)} placeholder="e.g. 70"/></Fld>
+                <Btn onClick={saveHeight} disabled={savingHeight||!heightIn}>{savingHeight?"Saving...":"Save Height"}</Btn>
+              </div>
+            </Card>
+          ) : (
+            <Card style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
+                <CardTitle>BMI (estimate)</CardTitle>
+                <div style={{fontSize:11,color:S.muted}}>Height: {savedHeight}in · <span onClick={()=>setSavedHeight(null)} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
+              </div>
+              {currentBmi != null && (
+                <div>
+                  <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{currentBmi}</span>
+                  <span style={{fontSize:12,color:S.muted,marginLeft:8}}>{bmiCategory(currentBmi)}</span>
+                </div>
+              )}
+            </Card>
+          )}
+          {(daily.length===0&&weightSeries.length===0)?empty:(
+            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              <CC title="Bodyweight Trend" sub={goal?`Daily + weekly check-ins · target ${goal.target_value}${goal.unit}`:"Daily + weekly check-ins"}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={weightSeries}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(weightSeries.length)}/>
+                    <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                    <Tooltip {...TT}/>
+                    {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
+                    <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{r:2}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </CC>
+              {bmiWeekly.length > 0 && (
+                <CC title="BMI Trend" sub="Weekly, from bodyweight + your height">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={bmiWeekly}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                      <Tooltip {...TT}/>
+                      <Line type="monotone" dataKey="bmi" stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CC>
+              )}
+              <CC title="Workout Completion" sub="Full history">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={daily.map(d=>({...d,done:d.workout==="completed"?1:0}))}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
+                    <YAxis tick={false}/>
+                    <Tooltip {...TT} formatter={v=>[v?"Done":"Rest/Missed",""]}/>
+                    <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </CC>
+            </div>
+          )}
+        </>
+      )}
 
       {tab==="wellness" && (daily.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
@@ -184,63 +224,23 @@ export function Progress({ profile, coachView }) {
         </div>
       ))}
 
-      {tab==="measurements" && (
-        <>
-          {!savedHeight ? (
-            <Card style={{marginBottom:20}}>
-              <CardTitle>BMI</CardTitle>
-              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>Set your height once to see a BMI estimate alongside your other measurements — it's an estimate only, since BMI doesn't account for body composition.</div>
-              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
-                <Fld label="Height (inches)"><Inp type="number" value={heightIn} onChange={e=>setHeightIn(e.target.value)} placeholder="e.g. 70"/></Fld>
-                <Btn onClick={saveHeight} disabled={savingHeight||!heightIn}>{savingHeight?"Saving...":"Save Height"}</Btn>
-              </div>
-            </Card>
-          ) : (
-            <Card style={{marginBottom:20}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
-                <CardTitle>BMI (estimate)</CardTitle>
-                <div style={{fontSize:11,color:S.muted}}>Height: {savedHeight}in · <span onClick={()=>setSavedHeight(null)} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
-              </div>
-              {currentBmi != null && (
-                <div style={{marginBottom:12}}>
-                  <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{currentBmi}</span>
-                  <span style={{fontSize:12,color:S.muted,marginLeft:8}}>{bmiCategory(currentBmi)}</span>
-                </div>
-              )}
-            </Card>
-          )}
-          {weekly.length===0?emptyWeekly:(
-            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-              {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
-                <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={weekly}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                      <Tooltip {...TT}/>
-                      <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CC>
-              ))}
-              {bmiWeekly.length > 0 && (
-                <CC title="BMI Trend" sub="Weekly, from bodyweight + your height">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={bmiWeekly}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                      <Tooltip {...TT}/>
-                      <Line type="monotone" dataKey="bmi" stroke={S.accent} strokeWidth={2} dot={{r:3}}/>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </CC>
-              )}
-            </div>
-          )}
-        </>
-      )}
+      {tab==="measurements" && (weekly.length===0?emptyWeekly:(
+        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+          {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
+            <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={weekly}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          ))}
+        </div>
+      ))}
 
       {tab==="strength" && <StrengthTab profile={profile}/>}
 

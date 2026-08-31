@@ -118,14 +118,24 @@ function CheckInOverviewCompact({ counts, totalCheckinsThisWeek }) {
 // detail/action (same fields the desktop AlertsPanel already had — `detail`/
 // `action` on risk flags, `text` on message flags) instead of collapsing to
 // just a bare label, so expanding a row answers "why is this client here."
+// `atRisk` (drives the red "At Risk" badge) is tracked separately from
+// `severity` (just sort order) and is ONLY ever set true by a real
+// assessClientRisk High-risk flag. Weekly check-in message items carry
+// their own internal `tone` (e.g. a client's free-text "Question" is tagged
+// red purely to highlight it visually inside the expanded detail) — that
+// tone was previously feeding into the same badge as genuine risk, so a
+// client who'd simply asked their coach a question showed up as "At Risk"
+// with nothing actually wrong. Now every non-risk source caps out at
+// "Monitor" no matter its internal tone.
 function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf }) {
   const byClient = {};
-  const ensure = (id, name) => (byClient[id] = byClient[id] || { clientId: id, name, reasons: [], severity: 0 });
+  const ensure = (id, name) => (byClient[id] = byClient[id] || { clientId: id, name, reasons: [], severity: 0, atRisk: false });
 
   needs.forEach((n) => {
     const g = ensure(n.client.id, n.client.name || n.client.email);
-    n.flags.forEach((f) => g.reasons.push({ source: "Risk", label: f.label, detail: f.detail, action: f.action, tone: f.tone === "red" ? "red" : "amber" }));
-    g.severity = Math.max(g.severity, n.riskLevel === "High" ? 3 : 2);
+    n.flags.forEach((f) => g.reasons.push({ source: "Risk Assessment", label: f.label, detail: f.detail, action: f.action, tone: f.tone === "red" ? "red" : "amber" }));
+    if (n.riskLevel === "High") g.atRisk = true;
+    g.severity = Math.max(g.severity, n.riskLevel === "High" ? 4 : 3);
   });
   phaseAlerts.forEach((a) => {
     const g = ensure(a.clientId, nameOf(a.clientId));
@@ -139,7 +149,7 @@ function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlert
   messages.forEach((m) => {
     const g = ensure(m.id, nameOf(m.id));
     m.items.forEach((it) => g.reasons.push({ source: "Weekly Check-In", label: it.label, detail: it.text || null, tone: it.tone === "red" ? "red" : "amber" }));
-    g.severity = Math.max(g.severity, m.items.some((x) => x.tone === "red") ? 3 : 1);
+    g.severity = Math.max(g.severity, 1);
   });
   milestoneAlerts.filter((a) => a.kind === "approaching").forEach((a) => {
     const g = ensure(a.clientId, nameOf(a.clientId));
@@ -168,8 +178,8 @@ function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAler
       ) : (
         groups.slice(0, 8).map((g) => {
           const open = openId === g.clientId;
-          const badge = g.severity >= 3 ? "At Risk" : "Monitor";
-          const tone = g.severity >= 3 ? "red" : "amber";
+          const badge = g.atRisk ? "At Risk" : "Monitor";
+          const tone = g.atRisk ? "red" : "amber";
           return (
             <div key={g.clientId} style={{ borderBottom: "1px solid " + S.border }}>
               <div onClick={() => setOpenId(open ? null : g.clientId)} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 0", cursor: "pointer" }}>

@@ -931,6 +931,19 @@ function WeeklyCheckin({ profile, onDone }) {
       <Card style={{borderLeft:"3px solid "+S.accent2,paddingTop:16,paddingBottom:16}}>
         <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>Only the ratings are required — everything else is optional. Your measurements are pre-filled from last week, so just update what changed.</div>
       </Card>
+      {/* Always here, not just after submitting — a client revisiting an
+          already-submitted week never sees the post-save confirmation
+          again, so that's not a reliable way to reach this. */}
+      <Card style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:14,flexWrap:"wrap"}}>
+        <div>
+          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:16,marginBottom:2}}>Want to talk it through?</div>
+          <div style={{fontSize:12,color:S.muted}}>Book a weekly review call with your coach.</div>
+        </div>
+        <a href={V12_CALENDLY_URL} target="_blank" rel="noopener noreferrer"
+          style={{...bS({padding:"10px 18px"}),background:S.accent,color:"white",textDecoration:"none",display:"inline-block",whiteSpace:"nowrap"}}>
+          Schedule Weekly Review →
+        </a>
+      </Card>
       <Card>
         <CardTitle>Body Stats</CardTitle>
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:16}}>
