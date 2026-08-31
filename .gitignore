@@ -6,3 +6,5 @@ dist/
 .vercel
 *.log
 .DS_Store
+src/Screenshot_*.jpeg
+src/*.webp
