@@ -24,7 +24,14 @@ export function Progress({ profile, coachView }) {
   const [target, setTarget] = useState(null);
   const [goal, setGoal] = useState(null);
   const [insight, setInsight] = useState(null);
+  // `heightIn` is just the input's live typing buffer; `savedHeight` is the
+  // actually-persisted value and is what decides which UI shows and what the
+  // BMI is computed from. Keeping these separate fixes a bug where typing a
+  // single digit made the BMI card immediately switch to its "saved" display
+  // (and compute a nonsense BMI from a 1-inch height) before Save was ever
+  // clicked — nothing had actually reached the database yet.
   const [heightIn, setHeightIn] = useState(profile.height_in ?? "");
+  const [savedHeight, setSavedHeight] = useState(profile.height_in ?? null);
   const [savingHeight, setSavingHeight] = useState(false);
 
   useEffect(()=>{
@@ -74,10 +81,11 @@ export function Progress({ profile, coachView }) {
     setSavingHeight(true);
     await supabase.from("profiles").update({ height_in: Number(heightIn) }).eq("id", profile.id);
     setSavingHeight(false);
+    setSavedHeight(Number(heightIn));
   };
-  const bmiWeekly = weekly.filter((w) => w.bodyweight != null && heightIn)
-    .map((w) => ({ week: w.week, bmi: computeBMI(Number(heightIn), w.bodyweight) }));
-  const currentBmi = bmiWeekly.length ? bmiWeekly[bmiWeekly.length - 1].bmi : computeBMI(Number(heightIn), lastWeight);
+  const bmiWeekly = weekly.filter((w) => w.bodyweight != null && savedHeight)
+    .map((w) => ({ week: w.week, bmi: computeBMI(Number(savedHeight), w.bodyweight) }));
+  const currentBmi = bmiWeekly.length ? bmiWeekly[bmiWeekly.length - 1].bmi : computeBMI(Number(savedHeight), lastWeight);
 
   return (
     <div>
@@ -178,7 +186,7 @@ export function Progress({ profile, coachView }) {
 
       {tab==="measurements" && (
         <>
-          {!heightIn ? (
+          {!savedHeight ? (
             <Card style={{marginBottom:20}}>
               <CardTitle>BMI</CardTitle>
               <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>Set your height once to see a BMI estimate alongside your other measurements — it's an estimate only, since BMI doesn't account for body composition.</div>
@@ -191,7 +199,7 @@ export function Progress({ profile, coachView }) {
             <Card style={{marginBottom:20}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
                 <CardTitle>BMI (estimate)</CardTitle>
-                <div style={{fontSize:11,color:S.muted}}>Height: {heightIn}in · <span onClick={()=>setHeightIn("")} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
+                <div style={{fontSize:11,color:S.muted}}>Height: {savedHeight}in · <span onClick={()=>setSavedHeight(null)} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
               </div>
               {currentBmi != null && (
                 <div style={{marginBottom:12}}>

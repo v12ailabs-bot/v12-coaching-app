@@ -1,22 +1,28 @@
 import { S, RADIUS, avatarFrom, useIsMobile } from "../../theme.jsx";
 import { StatusBadge } from "../../components/ui/index.js";
-import { V12_CALENDLY_URL } from "../../lib/constants.js";
+import { V12_CALENDLY_DASHBOARD_URL } from "../../lib/constants.js";
 
 const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋" };
 
-// Mobile-only action row: Message / Call / Weekly Review / More. Call needs
-// a phone number on file (new profiles.phone field, set via Client Settings)
-// — there's no way to actually place a call without one, so it degrades to
-// a clear "no number on file" message instead of a dead tel: link.
+// Mobile-only action row: Message / Call / Weekly Review / More. "Call"
+// opens a WhatsApp chat with the number on file (new profiles.phone field,
+// set via Client Settings) instead of a plain tel: link — WhatsApp gives a
+// call AND a message thread from the same tap, which is what's actually
+// wanted here. Degrades to a clear message when no number is on file rather
+// than a dead link. "Weekly Review" sends the COACH to their own logged-in
+// Calendly scheduled-events dashboard (who booked, for when) — the client
+// gets the public booking link instead (see WeeklyCheckin in App.jsx and
+// ClientQuickActionsRail's "Schedule Call") since sending the coach to the
+// public booking page would just let them book themselves a slot.
 function MobileActionRow({ client, onSendMessage, onSettingsClick }) {
-  const call = () => {
-    if (client.phone) window.location.href = `tel:${client.phone}`;
-    else window.alert("No phone number on file — add one in Settings.");
+  const openWhatsApp = () => {
+    if (!client.phone) { window.alert("No phone number on file — add one in Settings."); return; }
+    window.open(`https://wa.me/${client.phone.replace(/[^\d]/g, "")}`, "_blank", "noopener");
   };
   const actions = [
     { key: "message", icon: "💬", label: "Message", onClick: onSendMessage },
-    { key: "call", icon: "📞", label: "Call", onClick: call },
-    { key: "review", icon: "🗓", label: "Weekly Review", onClick: () => window.open(V12_CALENDLY_URL, "_blank", "noopener") },
+    { key: "call", icon: "📱", label: "WhatsApp", onClick: openWhatsApp },
+    { key: "review", icon: "🗓", label: "Weekly Review", onClick: () => window.open(V12_CALENDLY_DASHBOARD_URL, "_blank", "noopener") },
     { key: "more", icon: "⋯", label: "More", onClick: onSettingsClick },
   ];
   return (

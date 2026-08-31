@@ -6,10 +6,13 @@
 // features/auth/LoginScreen.jsx) and coach-only UI checks throughout the app.
 export const COACH_EMAIL = "coach@v12system.com";
 // Lightweight "Weekly Review" scheduling — no in-app booking system exists,
-// so this links straight to the coach's own Calendly instead. Used on both
-// the client's weekly check-in confirmation and the coach's client-profile
-// quick actions.
+// so this links straight to Calendly instead. Two different URLs for two
+// different audiences: clients get the public booking page (pick a slot);
+// the coach gets their own logged-in scheduled-events dashboard (see who
+// booked, and for when) — sending the coach to the public booking page
+// too would just let them book a slot with themselves.
 export const V12_CALENDLY_URL = "https://calendly.com/v12fitness1";
+export const V12_CALENDLY_DASHBOARD_URL = "https://calendly.com/app/scheduled_events";
 
 // Field list mirrors the Notion Applications Database (api/_lib/notion.js PROP
 // map) plus the new required height field. Config-driven so adding/removing a

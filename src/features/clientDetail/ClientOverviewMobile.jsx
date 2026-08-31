@@ -46,7 +46,7 @@ export function ClientOverviewMobile({ client, trainOwnerId, progTick, loadEx, a
       supabase.from("weekly_checkins").select("date,sleep_quality").eq("client_id", client.id).gte("date", cut56).order("date"),
       supabase.from("client_goals").select("*").eq("client_id", client.id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("habits").select("*").eq("client_id", client.id).eq("active", true).order("order_index"),
-      supabase.from("habit_logs").select("habit_id,date,done").eq("client_id", client.id).eq("date", new Date().toISOString().slice(0, 10)),
+      supabase.from("habit_logs").select("habit_id,date,done").eq("client_id", client.id).gte("date", cut30),
     ]).then(([p, d, w, g, h, hl]) => {
       setProgramName(p.data?.name || null);
       setPhase(p.data?.phase || null);
@@ -73,7 +73,14 @@ export function ClientOverviewMobile({ client, trainOwnerId, progTick, loadEx, a
   const sleepVals = weekly.filter((w) => w.sleep_quality != null).map((w) => w.sleep_quality);
   const avgSleep = sleepVals.length ? (sleepVals.reduce((s, v) => s + v, 0) / sleepVals.length).toFixed(1) : null;
 
-  const doneHabits = habits.filter((h) => habitLogs.some((l) => l.habit_id === h.id && l.done)).length;
+  const today = new Date().toISOString().slice(0, 10);
+  const doneHabits = habits.filter((h) => habitLogs.some((l) => l.habit_id === h.id && l.date === today && l.done)).length;
+  const last7Days = Array.from({ length: 7 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (6 - i)); return d.toISOString().slice(0, 10); });
+  const habitRate30d = (habitId) => {
+    const done = habitLogs.filter((l) => l.habit_id === habitId && l.done).length;
+    return Math.round((done / 30) * 100);
+  };
+  const overallHabitRate = habits.length ? Math.round((habitLogs.filter((l) => l.done).length / (habits.length * 30)) * 100) : null;
 
   return (
     <div>
@@ -99,20 +106,19 @@ export function ClientOverviewMobile({ client, trainOwnerId, progTick, loadEx, a
 
       {habits.length > 0 && (
         <Card style={{ marginBottom: 14 }}>
-          <CardTitle>Daily Habits <span style={{ fontWeight: 400, fontSize: 12, color: S.muted, textTransform: "none", letterSpacing: 0 }}>{doneHabits}/{habits.length} today</span></CardTitle>
-          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 10 }}>
-            {habits.map((h) => {
-              const done = habitLogs.some((l) => l.habit_id === h.id && l.done);
-              return (
-                <div key={h.id} style={{ textAlign: "center", width: 60 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: "50%", margin: "0 auto 4px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, background: done ? "rgba(34,197,94,.16)" : S.surface2, border: "2px solid " + (done ? S.success : S.border) }}>
-                    {done ? "✓" : "○"}
-                  </div>
-                  <div style={{ fontSize: 9, color: S.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</div>
-                </div>
-              );
-            })}
-          </div>
+          <CardTitle>Daily Habits <span style={{ fontWeight: 400, fontSize: 12, color: S.muted, textTransform: "none", letterSpacing: 0 }}>{doneHabits}/{habits.length} today · {overallHabitRate ?? "—"}% adherence (30d)</span></CardTitle>
+          {habits.map((h) => (
+            <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: "1px solid " + S.border }}>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 600, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{h.name}</div>
+              <div style={{ display: "flex", gap: 3, flexShrink: 0 }}>
+                {last7Days.map((d) => {
+                  const done = habitLogs.some((l) => l.habit_id === h.id && l.date === d && l.done);
+                  return <div key={d} style={{ width: 12, height: 12, borderRadius: 3, background: done ? S.success : S.surface2, border: "1px solid " + S.border }} />;
+                })}
+              </div>
+              <div style={{ fontSize: 11, fontWeight: 700, color: S.accent2, width: 34, textAlign: "right", flexShrink: 0 }}>{habitRate30d(h.id)}%</div>
+            </div>
+          ))}
         </Card>
       )}
 

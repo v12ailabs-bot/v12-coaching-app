@@ -903,17 +903,24 @@ function WeeklyCheckin({ profile, onDone }) {
       : await supabase.from("weekly_checkins").insert(entry);
     setLoading(false);
     if(error){ setError(error.message); return; }
-    setSaved(true); setTimeout(onDone,1400);
+    setSaved(true);
   };
 
+  // No auto-redirect here — this used to call onDone() after 1.4s, which
+  // gave the "Schedule Your Weekly Review" link almost no time to actually
+  // be seen or tapped before the page navigated away. The client now leaves
+  // on their own via the explicit button below.
   if(saved) return (
     <div style={{textAlign:"center",paddingTop:80}}>
       <div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600,marginBottom:20}}>Weekly check-in logged!</div>
-      <div>
+      <div style={{display:"flex",flexDirection:"column",gap:12,alignItems:"center"}}>
         <a href={V12_CALENDLY_URL} target="_blank" rel="noopener noreferrer"
           style={{...bS({padding:"12px 24px"}),background:S.accent,color:"white",textDecoration:"none",display:"inline-block"}}>
           Schedule Your Weekly Review →
         </a>
+        <button onClick={onDone} style={{background:"none",border:"none",color:S.muted,fontSize:13,cursor:"pointer",textDecoration:"underline"}}>
+          Back to Dashboard
+        </button>
       </div>
     </div>
   );
