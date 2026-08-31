@@ -98,7 +98,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:"", phone:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:"", phone:"", age:"", sex:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -213,6 +213,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       is_local: !!c.is_local,
       height_in: c.height_in != null ? String(c.height_in) : "",
       phone: c.phone || "",
+      age: c.age != null ? String(c.age) : "",
+      sex: c.sex || "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
@@ -239,6 +241,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       is_local: settings.is_local,
       height_in: settings.height_in ? Number(settings.height_in) : null,
       phone: settings.phone.trim() || null,
+      age: settings.age ? Number(settings.age) : null,
+      sex: settings.sex || null,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }

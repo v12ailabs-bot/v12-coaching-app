@@ -40,6 +40,13 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
           <Inp type="number" value={settings.height_in} onChange={e=>setSettings(p=>({...p,height_in:e.target.value}))} placeholder="e.g. 70"/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Used to estimate BMI alongside their logged weight — an estimate only.</div>
         </Fld>
+        <Fld label="Age">
+          <Inp type="number" value={settings.age} onChange={e=>setSettings(p=>({...p,age:e.target.value}))} placeholder="e.g. 32"/>
+        </Fld>
+        <Fld label="Sex">
+          <RG options={["male","female"]} value={settings.sex} onChange={v=>setSettings(p=>({...p,sex:v}))} cap/>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Age + sex feed the separate Body Composition estimate (Progress &gt; Measurements) — not used for BMI.</div>
+        </Fld>
         <Fld label="Phone">
           <Inp type="tel" value={settings.phone} onChange={e=>setSettings(p=>({...p,phone:e.target.value}))} placeholder="e.g. +1 555 123 4567"/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Powers the "Call" action on the client's profile.</div>

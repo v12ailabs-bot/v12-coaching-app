@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../components/ui/index.js";
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
+import { computeBodyFatEstimate, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -33,6 +34,14 @@ export function Progress({ profile, coachView }) {
   const [heightIn, setHeightIn] = useState(profile.height_in ?? "");
   const [savedHeight, setSavedHeight] = useState(profile.height_in ?? null);
   const [savingHeight, setSavingHeight] = useState(false);
+  // Body Composition estimate is a SEPARATE metric from BMI (see
+  // lib/bodyComposition.js) — same buffer-vs-saved split as height, same
+  // bug it's guarding against.
+  const [ageIn, setAgeIn] = useState(profile.age ?? "");
+  const [sexIn, setSexIn] = useState(profile.sex ?? "");
+  const [savedAge, setSavedAge] = useState(profile.age ?? null);
+  const [savedSex, setSavedSex] = useState(profile.sex ?? null);
+  const [savingBodyComp, setSavingBodyComp] = useState(false);
 
   useEffect(()=>{
     supabase.from("daily_checkins").select("*").eq("client_id",profile.id).order("date").then(({data})=>setDaily(data||[]));
@@ -85,7 +94,26 @@ export function Progress({ profile, coachView }) {
   };
   const bmiWeekly = weekly.filter((w) => w.bodyweight != null && savedHeight)
     .map((w) => ({ week: w.week, bmi: computeBMI(Number(savedHeight), w.bodyweight) }));
-  const currentBmi = bmiWeekly.length ? bmiWeekly[bmiWeekly.length - 1].bmi : computeBMI(Number(savedHeight), lastWeight);
+  // Always from `lastWeight` (the true latest weight across daily + weekly,
+  // same value the headline "Current Weight" stat above uses) — NOT from
+  // bmiWeekly's last entry, which is only as fresh as the last WEEKLY
+  // check-in and goes stale the moment a client logs a newer DAILY weight
+  // without a matching weekly entry. That mismatch is exactly what made
+  // this disagree with Home's BMI (ClientHero.jsx), which always uses the
+  // true latest merged weight.
+  const currentBmi = computeBMI(Number(savedHeight), lastWeight);
+
+  const saveBodyComp = async () => {
+    if (!ageIn || !sexIn) return;
+    setSavingBodyComp(true);
+    await supabase.from("profiles").update({ age: Number(ageIn), sex: sexIn }).eq("id", profile.id);
+    setSavingBodyComp(false);
+    setSavedAge(Number(ageIn)); setSavedSex(sexIn);
+  };
+  const waistEntries = weekly.filter((w) => w.waist != null);
+  const latestWaist = waistEntries.length ? waistEntries[waistEntries.length - 1].waist : null;
+  const bodyFatPct = computeBodyFatEstimate(Number(savedHeight), latestWaist, savedSex);
+  const bodyFatCat = bodyFatCategory(bodyFatPct, savedAge, savedSex);
 
   return (
     <div>
@@ -224,23 +252,58 @@ export function Progress({ profile, coachView }) {
         </div>
       ))}
 
-      {tab==="measurements" && (weekly.length===0?emptyWeekly:(
-        <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
-            <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={weekly}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
-                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
-                </LineChart>
-              </ResponsiveContainer>
-            </CC>
-          ))}
-        </div>
-      ))}
+      {tab==="measurements" && (
+        <>
+          {(!savedAge || !savedSex) ? (
+            <Card style={{marginBottom:20}}>
+              <CardTitle>Body Composition</CardTitle>
+              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>A separate estimate from BMI — uses your height, waist, age, and sex. Set age and sex once to see it (height comes from the Weight tab).</div>
+              <div style={{display:"flex",gap:16,alignItems:"flex-end",flexWrap:"wrap"}}>
+                <Fld label="Age"><Inp type="number" value={ageIn} onChange={e=>setAgeIn(e.target.value)} placeholder="e.g. 32"/></Fld>
+                <Fld label="Sex"><RG options={["male","female"]} value={sexIn} onChange={setSexIn} cap/></Fld>
+                <Btn onClick={saveBodyComp} disabled={savingBodyComp||!ageIn||!sexIn}>{savingBodyComp?"Saving...":"Save"}</Btn>
+              </div>
+            </Card>
+          ) : !savedHeight ? (
+            <Card style={{marginBottom:20}}>
+              <CardTitle>Body Composition</CardTitle>
+              <div style={{fontSize:12,color:S.muted}}>Set your height on the Weight tab to see this estimate.</div>
+            </Card>
+          ) : (
+            <Card style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",flexWrap:"wrap",gap:10}}>
+                <CardTitle>Body Composition (estimate)</CardTitle>
+                <div style={{fontSize:11,color:S.muted}}>Age {savedAge} · {savedSex} · <span onClick={()=>{setSavedAge(null);setSavedSex(null);}} style={{color:S.accent,cursor:"pointer"}}>Edit</span></div>
+              </div>
+              {bodyFatPct != null ? (
+                <div>
+                  <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{bodyFatPct}%</span>
+                  <span style={{fontSize:12,color:S.muted,marginLeft:8}}>body fat (est.) · {bodyFatCat}</span>
+                </div>
+              ) : (
+                <div style={{fontSize:12,color:S.muted}}>Log a waist measurement in a weekly check-in to see this estimate.</div>
+              )}
+            </Card>
+          )}
+          {weekly.length===0?emptyWeekly:(
+            <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
+              {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
+                <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={weekly}>
+                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                      <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
+                      <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
+                      <Tooltip {...TT}/>
+                      <Line type="monotone" dataKey={key} stroke={S.accent2} strokeWidth={2} dot={{r:3}}/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </CC>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       {tab==="strength" && <StrengthTab profile={profile}/>}
 
