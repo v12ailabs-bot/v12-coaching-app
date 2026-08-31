@@ -129,6 +129,60 @@ function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
   );
 }
 
+// Quick alternative to clicking through Fixed Weekly one day at a time:
+// pick which weekdays you actually train (e.g. Mon/Tue/Fri) and this assigns
+// each existing day-group onto those weekdays in order, writing straight to
+// exercises.day_of_week -- the same source of truth Fixed Weekly edits --
+// and clears any group left over onto a rest day. Lives under Free Schedule
+// (picking specific days is exactly what that tab is for) but the result IS
+// the fixed schedule, so it hands off to Fixed Weekly once saved.
+function CustomDaysPicker({ dayGroups, onSaved }) {
+  const [selected, setSelected] = useState(new Set());
+  const [saving, setSaving] = useState(false);
+
+  const toggle = (weekday) => setSelected((prev) => {
+    const next = new Set(prev);
+    next.has(weekday) ? next.delete(weekday) : next.add(weekday);
+    return next;
+  });
+
+  const save = async () => {
+    const chosen = WEEKDAY_ORDER.filter((w) => selected.has(w));
+    setSaving(true);
+    for (let i = 0; i < dayGroups.length; i++) {
+      const weekday = chosen[i] ?? null; // extra groups beyond the picked days become rest
+      await supabase.from("exercises").update({ day_of_week: weekday }).in("id", dayGroups[i].exercises.map((e) => e.id));
+    }
+    setSaving(false);
+    await onSaved();
+  };
+
+  return (
+    <div style={{ marginBottom: 22, paddingBottom: 18, borderBottom: "1px solid " + S.border }}>
+      <div style={{ fontSize: 11, color: S.muted, marginBottom: 10, lineHeight: 1.6 }}>
+        Or pick your own training days (e.g. Mon/Tue/Fri) — this assigns your workouts onto those days and saves as your fixed weekly schedule.
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+        {WEEKDAY_ORDER.map((weekday) => {
+          const isOn = selected.has(weekday);
+          return (
+            <button key={weekday} onClick={() => toggle(weekday)} disabled={saving}
+              style={{ padding: "8px 14px", borderRadius: 8, cursor: saving ? "default" : "pointer", fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, letterSpacing: 1,
+                border: "2px solid " + (isOn ? S.accent : S.border), background: isOn ? S.accent + "1F" : "transparent", color: isOn ? S.accent : S.muted }}>
+              {WEEKDAY_SHORT[weekday]}
+            </button>
+          );
+        })}
+      </div>
+      <button onClick={save} disabled={saving || selected.size === 0}
+        style={{ padding: "9px 16px", borderRadius: 8, border: "none", cursor: saving || selected.size === 0 ? "default" : "pointer", fontFamily: "'Bebas Neue',sans-serif", fontSize: 13, letterSpacing: 0.5,
+          background: S.accent, color: "white", opacity: saving || selected.size === 0 ? 0.5 : 1 }}>
+        {saving ? "Saving..." : `Save as My Fixed Schedule (${selected.size} day${selected.size === 1 ? "" : "s"})`}
+      </button>
+    </div>
+  );
+}
+
 // Reusable scheduler -- the same component for a coach editing a coaching
 // client's schedule (Section 11: "coach can control the client's schedule
 // directly") and a client editing their own. `trainOwnerId` is whose
@@ -200,6 +254,7 @@ export function WorkoutScheduler({ clientId, trainOwnerId }) {
         <div style={{ fontSize: 13, color: S.muted }}>No workouts assigned yet — nothing to schedule until at least one exists.</div>
       ) : (
         <div>
+          <CustomDaysPicker dayGroups={dayGroups} onSaved={async () => { await load(); setMode("fixed"); }} />
           <div style={{ fontSize: 11, color: S.muted, marginBottom: 14, lineHeight: 1.6 }}>
             Assign a workout to specific days, or leave a day on Auto to follow the Fixed Weekly pattern. Not locked to a Monday-Sunday structure.
           </div>

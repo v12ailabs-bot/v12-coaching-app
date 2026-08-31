@@ -7,37 +7,32 @@ import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
 
-// One reviewable block (a straight-set exercise, or a merged superset/circuit
-// pair) — header row with last value + trend, expands into the charts and the
-// 30-day log-entry list. `logsByExercise` covers every member.
-function ReviewItem({ item, logsByExercise }) {
+// One exercise's own header row + expandable charts/log-entry list — used
+// standalone for a straight-set exercise, and once per member for a
+// superset/circuit block, so each exercise in a group gets its own best-lift,
+// trend, and charts instead of only the block's first member.
+function ExerciseRow({ exercise, logs }) {
   const [open, setOpen] = useState(false);
-  const isGroup = item.members.length > 1;
-  const allLogs = item.members.flatMap((m) => (logsByExercise[m.id] || []).map((l) => ({ ...l, exerciseName: m.name })));
-  const primary = item.members[0];
-  const primaryLogs = logsByExercise[primary.id] || [];
-  const chartData = topSetPerDay(primaryLogs, primary.is_bodyweight);
-  const dataKey = primary.is_bodyweight ? "reps" : "weight";
+  const chartData = topSetPerDay(logs, exercise.is_bodyweight);
+  const dataKey = exercise.is_bodyweight ? "reps" : "weight";
   const last = chartData[chartData.length - 1];
   const prev = chartData[chartData.length - 2];
   const trend = last && prev && last[dataKey] != null && prev[dataKey] != null
     ? (last[dataKey] > prev[dataKey] ? "up" : last[dataKey] < prev[dataKey] ? "down" : "flat")
     : null;
-  const reviewRows = allLogs
+  const reviewRows = logs
     .filter((l) => withinReviewWindow(l.date))
-    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-    .map((l) => ({ ...l, exerciseName: isGroup ? l.exerciseName : null }));
+    .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
   return (
     <div style={{ borderBottom: "1px solid " + S.border }}>
       <button onClick={() => setOpen((o) => !o)}
         style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <WorkoutMannequin exerciseName={primary.name} size={44} color={S.muted} />
+        <WorkoutMannequin exerciseName={exercise.name} size={44} color={S.muted} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {item.members.map((m) => m.name).join(" + ")}
+            {exercise.name}
           </div>
-          {isGroup && <div style={{ fontSize: 10, color: S.accent2 }}>{BLOCK_TYPE_LABEL[item.blockType]}</div>}
         </div>
         <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>
           {last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : "No data"}
@@ -50,13 +45,31 @@ function ReviewItem({ item, logsByExercise }) {
       {open && (
         <div style={{ padding: "4px 4px 16px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-            <WeightOverTimeChart chartData={chartData} isBodyweight={primary.is_bodyweight} />
-            <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(primary.reps)} />
+            <WeightOverTimeChart chartData={chartData} isBodyweight={exercise.is_bodyweight} />
+            <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(exercise.reps)} />
           </div>
           <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Last {REVIEW_WINDOW_DAYS} Days</div>
           <LogEntryList rows={reviewRows} />
         </div>
       )}
+    </div>
+  );
+}
+
+// One reviewable block — a straight-set exercise renders as a single
+// ExerciseRow; a merged superset/circuit renders a label plus one
+// independent ExerciseRow per member, so lat pulldowns and pull-ups done
+// together each show their own best lift/weight/reps, same as standalone.
+function ReviewItem({ item, logsByExercise }) {
+  const isGroup = item.members.length > 1;
+  if (!isGroup) {
+    const exercise = item.members[0];
+    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} />;
+  }
+  return (
+    <div>
+      <div style={{ padding: "10px 4px 2px", fontSize: 10, color: S.accent2, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>{BLOCK_TYPE_LABEL[item.blockType]}</div>
+      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} />)}
     </div>
   );
 }

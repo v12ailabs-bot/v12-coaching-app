@@ -47,7 +47,7 @@ function StarterCheckoutForm() {
 
 const TIERS = [
   { key: "starter", icon: "⚡", label: "Starter", blurb: "Essentials to build momentum." },
-  { key: "program", icon: "🏋", label: "Program Only", blurb: "Structured training programs." },
+  { key: "program", icon: "🏋", label: "V12 Program", blurb: "Structured training programs." },
   { key: "coaching", icon: "👑", label: "Coaching", blurb: "1-on-1 coaching and full support." },
 ];
 
@@ -158,10 +158,10 @@ export function LoginScreen() {
     setLoading(false);
   };
 
-  const F = (label, type, val, set, ph, onEnter) => (
+  const F = (label, type, val, set, ph, onEnter, autoComplete) => (
     <div style={{ marginBottom: 16 }}>
       <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{label}</div>
-      <input type={type} value={val} onChange={e => set(e.target.value)} placeholder={ph}
+      <input type={type} name={autoComplete} autoComplete={autoComplete} value={val} onChange={e => set(e.target.value)} placeholder={ph}
         onKeyDown={e => e.key === "Enter" && onEnter?.()}
         style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }} />
     </div>
@@ -186,10 +186,10 @@ export function LoginScreen() {
         {mode === "signin" ? (
           signinView === "createAccount" ? (
             <>
-              <div style={{ fontSize: 12, color: S.muted, marginBottom: 16 }}>Already accepted into Program Only or Coaching? Set up your login below.</div>
-              {F("Full Name", "text", name, setName, "Your full name", signUp)}
-              {F("Email", "email", email, setEmail, "you@gmail.com", signUp)}
-              {F("Password", "password", password, setPassword, "••••••••", signUp)}
+              <div style={{ fontSize: 12, color: S.muted, marginBottom: 16 }}>Already accepted into V12 Program or Coaching? Set up your login below.</div>
+              {F("Full Name", "text", name, setName, "Your full name", signUp, "name")}
+              {F("Email", "email", email, setEmail, "you@gmail.com", signUp, "email")}
+              {F("Password", "password", password, setPassword, "••••••••", signUp, "new-password")}
               {error && <div style={{ color: S.accent, fontSize: 12, marginBottom: 12 }}>{error}</div>}
               <button onClick={signUp} disabled={loading}
                 style={{ ...bS({ width: "100%", padding: 14 }), background: S.accent, color: "white", opacity: loading ? 0.5 : 1 }}>
@@ -199,8 +199,8 @@ export function LoginScreen() {
             </>
           ) : (
             <>
-              {F("Email", "email", email, setEmail, "you@gmail.com", signIn)}
-              {F("Password", "password", password, setPassword, "••••••••", signIn)}
+              {F("Email", "email", email, setEmail, "you@gmail.com", signIn, "email")}
+              {F("Password", "password", password, setPassword, "••••••••", signIn, "current-password")}
               {error && <div style={{ color: S.accent, fontSize: 12, marginBottom: 12 }}>{error}</div>}
               {success && <div style={{ background: "rgba(0,201,167,.14)", color: S.accent2, padding: "10px 16px", fontSize: 12, fontWeight: 600, marginBottom: 12 }}>{success}</div>}
               <div style={{ textAlign: "right", marginBottom: 12 }}>
@@ -229,7 +229,7 @@ export function LoginScreen() {
           ) : (
             <>
               <BackLink onClick={() => setTierStep(null)} />
-              <IntakeForm requestedTier={tierStep === "program" ? "Program Only" : "Coaching"} onDone={() => goToMode("signin")} />
+              <IntakeForm requestedTier={tierStep === "program" ? "V12 Program" : "Coaching"} onDone={() => goToMode("signin")} />
             </>
           )
         )}

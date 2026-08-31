@@ -3,14 +3,16 @@ import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
 import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
-import { DAY_ORDER, PHASES, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
+import { DAY_ORDER, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
+import { TOP_PHASES, SUB_PHASES, synthesizePhaseLabel } from "../../../lib/progressionModels.js";
 
 // Append-only Program Phase log — every phase change is a new row, never an
 // update, so the history in program_phase_history can't silently disappear.
-async function logPhaseHistory({ programId, clientId, phase, phaseNote, changedBy }) {
+async function logPhaseHistory({ programId, clientId, phase, phaseNote, changedBy, topPhase, subPhase }) {
   if (!phase) return;
   await supabase.from("program_phase_history").insert({
     program_id: programId ?? null, client_id: clientId, phase, phase_note: phaseNote ?? null, changed_by: changedBy ?? null,
+    top_phase: topPhase ?? null, sub_phase: subPhase ?? null,
   });
 }
 
@@ -160,7 +162,13 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
 // its permanent (append-only) change history.
 export function ProgramPhase({ clientId, onOpenRoadmap }) {
   const [program, setProgram] = useState(null);
-  const [phase, setPhase] = useState("");
+  const [topPhase, setTopPhase] = useState("foundation");
+  const [subPhase, setSubPhase] = useState("foundation");
+  // Optional: a planned-roadmap step's exact label, when the coach wants the
+  // displayed phase (and anything matching it, e.g. AIRecommendationCard,
+  // ProgramRoadmap's currentPhase highlight) to track a custom roadmap step
+  // instead of the synthesized "Top — Sub" label.
+  const [roadmapStepPhase, setRoadmapStepPhase] = useState("");
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [history, setHistory] = useState([]);
@@ -176,7 +184,9 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
       data ? supabase.from("program_phases").select("*").eq("program_id", data.id).order("order_index") : Promise.resolve({ data: [] }),
     ]);
     setProgram(data || null);
-    setPhase(data?.phase || "");
+    setTopPhase(data?.top_phase || "foundation");
+    setSubPhase(data?.sub_phase || "foundation");
+    setRoadmapStepPhase("");
     setNote(data?.phase_note || "");
     setStartDate(data?.start_date || "");
     setHistory(hist || []);
@@ -185,30 +195,28 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
   }, [clientId]);
   useEffect(() => { setLoading(true); load(); }, [load]);
 
-  // Once the coach has planned this program's roadmap (see ProgramRoadmapPlanner
-  // below), the Current Phase picker offers exactly those phase names in
-  // sequence instead of the generic global list — so a client with a custom
-  // roadmap always sets their current phase to a step that's actually on it.
-  const phaseOptions = plannedPhases.length ? plannedPhases.map((p) => p.phase) : PHASES;
-
   const save = async () => {
-    if (!program || !phase) return;
+    if (!program) return;
     setSaving(true); setMsg(null);
     const trimmedNote = note.trim() || null;
     const trimmedStart = startDate || null;
+    // The Top/Sub phase pair is what the AI generator reads. `phase` stays a
+    // plain display string so every existing reader of it (PhaseAlertsPanel,
+    // CoachHome, ClientHero, ProgramRoadmapCard, AIRecommendationCard's
+    // roadmap matching, etc.) keeps working unchanged — synthesized from the
+    // new fields by default, or the matched roadmap-step label if picked.
+    const displayPhase = roadmapStepPhase || synthesizePhaseLabel(topPhase, subPhase);
     const { error } = await supabase.from("programs")
-      .update({ phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart })
+      .update({ top_phase: topPhase, sub_phase: subPhase, phase: displayPhase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart })
       .eq("id", program.id);
-    if (!error) await logPhaseHistory({ programId: program.id, clientId, phase, phaseNote: trimmedNote });
+    if (!error) await logPhaseHistory({ programId: program.id, clientId, phase: displayPhase, phaseNote: trimmedNote, topPhase, subPhase });
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase updated." });
     if (!error) {
       // Reflect the save optimistically instead of calling load() — a full
       // refetch here would race any typing the coach does into the Phase
-      // Note textarea right after clicking Save and wipe it out. `phase`/
-      // `note` already hold what was just saved, so only `program` (for the
-      // "phase set" timestamp) and the append-only history log need refreshing.
-      setProgram((p) => (p ? { ...p, phase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart } : p));
+      // Note textarea right after clicking Save and wipe it out.
+      setProgram((p) => (p ? { ...p, top_phase: topPhase, sub_phase: subPhase, phase: displayPhase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart } : p));
       const { data: hist } = await supabase.from("program_phase_history").select("*").eq("client_id", clientId).order("changed_at", { ascending: false }).limit(20);
       setHistory(hist || []);
     }
@@ -226,7 +234,25 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
           <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>
             {program.name || "Program"} · {program.phase_updated_at ? `phase set ${program.phase_updated_at.slice(0, 10)}` : "no phase set yet"}
           </div>
-          <Fld label="Current Phase / Block"><RG options={phaseOptions} value={phase} onChange={setPhase} /></Fld>
+          <Fld label="Top Phase — drives which progression model the AI generator uses">
+            <RG options={TOP_PHASES} value={topPhase} onChange={setTopPhase} cap />
+          </Fld>
+          <Fld label="Sub Phase — where in this block's internal cycle">
+            <RG options={SUB_PHASES} value={subPhase} onChange={setSubPhase} cap />
+          </Fld>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: -6, marginBottom: 14, lineHeight: 1.5 }}>
+            Performance phases — both the top-level block and the sub-phase within any block — are typically your shortest: a testing/peak window, not somewhere to live long-term.
+          </div>
+          {plannedPhases.length > 0 && (
+            <Fld label="Match a planned roadmap step (optional)">
+              <select value={roadmapStepPhase} onChange={(e) => setRoadmapStepPhase(e.target.value)}
+                style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }}>
+                <option value="">{`— None, use "${synthesizePhaseLabel(topPhase, subPhase)}" —`}</option>
+                {plannedPhases.map((p) => <option key={p.id} value={p.phase}>{p.phase}</option>)}
+              </select>
+              <div style={{ fontSize: 11, color: S.muted, marginTop: 6, lineHeight: 1.5 }}>Overrides the displayed phase label to match this roadmap step, so the roadmap and AI recommendations stay in sync with it.</div>
+            </Fld>
+          )}
           <Fld label="Program Start Date (drives Week X of Y on the client dashboard)">
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
               style={{ background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }} />
@@ -235,8 +261,11 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
             <textarea rows={2} value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Week 3 of accumulation — push volume on the lower body, hold loads on upper."
               style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none", resize: "vertical" }} />
           </Fld>
+          {program.progression_model_key && (
+            <div style={{ fontSize: 12, color: S.accent2, marginBottom: 14 }}>Last generated with progression model: <strong>{program.progression_model_key}</strong></div>
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 4 }}>
-            <Btn onClick={save} disabled={saving || !phase}>{saving ? "Saving..." : "Save Phase"}</Btn>
+            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Phase"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
           {plannedPhases.length === 0 && (

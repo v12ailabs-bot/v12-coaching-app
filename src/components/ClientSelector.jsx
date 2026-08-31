@@ -41,7 +41,7 @@ export function ClientSelector({ clients, selectedId, onSelect, showViewTabs = t
 
   const emptyLabel = {
     all: "No clients yet.", coaching: "No coaching clients yet.",
-    program_only: "No program-only clients yet.", archived: "No archived clients.",
+    program_only: "No V12 Program clients yet.", archived: "No archived clients.",
   }[activeView];
 
   return (
@@ -61,7 +61,7 @@ export function ClientSelector({ clients, selectedId, onSelect, showViewTabs = t
           {[
             { key: "all", label: "All", badge: clients.length },
             { key: "coaching", label: "Coaching", badge: coachingCount },
-            { key: "program_only", label: "Program Only", badge: programOnlyCount },
+            { key: "program_only", label: "V12 Program", badge: programOnlyCount },
             { key: "archived", label: "Archived", badge: archivedCount },
           ].map((t) => {
             const isActive = t.key === activeView;

@@ -14,6 +14,7 @@ import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
 import { OnboardingChecklist } from "./sections/OnboardingChecklist.jsx";
 import { MilestonesCard } from "./sections/MilestonesCard.jsx";
+import { MILESTONE_CATEGORY_LABELS, fetchUnacknowledgedAchievements, acknowledgeAchievements } from "../../lib/milestones.js";
 import { AIRecommendationCard } from "./sections/AIRecommendationCard.jsx";
 import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
@@ -96,7 +97,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:""});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -105,6 +106,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
   const [savingPartner, setSavingPartner] = useState(false);
   const [partnerMsg, setPartnerMsg] = useState(null);
+  const [newAchievements, setNewAchievements] = useState([]);
 
   // The id whose TRAINING rows (program + exercises) the selected client shares.
   // For a linked partner this is their owner; otherwise the client itself.
@@ -207,14 +209,22 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       goal: c.goal || "",
       access_until: c.access_until || "",
       is_local: !!c.is_local,
+      height_in: c.height_in != null ? String(c.height_in) : "",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
     setSettingsMsg(null);
     setPartnerMsg(null);
     setActiveTab("overview");
+    setNewAchievements([]);
+    if (selected) fetchUnacknowledgedAchievements(selected).then(setNewAchievements);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[selected]);
+
+  const dismissAchievements = async () => {
+    await acknowledgeAchievements(newAchievements.map((a) => a.id));
+    setNewAchievements([]);
+  };
 
   const saveSettings = async()=>{
     setSavingSettings(true); setSettingsMsg(null);
@@ -224,6 +234,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       goal: settings.goal.trim() || null,
       access_until: settings.access_until || null,
       is_local: settings.is_local,
+      height_in: settings.height_in ? Number(settings.height_in) : null,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -561,6 +572,22 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       {client && showProgressModal && (
         <Modal title="Progress" onClose={()=>setShowProgressModal(false)} width={1100}>
           <Progress profile={client} coachView />
+        </Modal>
+      )}
+      {client && newAchievements.length > 0 && (
+        <Modal title="🎉 Milestone Hit" onClose={dismissAchievements}>
+          <div style={{ fontSize: 13, color: S.muted, marginBottom: 14 }}>
+            {client.name || client.email} hit {newAchievements.length > 1 ? "these milestones" : "a milestone"} — especially worth a shout-out if they're remote.
+          </div>
+          {newAchievements.map((a) => (
+            <div key={a.id} style={{ padding: "10px 0", borderBottom: "1px solid " + S.border }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: S.text }}>{a.exercise_name || MILESTONE_CATEGORY_LABELS[a.category] || "Milestone"}</div>
+              <div style={{ fontSize: 12, color: S.accent2 }}>Hit target of {a.target_value}{a.unit}</div>
+            </div>
+          ))}
+          <div style={{ marginTop: 16 }}>
+            <button onClick={dismissAchievements} style={{ padding: "9px 18px", fontSize: 11, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", cursor: "pointer", border: "none", background: S.accent, color: "white", borderRadius: 8 }}>Got it</button>
+          </div>
         </Modal>
       )}
     </div>

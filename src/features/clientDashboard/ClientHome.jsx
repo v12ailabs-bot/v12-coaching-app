@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
-import { S, todayStr, localDateStr, useIsMobile } from "../../theme.jsx";
+import { S, RADIUS, todayStr, localDateStr, useIsMobile } from "../../theme.jsx";
 import { PageTitle, Btn, StatusBadge } from "../../components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "../../components/ClientBanners.jsx";
 import { assessClientRisk } from "../../lib/scoring.js";
@@ -85,7 +85,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
       <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} setPage={setPage} /></div>
 
       {risk.flags.length > 0 && (
-        <div style={{ background: S.surface, border: "1px solid " + S.border, borderLeft: "3px solid " + (risk.severity >= 2 ? S.danger : S.warning), marginBottom: 14, overflow: "hidden" }}>
+        <div style={{ background: S.surface, border: "1px solid " + S.border, borderLeft: "3px solid " + (risk.severity >= 2 ? S.danger : S.warning), borderRadius: RADIUS.md, marginBottom: 14, overflow: "hidden" }}>
           <div onClick={() => setRiskOpen((o) => !o)} style={{ padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, cursor: "pointer" }}>
             <span style={{ fontSize: 11, color: S.accent, flexShrink: 0, display: "inline-block", transition: "transform .15s", transform: riskOpen ? "rotate(90deg)" : "none" }}>▶</span>
             <div style={{ flex: 1, minWidth: 0, fontWeight: 600, fontSize: 14 }}>How you're tracking</div>

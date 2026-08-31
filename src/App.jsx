@@ -17,8 +17,11 @@ import { StarterHome, StarterExpiredScreen } from "./features/clientDashboard/St
 import { deriveLifecycleStatus, LIFECYCLE_STATUS } from "./lib/tierLifecycle.js";
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
+import { ProgramOnlyHome } from "./features/clientDashboard/ProgramOnlyHome.jsx";
+import { ClientDashboardPage } from "./features/clientDashboard/ClientDashboardPage.jsx";
 import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
+import { ProgressionModelsPanel } from "./features/coachDashboard/ProgressionModelsPanel.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
@@ -583,7 +586,7 @@ export default function App() {
 
 }
 
-function TopBar({ profile, isCoach, onLogout }) {
+function TopBar({ profile, isCoach, onLogout, setPage }) {
   return (
     <div className="topbar" style={{height:54,background:S.surface,borderBottom:"1px solid "+S.border,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 24px",position:"sticky",top:0,zIndex:100}}>
       <V12Logo size={30}/>
@@ -593,12 +596,13 @@ function TopBar({ profile, isCoach, onLogout }) {
             program-only clients (who don't land on that page) still need it
             here. Circular, not the old rectangular pill — small and easy to
             miss was the reported problem, but a bigger rectangle wasn't the
-            fix; a properly sized icon button is. */}
-        {!isCoach && profile?.client_type==="program_only" && profile?.dashboard_url && (
-          <a href={profile.dashboard_url} target="_blank" rel="noopener noreferrer" title="Open your Notion dashboard"
-            style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,textDecoration:"none"}}>
+            fix; a properly sized icon button is. Opens the in-app Dashboard
+            page now, not an external Notion link. */}
+        {!isCoach && profile?.client_type==="program_only" && (
+          <button onClick={()=>setPage("clientdashboard")} title="Open your dashboard"
+            style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,cursor:"pointer"}}>
             📊
-          </a>
+          </button>
         )}
         <span style={{fontSize:13,color:S.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{profile?.name||profile?.email}</span>
         <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>
@@ -614,7 +618,7 @@ function TopBar({ profile, isCoach, onLogout }) {
 // decide which nav item highlights when the client is on one of the pages
 // it groups (e.g. still highlight "More" while on the Nutrition page).
 const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
-const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule", "v12roadmap"];
+const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule", "v12roadmap", "clientdashboard"];
 
 function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const isMobile = useIsMobile();
@@ -630,10 +634,10 @@ function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const clientNav = isStarter
     ? [{id:"starterhome",icon:"⚡",label:"Home",short:"Home"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"schedule",icon:"🗓",label:"Schedule",short:"Schedule"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : programOnly
-    ? [{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
+    ? [{id:"proghome",icon:"⚡",label:"Home",short:"Home"},{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
     : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"progression",icon:"🧬",label:"Progression Models",short:"Models"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
   const activeId = nav.some((n) => n.id === page) ? page
     : CHECKIN_GROUP.includes(page) ? "checkin"
@@ -2616,7 +2620,7 @@ function ClientProgram({ profile }) {
   useEffect(() => {
     supabase
       .from("programs")
-      .select("id,name,phase,phase_note,start_date")
+      .select("id,name,phase,phase_note,start_date,progression_model_key")
       .eq("client_id", trainingOwnerId(profile))
       .order("created_at", { ascending: false })
       .limit(1)
@@ -2644,11 +2648,6 @@ function ClientProgram({ profile }) {
       {profile.client_type === "program_only"
         ? <UpgradeCTA profile={profile} />
         : <CoachMessage profile={profile} />}
-      {profile.client_type === "program_only" && (
-        <CollapsibleSection title="Habits">
-          <ProgramHabits profile={profile} />
-        </CollapsibleSection>
-      )}
       <InvoiceCard profile={profile} />
       {program?.phase && (
         <Card style={{ borderLeft: "3px solid " + S.neon }}>
@@ -2657,6 +2656,7 @@ function ClientProgram({ profile }) {
             <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, color: S.neon }}>{program.phase}</span>
           </div>
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
+          {program.progression_model_key && <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>Progression model: {program.progression_model_key}</div>}
           {roadmap.length > 0 && (
             <div style={{ marginTop: 18 }}>
               <ProgramRoadmap phases={roadmap} currentPhase={program.phase} startDate={program.start_date} />
@@ -2677,7 +2677,6 @@ function ClientProgram({ profile }) {
           )}
         </Card>
       )}
-      <AssessmentBar profile={profile} />
       {/* Same day/exercise navigation coaching clients get on the Workouts
           tab — a swipeable pill selector, not a click-to-expand day table.
           Program-only clients used to see both: this read-only per-day
@@ -2726,10 +2725,11 @@ function GenericNutritionGuide({ profile }) {
         <div style={{ fontSize: 13.5, lineHeight: 1.8 }}>{guide.body}</div>
       </Card>
       {/* Logging what you actually ate isn't gated on having a personalized
-          plan — program-only clients get this fixed slot list same as
-          coaching clients with a plan, just with no calorie target to
-          compare against. */}
-      <TodaysMealsCard profile={profile} calorieTarget={null} />
+          plan. Program Only clients keep logging but get the step-down
+          tracker (fewer slots, calories+protein only) — no coach-set
+          calorie target to compare against, so full macro granularity
+          isn't useful the way it is for a coaching client's dialed-in plan. */}
+      <TodaysMealsCard profile={profile} calorieTarget={null} simple />
     </div>
   );
 }
@@ -2738,12 +2738,16 @@ function GenericNutritionGuide({ profile }) {
 // meals a coach's AI-generated plan happens to name/count — so logging still
 // works with no active plan, or for program-only clients who never get one.
 const MEAL_SLOTS = ["Breakfast", "Lunch", "Pre/Post-Workout", "Dinner", "Evening Snack"];
+// Program Only's step-down tracker: fewer slots, no coach-set targets to
+// track against, so collapsing to the three main meals is plenty.
+const MEAL_SLOTS_SIMPLE = ["Breakfast", "Lunch", "Dinner"];
 
 // Shared "Today's Actuals" + "Today's Meals" logging block — used by both the
-// coaching Nutrition page (with a real calorie target) and the program-only
-// generic guide (no target, just logging). Self-fetching so either caller
-// can drop it in without threading meal-log state through.
-function TodaysMealsCard({ profile, calorieTarget }) {
+// coaching Nutrition page (full macro logging against a real calorie target)
+// and the Program Only generic guide (`simple`: fewer slots, calories+protein
+// only, no target) — same mechanism, less depth. Self-fetching so either
+// caller can drop it in without threading meal-log state through.
+function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
   const [mealLogs, setMealLogs] = useState([]);
   const [todayCheckin, setTodayCheckin] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -2768,6 +2772,8 @@ function TodaysMealsCard({ profile, calorieTarget }) {
   const sumField = (k) => mealLogs.reduce((s, m) => s + (Number(m[k]) || 0), 0) + (Number(todayCheckin?.[k]) || 0);
   const hasAnyLogged = mealLogs.length > 0 || (todayCheckin && Object.values(todayCheckin).some((v) => v != null));
 
+  const slots = simple ? MEAL_SLOTS_SIMPLE : MEAL_SLOTS;
+
   return (
     <>
       <Card style={{ borderLeft: "3px solid " + S.accent2 }}>
@@ -2776,8 +2782,8 @@ function TodaysMealsCard({ profile, calorieTarget }) {
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
             <span><strong style={{ color: S.text }}>{sumField("calories")}</strong> <span style={{ color: S.muted }}>{calorieTarget != null ? `/ ${calorieTarget} kcal` : "kcal"}</span></span>
             <span><strong style={{ color: S.text }}>{sumField("protein_g")}</strong><span style={{ color: S.muted }}>g protein</span></span>
-            <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>
-            <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>
+            {!simple && <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>}
+            {!simple && <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: S.muted }}>Nothing logged yet today — log a meal below or fill in nutrition on your daily check-in.</div>
@@ -2786,12 +2792,12 @@ function TodaysMealsCard({ profile, calorieTarget }) {
       <Card>
         <CardTitle>Today's Meals</CardTitle>
         <div style={{ display: "flex", flexDirection: "column" }}>
-          {MEAL_SLOTS.map((label, i) => {
+          {slots.map((label, i) => {
             const existing = mealLogs.find((l) => l.meal === label) || null;
             return (
-              <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 4px", borderBottom: i < MEAL_SLOTS.length - 1 ? "1px solid " + S.border : "none" }}>
+              <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 4px", borderBottom: i < slots.length - 1 ? "1px solid " + S.border : "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{label}</span>
-                <MealLogEntry profile={profile} mealLabel={label} existing={existing}
+                <MealLogEntry profile={profile} mealLabel={label} existing={existing} simple={simple}
                   onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row])} />
               </div>
             );
@@ -2807,17 +2813,20 @@ function TodaysMealsCard({ profile, calorieTarget }) {
 // food-item search/database. Upserts on (client_id, date, meal), so
 // re-logging the same meal the same day updates it instead of double-
 // counting a second row when summed into the day's actuals.
-function MealLogEntry({ profile, mealLabel, existing, onSaved }) {
+function MealLogEntry({ profile, mealLabel, existing, onSaved, simple = false }) {
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState({ calories: existing?.calories ?? "", protein_g: existing?.protein_g ?? "", carbs_g: existing?.carbs_g ?? "", fats_g: existing?.fats_g ?? "" });
   const [saving, setSaving] = useState(false);
   const num = (v) => (v === "" || v == null ? null : Number(v));
+  const fields = simple ? [["calories", "Calories"], ["protein_g", "Protein (g)"]] : [["calories", "Calories"], ["protein_g", "Protein (g)"], ["carbs_g", "Carbs (g)"], ["fats_g", "Fats (g)"]];
 
   const save = async () => {
     setSaving(true);
     const { data } = await supabase.from("meal_logs").upsert({
       client_id: profile.id, date: todayStr(), meal: mealLabel,
-      calories: num(form.calories), protein_g: num(form.protein_g), carbs_g: num(form.carbs_g), fats_g: num(form.fats_g),
+      calories: num(form.calories), protein_g: num(form.protein_g),
+      carbs_g: simple ? (existing?.carbs_g ?? null) : num(form.carbs_g),
+      fats_g: simple ? (existing?.fats_g ?? null) : num(form.fats_g),
     }, { onConflict: "client_id,date,meal" }).select().maybeSingle();
     setSaving(false); setOpen(false);
     onSaved(data);
@@ -2832,7 +2841,7 @@ function MealLogEntry({ profile, mealLabel, existing, onSaved }) {
   }
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
-      {[["calories", "Calories"], ["protein_g", "Protein (g)"], ["carbs_g", "Carbs (g)"], ["fats_g", "Fats (g)"]].map(([k, label]) => (
+      {fields.map(([k, label]) => (
         <Fld key={k} label={label}>
           <Inp type="number" value={form[k]} onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.value }))} placeholder="0" />
         </Fld>
@@ -2950,7 +2959,7 @@ function Shell({ profile, isCoach, logout, page, setPage, children, wide }) {
   const isStarter = !isCoach && profile?.client_type === "starter";
   return (
     <div style={{ minHeight: "100vh", background: S.bg, color: S.text }}>
-      <TopBar profile={profile} isCoach={isCoach} onLogout={logout} />
+      <TopBar profile={profile} isCoach={isCoach} onLogout={logout} setPage={setPage} />
       <div style={{ display: "flex", alignItems: "flex-start" }}>
         <Sidebar isCoach={isCoach} programOnly={programOnly} isStarter={isStarter} page={page} setPage={setPage} />
         {/* `wide` (Coach Overview only) uses the full available width instead
@@ -3015,11 +3024,14 @@ function CheckInHome({ profile, setPage }) {
 function MoreMenu({ programOnly, setPage }) {
   const items = programOnly
     ? [
+        { id: "clientdashboard", icon: "📊", label: "Dashboard", sub: "The V12 philosophy and your roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Your fuel plan" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
+        { id: "habits", icon: "✅", label: "Habits & Assessment", sub: "Habit tracker and V12 scores" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ]
     : [
+        { id: "clientdashboard", icon: "📊", label: "Dashboard", sub: "The V12 philosophy" },
         { id: "v12roadmap", icon: "🗺", label: "My Roadmap", sub: "Your first 30 days" },
         { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
@@ -3050,7 +3062,7 @@ function MoreMenu({ programOnly, setPage }) {
 function ClientDashboard({ profile, logout }) {
   const programOnly = profile.client_type === "program_only";
   const isStarter = profile.client_type === "starter";
-  const [page, setPage] = useState(isStarter ? "starterhome" : programOnly ? "program" : "dashboard");
+  const [page, setPage] = useState(isStarter ? "starterhome" : programOnly ? "proghome" : "dashboard");
   const [welcomed, setWelcomed] = useState(!!profile.welcome_seen);
   // "today" (Today card's "View Full Workout") vs "next" (Upcoming card's
   // "Next Workout") — the Workouts page's default exercise selection needs
@@ -3121,7 +3133,8 @@ function ClientDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
       {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
-      {page === "v12roadmap" && !programOnly && !isStarter && <V12RoadmapPage profile={profile} />}
+      {page === "proghome" && programOnly && <ProgramOnlyHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
+      {page === "v12roadmap" && !isStarter && <V12RoadmapPage profile={profile} />}
       {page === "program" && !isStarter && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && !isStarter && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
@@ -3129,13 +3142,22 @@ function ClientDashboard({ profile, logout }) {
       {page === "progress" && !isStarter && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} setPage={setPage} />}
       {page === "nutrition" && !isStarter && <Nutrition profile={profile} />}
-      {page === "habits" && !programOnly && !isStarter && (
-        <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
+      {page === "habits" && !isStarter && (
+        programOnly ? (
+          <div>
+            <PageTitle title="Habits & Assessment" sub="Your daily habit tracker and V12 scores" />
+            <CollapsibleSection title="Habits"><ProgramHabits profile={profile} /></CollapsibleSection>
+            <AssessmentBar profile={profile} />
+          </div>
+        ) : (
+          <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
+        )
       )}
       {page === "resources" && <Resources profile={profile} />}
       {page === "schedule" && (
         <div><PageTitle title="Schedule" sub="Build your own workout pattern — not locked to a fixed weekly structure" /><WorkoutScheduler clientId={profile.id} trainOwnerId={trainingOwnerId(profile)}/></div>
       )}
+      {page === "clientdashboard" && !isStarter && <ClientDashboardPage profile={profile} setPage={setPage} />}
       {page === "more" && <MoreMenu programOnly={programOnly} setPage={setPage} />}
     </Shell>
   );
@@ -3159,7 +3181,7 @@ function CoachDashboard({ profile, logout }) {
   const openClient = (id, opts) => { setOpenClientId(id); setOpenSectionKey(opts?.section || null); setPage("clients"); };
 
   return (
-    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard" || page === "clients" || page === "crm" || page === "templates" || page === "assess"}>
+    <Shell profile={profile} isCoach={true} logout={logout} page={page} setPage={setPage} wide={page === "dashboard" || page === "clients" || page === "crm" || page === "templates" || page === "assess" || page === "progression"}>
       {page === "dashboard" && <CoachHome setPage={setPage} openClient={openClient} />}
       {page === "clients" && <ClientDetailPage initialClientId={openClientId} onInitialClientOpened={() => setOpenClientId(null)}
         initialSectionKey={openSectionKey} onInitialSectionOpened={() => setOpenSectionKey(null)} />}
@@ -3167,6 +3189,7 @@ function CoachDashboard({ profile, logout }) {
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}
+      {page === "progression" && <ProgressionModelsPanel />}
       {page === "library" && <ResourcesPanel />}
     </Shell>
   );

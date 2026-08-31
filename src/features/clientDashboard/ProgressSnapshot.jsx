@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
 import { Card, CardTitle, Btn } from "../../components/ui/index.js";
+import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 
 // Weight trend from the same daily_checkins history ClientHome already
 // loads (passed down as `checkins`) + the most recent progress photo
@@ -29,6 +30,7 @@ export function ProgressSnapshot({ profile, checkins, setPage }) {
   const latest = weights.length ? weights[weights.length - 1].weight : null;
   const weekAgo = weights.length ? weights.find((w) => w.date <= weights[weights.length - 1].date && new Date(weights[weights.length - 1].date) - new Date(w.date) >= 6 * 86400000) : null;
   const delta = latest != null && weekAgo ? +(latest - weekAgo.weight).toFixed(1) : null;
+  const bmi = profile.client_type === "coaching" ? computeBMI(profile.height_in, latest) : null;
 
   return (
     <Card>
@@ -43,6 +45,13 @@ export function ProgressSnapshot({ profile, checkins, setPage }) {
             </div>
           )}
         </div>
+        {bmi != null && (
+          <div>
+            <div style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>BMI (est.)</div>
+            <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 30, lineHeight: 1 }}>{bmi}</div>
+            <div style={{ fontSize: 11, marginTop: 4, color: S.muted }}>{bmiCategory(bmi)}</div>
+          </div>
+        )}
         {!loading && photo?.url && (
           <div>
             <div style={{ fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Photos</div>

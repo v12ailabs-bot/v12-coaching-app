@@ -223,6 +223,27 @@ never simply drop the pillar. Note the substitution reason in that exercise's "n
 ${lines.join("\n")}\n`;
 }
 
+// Named-progression-model toolkit (see progression_models table, edited by
+// the coach via the Progression Models panel — src/lib/progressionModels.js)
+// — a small set of candidate methodologies tagged to the client's current
+// top-level phase (Foundation/Accumulation/Performance). The AI picks
+// exactly one candidate per client (based on assessment scores/experience/
+// equipment/coaching context) in the skeleton stage; the detail stage then
+// applies that SAME choice, passed in as `chosenKey`, so both stages stay
+// consistent instead of picking independently.
+function buildProgressionCandidatesBlock(candidates) {
+  if (!candidates || !candidates.length) return "";
+  const list = candidates.map((m) => `- "${m.key}" (${m.label}): ${m.methodology}`).join("\n");
+  return `PROGRESSION MODEL — choose exactly ONE of the following named models that best fits THIS client, based on their V12 assessment scores, experience level, equipment, and coaching context. Apply its methodology throughout the week's structure and set/rep/loading guidance. State which one you chose in "progression_model_used" (the exact key string, e.g. "conjugate").
+${list}\n\n`;
+}
+
+function buildChosenModelBlock(candidates, chosenKey) {
+  const chosen = (candidates || []).find((m) => m.key === chosenKey);
+  if (!chosen) return "";
+  return `PROGRESSION MODEL FOR THIS WEEK (already chosen in the planning step — apply it throughout): "${chosen.key}" (${chosen.label}): ${chosen.methodology}\n\n`;
+}
+
 // Local-gym equipment allowlist + banned-equipment substitutions, enforced via
 // the prompt only (this codebase has no exercise catalog to hard-validate
 // against). Returns "" for clients who aren't flagged is_local, so the prompt
@@ -258,7 +279,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${
+${equipmentBlock(client)}${constraintBlock(client)}${buildProgressionCandidatesBlock(client.progression_candidates)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
@@ -275,6 +296,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
   "goal": "string",
   "days_per_week": number,
   "weeks": 12,
+  "progression_model_used": ${client.progression_candidates?.length ? '"the exact key of the model you chose from PROGRESSION MODEL above"' : "null"},
   "weekly_split": [
     {
       "day": "Monday | Tuesday | Wednesday | Thursday | Friday | Saturday | Sunday (must be exactly one of these 7)",
@@ -320,7 +342,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${
+${equipmentBlock(client)}${constraintBlock(client)}${buildChosenModelBlock(client.progression_candidates, skeleton.progression_model_used)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
@@ -355,6 +377,7 @@ Requirements for the output:
 - Each exercise "exercise_type" must be one of: "Compound", "Accessory", "Circuit", or "Warmup" — the movement's role for strength-progress tracking (heavy multi-joint lift = Compound; isolation/support = Accessory; conditioning/metcon/timed = Circuit; warm-up/mobility = Warmup). This is independent of "section" — e.g. a "Secondary Compound Lift" is still exercise_type "Compound".
 - Within a day, order exercises by PHASE ORDER (Warm-Up first, Cooldown last).
 - Each exercise "notes" must include loading guidance (e.g. "@80% 1RM", "RPE 8", tempo, or work/rest).
+- RIR STANDARD: every exercise defaults to 2-3 RIR (Reps in Reserve) — across ALL phases and progression models — EXCEPT exercises in the "Finisher" section, which are programmed to failure (0 RIR) instead. State the RIR explicitly in that exercise's "notes" (e.g. "3x8 @ 2 RIR", or "to failure" for a Finisher).
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
 - Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
@@ -446,6 +469,7 @@ export async function generateTrainingPlan(client) {
     goal: skeleton.goal,
     days_per_week: skeleton.days_per_week,
     weeks: skeleton.weeks || 12,
+    progression_model_used: skeleton.progression_model_used || null,
     weekly_split,
   };
 }

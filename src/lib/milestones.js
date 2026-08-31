@@ -56,3 +56,38 @@ export function milestoneProgress(goal, currentValue) {
 export async function markMilestoneAchieved(goalId) {
   await supabase.from("client_goals").update({ status: "achieved", updated_at: new Date().toISOString() }).eq("id", goalId);
 }
+
+// Auto-detected the moment a live-computed value first clears the target —
+// independent of the coach clicking "Mark Achieved" (which only archives the
+// row's status). This is what lets a hit surface on its own, on the coach's
+// Recent Activity feed and as a popup on the client's page, instead of
+// waiting for the coach to notice and confirm it manually. No-ops past the
+// first hit (achieved_at is set once, never overwritten).
+export async function recordAchievement(goalId) {
+  await supabase.from("client_goals").update({ achieved_at: new Date().toISOString() }).eq("id", goalId).is("achieved_at", null);
+}
+
+// Milestones this client has hit that the coach hasn't seen a popup for yet —
+// drives the "you opened this client's page" notification.
+export async function fetchUnacknowledgedAchievements(clientId) {
+  const { data } = await supabase.from("client_goals").select("*")
+    .eq("client_id", clientId).not("achieved_at", "is", null).is("coach_acknowledged_at", null)
+    .order("achieved_at", { ascending: false });
+  return data || [];
+}
+
+export async function acknowledgeAchievements(goalIds) {
+  if (!goalIds.length) return;
+  await supabase.from("client_goals").update({ coach_acknowledged_at: new Date().toISOString() }).in("id", goalIds);
+}
+
+// Coach-wide feed of recent hits across all (coaching) clients, for
+// RecentActivityFeed — same WINDOW_HOURS cutoff as the other event types
+// merged into that feed, not gated on acknowledgment (a hit stays in the
+// 48h feed whether or not the coach has already seen the popup for it).
+export async function fetchRecentMilestoneAchievements(clientIds, cutoffIso) {
+  if (!clientIds.length) return [];
+  const { data } = await supabase.from("client_goals").select("client_id,exercise_name,category,target_value,unit,achieved_at")
+    .in("client_id", clientIds).not("achieved_at", "is", null).gte("achieved_at", cutoffIso);
+  return data || [];
+}

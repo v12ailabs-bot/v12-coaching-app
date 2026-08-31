@@ -15,7 +15,7 @@ export const INTAKE_FIELDS = [
   { key: "email", label: "Email", type: "email" },
   { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
   { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: [
-    "Program Only — $47/month, includes app access",
+    "V12 Program — $47/month, includes app access",
     "Standard Coaching — 12 Weeks: $750 in full or $250/month x3 ($750 total)",
     "1:1 Elite Performance — 12 Weeks: $1500 in full or $600/month x3 ($1800 total)",
     "Local — Group PT Training (max 3 people): $300/month each",

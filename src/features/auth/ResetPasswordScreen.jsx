@@ -34,12 +34,12 @@ export function ResetPasswordScreen({ onDone }) {
         <div style={{fontSize:11,letterSpacing:3,color:S.muted,textTransform:"uppercase",marginBottom:36,marginTop:2}}>Set a new password</div>
         <div style={{marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>New Password</div>
-          <input type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
+          <input type="password" name="new-password" autoComplete="new-password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••"
             style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}/>
         </div>
         <div style={{marginBottom:16}}>
           <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:6}}>Confirm Password</div>
-          <input type="password" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="••••••••"
+          <input type="password" name="confirm-new-password" autoComplete="new-password" value={confirm} onChange={e=>setConfirm(e.target.value)} placeholder="••••••••"
             onKeyDown={e=>e.key==="Enter"&&submit()}
             style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}/>
         </div>

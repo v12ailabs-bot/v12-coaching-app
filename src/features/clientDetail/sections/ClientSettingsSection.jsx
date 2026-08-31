@@ -8,14 +8,14 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
   const body = (
     <>
       <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
-        Coaching clients get the full portal (check-ins, habits, progress, coach notes). Program-only clients get a self-guided portal: their plan, nutrition, workout logging, and the resource hub — no check-in prompts.
+        Coaching clients get the full portal (check-ins, habits, progress, coach notes). V12 Program clients get a self-guided portal: their plan, nutrition, workout logging, and the resource hub — no check-in prompts.
       </div>
       <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
         <Fld label="Client Type">
           <select value={settings.client_type} onChange={e=>setSettings(p=>({...p,client_type:e.target.value}))}
             style={{width:"100%",background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none"}}>
             <option value="coaching">Coaching (full portal)</option>
-            <option value="program_only">Program only (no check-ins)</option>
+            <option value="program_only">V12 Program (no check-ins)</option>
           </select>
         </Fld>
         <Fld label="Notion Dashboard URL">
@@ -35,6 +35,10 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
         <Fld label="Training Location">
           <RG options={["Remote/Other Gym","V12 Local Gym"]} value={settings.is_local?"V12 Local Gym":"Remote/Other Gym"} onChange={v=>setSettings(p=>({...p,is_local:v==="V12 Local Gym"}))}/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>"V12 Local Gym" restricts AI program generation to the gym's actual equipment — never medicine balls, battle ropes, sleds, or BikeErgs.</div>
+        </Fld>
+        <Fld label="Height (inches)">
+          <Inp type="number" value={settings.height_in} onChange={e=>setSettings(p=>({...p,height_in:e.target.value}))} placeholder="e.g. 70"/>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Used to estimate BMI alongside their logged weight — an estimate only.</div>
         </Fld>
       </div>
       <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>

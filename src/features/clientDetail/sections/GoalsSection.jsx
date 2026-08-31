@@ -4,6 +4,7 @@ import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, RG, Btn, MetricCard, StatusBadge, Alert, EmptyState } from "../../../components/ui/index.js";
 import { computeGoalScore } from "../../../lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../../../lib/scoring/nutritionAdherence.js";
+import { computeBMI, bmiCategory } from "../../../lib/bmi.js";
 
 const CLASSIFICATION_TONE = { "On Track": "green", "Slightly Behind": "amber", "Off Track": "red", "Gathering Data": "neutral" };
 
@@ -40,6 +41,7 @@ export function GoalsSection({ client }) {
   const [loading, setLoading] = useState(true);
   const [goal, setGoal] = useState(null);
   const [scoreData, setScoreData] = useState(null);
+  const [latestWeight, setLatestWeight] = useState(null);
   const [insight, setInsight] = useState(null);
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState(null);
@@ -74,6 +76,7 @@ export function GoalsSection({ client }) {
       (daily || []).forEach(d => { if (d.weight != null) byDate[d.date] = d.weight; });
       (weekly || []).forEach(w => { if (w.bodyweight != null && byDate[w.date] == null) byDate[w.date] = w.bodyweight; });
       const series = Object.entries(byDate).map(([date, value]) => ({ date, value })).sort((a, b) => a.date < b.date ? -1 : 1);
+      setLatestWeight(series.length ? series[series.length - 1].value : null);
 
       const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30).score;
 
@@ -181,6 +184,7 @@ export function GoalsSection({ client }) {
 
   const s = scoreData || {};
   const etaText = s.etaDate ? s.etaDate.toISOString?.().slice(0, 10) || String(s.etaDate).slice(0, 10) : "—";
+  const bmi = computeBMI(client.height_in, latestWeight ?? goal.baseline_value);
 
   return (
     <>
@@ -209,12 +213,19 @@ export function GoalsSection({ client }) {
             <Alert variant={editMsg?.ok ? "success" : "error"}>{editMsg?.text}</Alert>
           </>
         ) : (
-          <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
-            <MetricCard label="Goal Score" value={s.overallScore ?? "—"} unit={s.overallScore != null ? "/100" : ""} />
-            <MetricCard label="Est. Completion" value={etaText} unit="" />
-            <MetricCard label="Nutrition" value={s.components?.nutrition ?? "—"} unit={s.components?.nutrition != null ? "%" : ""} />
-            <MetricCard label="Training" value={s.components?.training ?? "—"} unit={s.components?.training != null ? "%" : ""} />
-          </div>
+          <>
+            <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>
+              <MetricCard label="Goal Score" value={s.overallScore ?? "—"} unit={s.overallScore != null ? "/100" : ""} />
+              <MetricCard label="Est. Completion" value={etaText} unit="" />
+              <MetricCard label="Nutrition" value={s.components?.nutrition ?? "—"} unit={s.components?.nutrition != null ? "%" : ""} />
+              <MetricCard label="Training" value={s.components?.training ?? "—"} unit={s.components?.training != null ? "%" : ""} />
+            </div>
+            {client.client_type === "coaching" && (
+              <div style={{ marginTop: 16 }}>
+                <MetricCard label="BMI (estimate)" value={bmi ?? "—"} unit={bmi != null ? bmiCategory(bmi) : client.height_in ? "" : "Add height in Settings"} />
+              </div>
+            )}
+          </>
         )}
       </Card>
 

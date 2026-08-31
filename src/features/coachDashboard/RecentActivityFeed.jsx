@@ -3,6 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
 import { Card } from "../../components/ui/index.js";
 import { SectionTitle } from "./SectionTitle.jsx";
+import { fetchRecentMilestoneAchievements } from "../../lib/milestones.js";
 
 const WINDOW_HOURS = 48;
 const SCROLL_AFTER = 8;
@@ -32,11 +33,12 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
     if (!clientIds || clientIds.length === 0) { setEvents([]); setLoading(false); return; }
     (async () => {
       const cutoff = new Date(Date.now() - WINDOW_HOURS * 3600000).toISOString();
-      const [{ data: dc }, { data: wc }, { data: wl }, { data: pp }] = await Promise.all([
+      const [{ data: dc }, { data: wc }, { data: wl }, { data: pp }, milestones] = await Promise.all([
         supabase.from("daily_checkins").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
         supabase.from("weekly_checkins").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
         supabase.from("workout_logs").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
         supabase.from("progress_photos").select("client_id,created_at").in("client_id", clientIds).gte("created_at", cutoff).order("created_at", { ascending: false }),
+        fetchRecentMilestoneAchievements(clientIds, cutoff),
       ]);
       const seen = new Set();
       const merged = [
@@ -44,6 +46,7 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
         ...(wc || []).map((r) => ({ ...r, text: "completed a weekly check-in" })),
         ...(wl || []).map((r) => ({ ...r, text: "logged a workout" })),
         ...(pp || []).map((r) => ({ ...r, text: "uploaded progress photos" })),
+        ...milestones.map((m) => ({ client_id: m.client_id, created_at: m.achieved_at, text: `hit a milestone: ${m.exercise_name || "target"} (${m.target_value}${m.unit})` })),
       ].filter((r) => {
         const key = `${r.client_id}|${r.text}|${r.created_at}`;
         if (seen.has(key)) return false;

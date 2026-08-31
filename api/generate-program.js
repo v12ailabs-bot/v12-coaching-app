@@ -143,12 +143,24 @@ export default async function handler(req, res) {
     //    partner's program never destroys the other partner's history.
     let aiIds = [];
     let lockedExercises = [];
+    // Carry the client's current nested phase (and coach-set phase note/start
+    // date) forward from their most recent program — without this, every
+    // regenerate silently resets phase tracking to blank, which defeats the
+    // point of phase-aware generation. Also drives which progression models
+    // are candidates for this generation (see progression_models table,
+    // coach-editable via the Progression Models panel).
+    let carriedPhase = { top_phase: "foundation", sub_phase: "foundation", phase: null, phase_note: null, start_date: null };
+    let progressionCandidates = [];
     if (!nutritionOnly) {
-      const { data: aiExercises } = await supabaseAdmin
-        .from("exercises")
-        .select("id, name, day_of_week, sets, reps")
-        .eq("client_id", trainingOwnerId)
-        .eq("source", "ai");
+      const [{ data: aiExercises }, { data: previousProgram }] = await Promise.all([
+        supabaseAdmin.from("exercises").select("id, name, day_of_week, sets, reps").eq("client_id", trainingOwnerId).eq("source", "ai"),
+        supabaseAdmin.from("programs").select("top_phase, sub_phase, phase, phase_note, start_date")
+          .eq("client_id", trainingOwnerId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      ]);
+      if (previousProgram) carriedPhase = { ...carriedPhase, ...previousProgram };
+      const { data: models } = await supabaseAdmin.from("progression_models").select("key, label, methodology")
+        .eq("top_phase", carriedPhase.top_phase).eq("is_active", true);
+      progressionCandidates = models || [];
       aiIds = (aiExercises || []).map((e) => e.id);
       if (aiIds.length) {
         const { data: logged } = await supabaseAdmin.from("workout_logs").select("exercise_id").in("exercise_id", aiIds);
@@ -156,7 +168,7 @@ export default async function handler(req, res) {
         lockedExercises = (aiExercises || []).filter((e) => loggedIds.has(e.id));
       }
     }
-    mark("Fetch exercise database (locked-exercise lookup)");
+    mark("Fetch exercise database (locked-exercise lookup + phase/progression-model lookup)");
     const lockedExercisesText = lockedExercises.length
       ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
       : null;
@@ -167,7 +179,7 @@ export default async function handler(req, res) {
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText }),
+          generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
           generateNutritionPlan(assessed),
         ]);
     mark("Generate training + nutrition plans (Anthropic, combined)");
@@ -201,6 +213,12 @@ export default async function handler(req, res) {
             `AI-generated V12 program for ${client.name || client_email}` +
             (template ? ` · template: ${template.name}` : ""),
           weeks: training.weeks || 12,
+          top_phase: carriedPhase.top_phase,
+          sub_phase: carriedPhase.sub_phase,
+          phase: carriedPhase.phase,
+          phase_note: carriedPhase.phase_note,
+          start_date: carriedPhase.start_date,
+          progression_model_key: training.progression_model_used || null,
         })
         .select()
         .single();
@@ -315,6 +333,7 @@ export default async function handler(req, res) {
       template: template?.name ?? null,
       exercises_created: exercises.length,
       exercises_preserved: preservedIds.length,
+      progression_model_used: training?.progression_model_used ?? null,
       meals_created: (nutrition.meals || []).length,
       calories: nutrition.daily_calories ?? null,
     });

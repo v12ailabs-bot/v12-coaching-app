@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, RG, Btn, Alert, EmptyState } from "../../../components/ui/index.js";
-import { MILESTONE_CATEGORY_LABELS, fetchMilestones, currentExerciseValue, milestoneProgress, markMilestoneAchieved } from "../../../lib/milestones.js";
+import { MILESTONE_CATEGORY_LABELS, fetchMilestones, currentExerciseValue, milestoneProgress, markMilestoneAchieved, recordAchievement } from "../../../lib/milestones.js";
 
 const CATEGORY_OPTIONS = Object.keys(MILESTONE_CATEGORY_LABELS);
 const blankForm = () => ({ category: "strength", exercise_name: "", direction: "increase", unit: "lb", baseline_value: "", target_value: "", target_date: "", priority: "secondary" });
@@ -17,6 +17,12 @@ function MilestoneRow({ goal, onAchieved, onNextTarget }) {
       setCurrent(null);
     }
   }, [goal.id]);
+
+  useEffect(() => {
+    if (current == null) return;
+    const { achieved } = milestoneProgress(goal, current);
+    if (achieved && !goal.achieved_at) recordAchievement(goal.id);
+  }, [current, goal.id, goal.achieved_at]);
 
   if (current === undefined) return null;
   const { progressPct, achieved } = milestoneProgress(goal, current);
