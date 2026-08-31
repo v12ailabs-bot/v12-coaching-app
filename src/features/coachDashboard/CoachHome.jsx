@@ -391,25 +391,12 @@ export function CoachHome({ setPage, openClient }) {
   const revenueTrendPct = lastMonthRevenue > 0 ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
   const leadsTrendPct = lastMonthLeads > 0 ? Math.round(((newLeads - lastMonthLeads) / lastMonthLeads) * 100) : null;
 
-  // Per-client trend line for the mobile "Client Overview" avatar row — same
-  // trailingCompletionPct formula the aggregate checkinSeries above already
-  // uses, just run once per client instead of averaged across all of them.
-  const sparklineByClient = {};
-  coachedList.forEach((c) => {
-    const series = [];
-    for (let i = WEEKLY_BUCKETS - 1; i >= 0; i--) {
-      const end = new Date(); end.setDate(end.getDate() - i * 7);
-      series.push({ label: localDateStr(end), value: Math.round(trailingCompletionPct(c.id, end)) });
-    }
-    sparklineByClient[c.id] = series;
-  });
-
   if (isMobile) {
     return (
       <CoachHomeMobile
-        totalClients={coachedList.length} activeClients={coachedList.length - inactiveCount}
+        totalClients={coachedList.length} totalClientsTrendPct={totalClientsTrendPct} activeClients={coachedList.length - inactiveCount}
         atRiskCount={needs.length} offlineCount={inactiveCount}
-        rows={rows} sparklineByClient={sparklineByClient}
+        rows={rows}
         checkinSeries={checkinSeries} checkinDeltaPct={deltaOf(checkinSeries)}
         progressSeries={progressSeries} progressDeltaPct={deltaOf(progressSeries)}
         checkinCounts={checkinCounts} totalCoached={coachedList.length} totalCheckinsThisWeek={totalCheckinsThisWeek}

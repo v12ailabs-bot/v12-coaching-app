@@ -1955,7 +1955,6 @@ function MetricsDashboard() {
   // How many days of the current week have actually happened (Monday=1 .. Sunday=7),
   // so a week that just started isn't judged against the full 7-day target.
   const daysElapsedThisWeek = Math.floor((new Date(dateStr) - new Date(currentWeekStart)) / 86400000) + 1;
-  const daysElapsedFor = (wk) => (wk === currentWeekStart ? daysElapsedThisWeek : 7);
   // Oldest -> newest for a left-to-right trend chart, matching the Progress page.
   const trendData = [...weeks].reverse().map((wk) => {
     const list = byWeek[wk];
@@ -2014,34 +2013,31 @@ function MetricsDashboard() {
       </Card>
       <Card>
         <CardTitle>Weekly Rollup</CardTitle>
-        <div style={{ fontSize: 11, color: S.muted, marginBottom: 16 }}>Ahead / On Track / Behind / Red Flag, based on pace toward the weekly target for each metric.</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {weeks.map((wk) => {
-            const list = byWeek[wk];
-            return (
-              <div key={wk} style={{ border: "1px solid " + S.border, borderRadius: 10, padding: "14px 16px", background: wk === currentWeekStart ? "rgba(255,106,0,.04)" : S.surface }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: S.text, marginBottom: 10 }}>
-                  Week of {wk}
-                  {wk === currentWeekStart && <span style={{ fontSize: 10, fontWeight: 600, color: S.accent, marginLeft: 8 }}>IN PROGRESS · DAY {daysElapsedThisWeek}/7</span>}
-                </div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 14 }}>
-                  {METRIC_KEYS.map((k) => {
-                    const total = sum(list, k);
-                    return (
-                      <div key={k} style={{ borderLeft: "2px solid " + METRIC_COLOR[k], paddingLeft: 10 }}>
-                        <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 3 }}>{METRIC_LABEL[k]}</div>
-                        <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: S.text, whiteSpace: "nowrap" }}>
-                          {k === "revenue_today" ? `$${total.toFixed(0)}` : total}
-                        </div>
-                        <div style={{ marginTop: 3 }}>{badge(weekStatus(total, WEEKLY_TARGETS[k], daysElapsedFor(wk)))}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            );
-          })}
-        </div>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 16 }}>Ahead / On Track / Behind / Red Flag, based on pace toward the weekly target for each metric. Once a week ends, its card disappears from here — the full history stays in Trends below.</div>
+        {byWeek[currentWeekStart] ? (
+          <div style={{ border: "1px solid " + S.border, borderRadius: 10, padding: "14px 16px", background: "rgba(255,106,0,.04)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: S.text, marginBottom: 10 }}>
+              Week of {currentWeekStart}
+              <span style={{ fontSize: 10, fontWeight: 600, color: S.accent, marginLeft: 8 }}>IN PROGRESS · DAY {daysElapsedThisWeek}/7</span>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(120px,1fr))", gap: 14 }}>
+              {METRIC_KEYS.map((k) => {
+                const total = sum(byWeek[currentWeekStart], k);
+                return (
+                  <div key={k} style={{ borderLeft: "2px solid " + METRIC_COLOR[k], paddingLeft: 10 }}>
+                    <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 3 }}>{METRIC_LABEL[k]}</div>
+                    <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: S.text, whiteSpace: "nowrap" }}>
+                      {k === "revenue_today" ? `$${total.toFixed(0)}` : total}
+                    </div>
+                    <div style={{ marginTop: 3 }}>{badge(weekStatus(total, WEEKLY_TARGETS[k], daysElapsedThisWeek))}</div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div style={{ color: S.muted, fontSize: 13 }}>No entries yet this week.</div>
+        )}
       </Card>
       <CollapsibleSection title="Trends" summary={`last ${trendData.length} weeks`}>
         <div className="g2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
