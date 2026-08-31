@@ -55,6 +55,13 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
   const [program, setProgram] = useState(null);
   const [totalWeeks, setTotalWeeks] = useState(null);
   const [photo, setPhoto] = useState(null);
+  const [weeklyWeights, setWeeklyWeights] = useState([]);
+  // Read fresh rather than trusting the `profile` prop for this one field —
+  // `profile` here can be a stale snapshot from whenever the top-level app
+  // state last loaded it, so a height saved moments ago on the Progress
+  // page wouldn't show up here until a full reload, and the two screens'
+  // BMI would disagree.
+  const [heightIn, setHeightIn] = useState(profile.height_in ?? null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -90,14 +97,33 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
     })();
   }, [profile.id]);
 
+  useEffect(() => {
+    supabase.from("profiles").select("height_in").eq("id", profile.id).maybeSingle()
+      .then(({ data }) => setHeightIn(data?.height_in ?? null));
+    // Weekly check-ins can carry a more recent bodyweight than the daily
+    // log — without merging both in, "latest weight" (and the BMI/delta
+    // built from it) could disagree with the Progress page, which already
+    // merges the two sources.
+    supabase.from("weekly_checkins").select("date,bodyweight").eq("client_id", profile.id).order("date")
+      .then(({ data }) => setWeeklyWeights((data || []).filter((w) => w.bodyweight != null)));
+  }, [profile.id]);
+
   if (loading) return null;
 
   const hasPhase = !!program?.phase;
-  const weights = checkins.filter((c) => c.weight != null);
+  // Merge daily + weekly weight into one series by date (daily wins on a
+  // tie), same rule ProgressPage.jsx's weightSeries already uses — one
+  // source of truth for "latest weight" between Home and Progress.
+  const weights = (() => {
+    const byDate = {};
+    checkins.forEach((c) => { if (c.weight != null) byDate[c.date] = c.weight; });
+    weeklyWeights.forEach((w) => { if (byDate[w.date] == null) byDate[w.date] = w.bodyweight; });
+    return Object.entries(byDate).map(([date, weight]) => ({ date, weight })).sort((a, b) => (a.date < b.date ? -1 : 1));
+  })();
   const latestWeight = weights.length ? weights[weights.length - 1].weight : null;
   const weekAgo = weights.length ? weights.find((w) => w.date <= weights[weights.length - 1].date && new Date(weights[weights.length - 1].date) - new Date(w.date) >= 6 * 86400000) : null;
   const delta = latestWeight != null && weekAgo ? +(latestWeight - weekAgo.weight).toFixed(1) : null;
-  const bmi = profile.client_type === "coaching" ? computeBMI(profile.height_in, latestWeight) : null;
+  const bmi = profile.client_type === "coaching" ? computeBMI(heightIn, latestWeight) : null;
   const hasSnapshot = latestWeight != null || photo?.url;
 
   if (!hasPhase && !hasSnapshot) return null;

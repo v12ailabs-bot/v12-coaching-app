@@ -1,20 +1,18 @@
 import { S, RADIUS, avatarFrom, useIsMobile } from "../../theme.jsx";
 import { StatusBadge } from "../../components/ui/index.js";
-import { V12_CALENDLY_DASHBOARD_URL } from "../../lib/constants.js";
 
 const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋" };
 
-// Mobile-only action row: Message / Call / Weekly Review / More. "Call"
-// opens a WhatsApp chat with the number on file (new profiles.phone field,
-// set via Client Settings) instead of a plain tel: link — WhatsApp gives a
-// call AND a message thread from the same tap, which is what's actually
-// wanted here. Degrades to a clear message when no number is on file rather
-// than a dead link. "Weekly Review" sends the COACH to their own logged-in
-// Calendly scheduled-events dashboard (who booked, for when) — the client
-// gets the public booking link instead (see WeeklyCheckin in App.jsx and
-// ClientQuickActionsRail's "Schedule Call") since sending the coach to the
-// public booking page would just let them book themselves a slot.
-function MobileActionRow({ client, onSendMessage, onSettingsClick }) {
+// Mobile-only action row: Message / Call / Progress / More. "Call" opens a
+// WhatsApp chat with the number on file (new profiles.phone field, set via
+// Client Settings) instead of a plain tel: link — WhatsApp gives a call AND
+// a message thread from the same tap. Degrades to a clear message when no
+// number is on file rather than a dead link. "Progress" reopens the same
+// Progress modal the desktop circle buttons use (onOpenProgress) — dropped
+// in an earlier pass in favor of a Weekly Review shortcut, restored since
+// Progress is the more-used action and Weekly Review already lives in
+// ClientQuickActionsRail's "Schedule Call".
+function MobileActionRow({ client, onSendMessage, onSettingsClick, onOpenProgress }) {
   const openWhatsApp = () => {
     if (!client.phone) { window.alert("No phone number on file — add one in Settings."); return; }
     window.open(`https://wa.me/${client.phone.replace(/[^\d]/g, "")}`, "_blank", "noopener");
@@ -22,7 +20,7 @@ function MobileActionRow({ client, onSendMessage, onSettingsClick }) {
   const actions = [
     { key: "message", icon: "💬", label: "Message", onClick: onSendMessage },
     { key: "call", icon: "📱", label: "WhatsApp", onClick: openWhatsApp },
-    { key: "review", icon: "🗓", label: "Weekly Review", onClick: () => window.open(V12_CALENDLY_DASHBOARD_URL, "_blank", "noopener") },
+    { key: "progress", icon: "📈", label: "Progress", onClick: onOpenProgress },
     { key: "more", icon: "⋯", label: "More", onClick: onSettingsClick },
   ];
   return (
@@ -102,7 +100,7 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
           </div>
         </div>}
       </div>
-      {isMobile && <MobileActionRow client={client} onSendMessage={onSendMessage} onSettingsClick={onSettingsClick} />}
+      {isMobile && <MobileActionRow client={client} onSendMessage={onSendMessage} onSettingsClick={onSettingsClick} onOpenProgress={onOpenProgress} />}
       {/* Sibling, not nested, so the mobile sticky rule (.client-tabs-sticky
           detaches this to the top of the viewport on scroll) never has to
           fight the identity row's rounded-card box above it. Matching side
