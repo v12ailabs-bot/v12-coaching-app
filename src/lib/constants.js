@@ -13,6 +13,10 @@ export const COACH_EMAIL = "coach@v12system.com";
 // too would just let them book a slot with themselves.
 export const V12_CALENDLY_URL = "https://calendly.com/v12fitness1";
 export const V12_CALENDLY_DASHBOARD_URL = "https://calendly.com/app/scheduled_events";
+// Coach's own WhatsApp number, for the client-facing "Message Coach" button
+// (ReminderCircles.jsx) — opens a WhatsApp chat directly, same wa.me pattern
+// the coach's own "Call"/WhatsApp action on a client uses in reverse.
+export const COACH_WHATSAPP_URL = "https://wa.me/17672259844";
 
 // Field list mirrors the Notion Applications Database (api/_lib/notion.js PROP
 // map) plus the new required height field. Config-driven so adding/removing a

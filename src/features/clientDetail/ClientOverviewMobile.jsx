@@ -43,7 +43,7 @@ export function ClientOverviewMobile({ client, trainOwnerId, progTick, loadEx, a
     Promise.all([
       supabase.from("programs").select("name,phase").eq("client_id", client.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("daily_checkins").select("date,weight,workout,diet").eq("client_id", client.id).gte("date", cut30).order("date"),
-      supabase.from("weekly_checkins").select("date,sleep_quality").eq("client_id", client.id).gte("date", cut56).order("date"),
+      supabase.from("weekly_checkins").select("date,sleep_quality,bodyweight").eq("client_id", client.id).gte("date", cut56).order("date"),
       supabase.from("client_goals").select("*").eq("client_id", client.id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("habits").select("*").eq("client_id", client.id).eq("active", true).order("order_index"),
       supabase.from("habit_logs").select("habit_id,date,done").eq("client_id", client.id).gte("date", cut30),
@@ -66,7 +66,17 @@ export function ClientOverviewMobile({ client, trainOwnerId, progTick, loadEx, a
   if (loading) return <div className="spinner" style={{ margin: "40px auto" }} />;
 
   const adh = adherenceFrom(daily, 30);
-  const weights = daily.filter((d) => d.weight != null);
+  // Merge daily + weekly weight into one series by date (daily wins on a
+  // tie) — same rule ClientHero.jsx/ProgressPage.jsx use. Daily-only here
+  // meant a client whose most recent weight came from a weekly check-in
+  // showed a stale Weight Change/Progress % that disagreed with every other
+  // view of the same client.
+  const weights = (() => {
+    const byDate = {};
+    daily.forEach((d) => { if (d.weight != null) byDate[d.date] = d.weight; });
+    weekly.forEach((w) => { if (w.bodyweight != null && byDate[w.date] == null) byDate[w.date] = w.bodyweight; });
+    return Object.entries(byDate).map(([date, weight]) => ({ date, weight })).sort((a, b) => (a.date < b.date ? -1 : 1));
+  })();
   const weightChange = weights.length >= 2 ? weights[weights.length - 1].weight - weights[0].weight : null;
   const goalScore = goal ? computeGoalScore(goal, weights.map((w) => ({ date: w.date, value: w.weight })), {}) : null;
   const checkinRate = Math.round((new Set(daily.map((d) => d.date)).size / 30) * 100);

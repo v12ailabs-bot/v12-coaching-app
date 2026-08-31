@@ -23,7 +23,7 @@ import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { ProgressionModelsPanel } from "./features/coachDashboard/ProgressionModelsPanel.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL, COACH_WHATSAPP_URL } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -588,10 +588,16 @@ function TopBar({ profile, isCoach, onLogout, setPage }) {
             fix; a properly sized icon button is. Opens the in-app Dashboard
             page now, not an external Notion link. */}
         {!isCoach && profile?.client_type==="program_only" && (
-          <button onClick={()=>setPage("clientdashboard")} title="Open your dashboard"
-            style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,cursor:"pointer"}}>
-            📊
-          </button>
+          <>
+            <button onClick={()=>setPage("clientdashboard")} title="Open your dashboard"
+              style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,cursor:"pointer"}}>
+              📊
+            </button>
+            <a href={COACH_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" title="Message your coach on WhatsApp"
+              style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(255,106,0,.16)",border:"2px solid "+S.accent,color:S.accent,fontSize:14,textDecoration:"none"}}>
+              💬
+            </a>
+          </>
         )}
         <span style={{fontSize:13,color:S.muted,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}>{profile?.name||profile?.email}</span>
         <div style={{width:32,height:32,borderRadius:"50%",background:isCoach?S.accent:S.accent2,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>
