@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, R
 
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard, V12Logo } from "./components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard, V12Logo, LaunchScreen } from "./components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
@@ -486,18 +486,7 @@ export default function App() {
     return (
       <>
         <GlobalStyles />
-        <div
-          style={{
-            minHeight: "100vh",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: S.bg,
-            color: S.text,
-          }}
-        >
-          <div className="spinner" />
-        </div>
+        <LaunchScreen />
       </>
     );
 

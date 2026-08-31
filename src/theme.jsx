@@ -142,6 +142,14 @@ export function GlobalStyles() {
       .day-nav-arrow:active { transform: scale(0.9); }
       .day-label-swap { animation: dayLabelIn .25s ease; }
       @keyframes dayLabelIn { from { opacity: 0; transform: translateX(6px); } to { opacity: 1; transform: translateX(0); } }
+      /* Branded launch screen (see components/ui/LaunchScreen.jsx) -- entrance
+         is ~0.5s, then a slow, subtle glow pulse for as long as the screen
+         stays mounted (however long real auth/session resolution takes). */
+      @keyframes v12LogoIn { from { opacity: 0; transform: scale(.82); } to { opacity: 1; transform: scale(1); } }
+      @keyframes v12Glow { 0%, 100% { filter: drop-shadow(0 0 14px rgba(255,106,0,.35)); } 50% { filter: drop-shadow(0 0 26px rgba(255,106,0,.55)); } }
+      @keyframes v12TitleIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+      .launch-logo { animation: v12LogoIn .5s cubic-bezier(.2,.8,.2,1) both, v12Glow 2.6s ease-in-out .5s infinite; }
+      .launch-title { animation: v12TitleIn .5s ease .5s both; }
       @media (max-width: 720px) {
         /* Collapse the left sidebar into a fixed bottom tab bar. These need
            !important: the <nav> and its items carry inline styles, which

@@ -18,3 +18,4 @@ export { EmptyState } from "./EmptyState.jsx";
 export { Alert } from "./Alert.jsx";
 export { SectionHeader } from "./SectionHeader.jsx";
 export { V12Logo } from "./V12Logo.jsx";
+export { LaunchScreen } from "./LaunchScreen.jsx";
