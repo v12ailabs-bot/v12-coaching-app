@@ -215,7 +215,7 @@ export function LoginScreen() {
                 Already Accepted? Create Your Account →
               </button>
               <p style={{ marginTop: 16, fontSize: 11, color: S.muted, textAlign: "center", lineHeight: 1.7 }}>
-                Works with any email — Gmail, Yahoo, Hotmail, etc.<br />Coach login: coach@v12system.com
+                Works with any email — Gmail, Yahoo, Hotmail, etc.
               </p>
             </>
           )
