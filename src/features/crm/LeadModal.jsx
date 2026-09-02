@@ -90,8 +90,10 @@ function LeadEditModal({ lead, onClose, onUpdate, onAccept, onReject }) {
       </div>
 
       {lead.height && <div style={{ fontSize: 12, color: S.muted, marginBottom: 8 }}>Height: {lead.height}</div>}
-      {lead.intake_data?.packageInterest && (
-        <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>Package: <strong>{lead.intake_data.packageInterest}</strong></div>
+      {(lead.intake_data?.onlinePackage || lead.intake_data?.localPackage) && (
+        <div style={{ fontSize: 12, color: S.text, marginBottom: 8 }}>
+          Package: <strong>{lead.intake_data.onlinePackage || `Local (Dominica) — ${lead.intake_data.localPackage}`}</strong>
+        </div>
       )}
       {lead.intake_data && (
         <details style={{ marginBottom: 16 }}>
@@ -123,8 +125,12 @@ function LeadEditModal({ lead, onClose, onUpdate, onAccept, onReject }) {
 
       {lead.status === "accepted" && (
         <div style={{ marginBottom: 16 }}>
-          <div style={{ fontSize: 12, color: lead.client_id ? S.accent2 : S.muted, marginBottom: 12 }}>
-            {lead.client_id ? "Linked to client record" : "Awaiting signup — links automatically once they sign up with this email"}
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "14px 16px", marginBottom: 14,
+            background: (lead.client_id ? S.accent2 : S.accent) + "1F", border: "1px solid " + (lead.client_id ? S.accent2 : S.accent), borderRadius: 8 }}>
+            <span style={{ fontSize: 20, color: lead.client_id ? S.accent2 : S.accent }}>✓</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: lead.client_id ? S.accent2 : S.accent }}>
+              {lead.client_id ? "Client Accepted — Linked to client record" : "Client Accepted — Awaiting signup"}
+            </span>
           </div>
           <Fld label="Manual PayPal invoice link">
             <Inp value={invoiceLink} placeholder="https://paypal.me/..."

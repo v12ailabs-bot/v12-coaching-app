@@ -5,7 +5,7 @@ import { DAY_ORDER, EX_TYPES, PHASE_ORDER, groupByDay, BLOCK_TYPES, BLOCK_TYPE_L
 // Assigned-exercises table/cards, grouped by training day. All state (the
 // exercise list, the add/edit forms) stays owned by the parent ClientsPanel —
 // this component is purely presentational, same as the other Clients sections.
-export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, newEx, setNewEx, editEx, setEditEx, saving, addEx, cancelAdd, delEx, startEditEx, saveEditEx }) {
+export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, newEx, setNewEx, editEx, setEditEx, saving, addEx, cancelAdd, delEx, startEditEx, saveEditEx, onAddToDay }) {
   return (
     <Card>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
@@ -67,7 +67,8 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
       )}
       {exercises.length===0&&<div style={{color:S.muted,fontSize:13,padding:"16px 0"}}>No exercises assigned yet.</div>}
       {groupByDay(exercises).map(({day,exercises:dayExs,label})=>(
-      <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`}>
+      <DayFolder key={day} title={label} meta={`${dayExs.length} exercise${dayExs.length>1?"s":""}`}
+        headerAction={<Btn sm teal onClick={()=>onAddToDay(day)}>+ Add to {label}</Btn>}>
       {isMobile ? (
       <div style={{display:"flex",flexDirection:"column",gap:10}}>
         {dayExs.map(ex=>{

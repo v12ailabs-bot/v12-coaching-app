@@ -21,7 +21,6 @@ test("newly-wired intake fields surface in the client profile block", () => {
     commitment_level: 6,
     confidence: "5",
     past_barriers: "time constraints, consistency",
-    past_struggles: "fell off after week 3 before",
     why_now: "wedding in the fall",
   });
 
@@ -37,7 +36,6 @@ test("newly-wired intake fields surface in the client profile block", () => {
   assert.match(block, /Self-Rated Commitment \(1-10\): 6/);
   assert.match(block, /Confidence to Follow a 12-Week Program \(1-10\): 5/);
   assert.match(block, /Past Barriers to Progress: time constraints, consistency/);
-  assert.match(block, /Past Struggles.*fell off after week 3/);
   assert.match(block, /Why Now \/ Motivation: wedding in the fall/);
 });
 

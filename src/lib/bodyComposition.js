@@ -43,3 +43,28 @@ export function bodyFatCategory(pct, age, sex) {
   if (pct < b.average) return "Average";
   return "Above Average";
 }
+
+// Fallback estimate (Deurenberg et al., 1991) for when no waist measurement
+// exists yet — needs only height + weight + age + sex, which are already on
+// file the moment someone applies (see leads.intake_data / profiles.age,sex),
+// so this can show with zero manual entry. Less accurate than the RFM
+// formula above (BMI doesn't distinguish fat from muscle), which
+// estimateBodyComposition below switches to automatically once a waist
+// measurement is logged.
+function computeBodyFatEstimateFromWeight(heightIn, weightLb, age, sex) {
+  if (!heightIn || !weightLb || !age || !sex) return null;
+  const bmi = (weightLb / (heightIn * heightIn)) * 703;
+  const pct = 1.2 * bmi + 0.23 * age - 10.8 * (sex === "female" ? 0 : 1) - 5.4;
+  return Math.round(pct * 10) / 10;
+}
+
+// Single entry point the UI calls: the more accurate waist-based RFM
+// estimate once a waist measurement exists, else the weight-based fallback,
+// else nothing to show yet. `method` lets the UI label which one is live.
+export function estimateBodyComposition({ heightIn, weightLb, waistIn, age, sex }) {
+  const rfm = computeBodyFatEstimate(heightIn, waistIn, sex);
+  if (rfm != null) return { pct: rfm, method: "waist" };
+  const fromWeight = computeBodyFatEstimateFromWeight(heightIn, weightLb, age, sex);
+  if (fromWeight != null) return { pct: fromWeight, method: "weight" };
+  return { pct: null, method: null };
+}

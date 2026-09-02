@@ -29,6 +29,7 @@ import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
 import { WorkoutScheduler } from "../scheduling/WorkoutScheduler.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
+import { profileFieldsFromIntake } from "../../lib/leadIntake.js";
 
 // Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
 async function authHeaders() {
@@ -102,6 +103,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
+  const [resettingBodyComp, setResettingBodyComp] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [progTick, setProgTick] = useState(0);
   const [partnerId, setPartnerId] = useState("");        // selected owner in the link picker
@@ -164,9 +166,17 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     appliedSection.current = true;
     const targetTab = SECTION_TAB[initialSectionKey] || "overview";
     setActiveTab(targetTab);
-    requestAnimationFrame(()=>{
-      document.getElementById(`section-${initialSectionKey}`)?.scrollIntoView({behavior:"smooth",block:"start"});
-    });
+    // The target tab's content (e.g. Goals -> MilestonesCard) can still be
+    // mid-load the instant the tab switches, so a single requestAnimationFrame
+    // can fire before `section-${key}` exists in the DOM and silently no-op.
+    // Retry for up to ~2s instead of a single shot.
+    let attempts = 0;
+    const tryScroll = () => {
+      const el = document.getElementById(`section-${initialSectionKey}`);
+      if (el) { el.scrollIntoView({behavior:"smooth",block:"start"}); return; }
+      if (attempts++ < 20) setTimeout(tryScroll, 100);
+    };
+    requestAnimationFrame(tryScroll);
     onInitialSectionOpened?.();
   },[selected, initialSectionKey]);
   // Program templates come from the Notion program library (via the API).
@@ -272,6 +282,31 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     }
   };
 
+  // Stage age/sex from the client's application (leads.intake_data) into the
+  // editor WITHOUT persisting — same "load then Save Settings" pattern as
+  // resetGoalToNotion above. Covers clients accepted before the auto-backfill
+  // in CRMBoard's accept()/api/link-lead.js existed, or whose application
+  // simply predates this account existing.
+  const resetBodyCompToApplication = async(client)=>{
+    setResettingBodyComp(true); setSettingsMsg(null);
+    try{
+      const { data: lead } = await supabase.from("leads").select("intake_data")
+        .ilike("email", client.email).eq("status","accepted")
+        .order("created_at",{ascending:false}).limit(1).maybeSingle();
+      const fields = profileFieldsFromIntake(lead?.intake_data);
+      if(fields.age == null && !fields.sex){
+        setSettingsMsg({ok:false,text:"No age/sex found on this client's application."});
+        return;
+      }
+      setSettings(p=>({...p, age: fields.age!=null?String(fields.age):p.age, sex: fields.sex||p.sex}));
+      setSettingsMsg({ok:true,text:"Age/sex loaded from their application — click Save Settings to apply."});
+    }catch(e){
+      setSettingsMsg({ok:false,text:e.message});
+    }finally{
+      setResettingBodyComp(false);
+    }
+  };
+
   // Link/unlink the selected client to a training partner. Setting an owner
   // makes this client SHARE that owner's training program (exercises + phase +
   // version history); clearing it makes the client's training independent
@@ -366,6 +401,13 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const cancelAdd = ()=>{
     setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
     setShowAdd(false);
+  };
+  // Per-day "+ Add" (DayFolder header) opens the same form pre-set to that
+  // day, so it lands in the folder the coach was looking at instead of
+  // defaulting to Unscheduled — which read as "it created a new day".
+  const onAddToDay = (day)=>{
+    setNewEx(p=>({...p,day_of_week:day==="Unscheduled"?"":day}));
+    setShowAdd(true);
   };
   const delEx = async(id)=>{
     // Deleting an exercise cascade-deletes its workout_logs. Warn the coach when
@@ -546,7 +588,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                       <div id="exercises-section-anchor">
                         <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
                           newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}
-                          addEx={addEx} cancelAdd={cancelAdd} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}/>
+                          addEx={addEx} cancelAdd={cancelAdd} delEx={delEx} startEditEx={startEditEx} saveEditEx={saveEditEx}
+                          onAddToDay={onAddToDay}/>
                       </div>
                     </>
                   )}
@@ -607,7 +650,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
         <Modal title="Client Settings" onClose={()=>setShowSettingsModal(false)}>
           <ClientSettingsSection client={client} settings={settings} setSettings={setSettings}
             saveSettings={saveSettings} savingSettings={savingSettings} settingsMsg={settingsMsg}
-            resetGoalToNotion={resetGoalToNotion} resettingGoal={resettingGoal} syncing={syncing} embedded/>
+            resetGoalToNotion={resetGoalToNotion} resettingGoal={resettingGoal} syncing={syncing}
+            resetBodyCompToApplication={resetBodyCompToApplication} resettingBodyComp={resettingBodyComp} embedded/>
         </Modal>
       )}
       {client && showProgressModal && (

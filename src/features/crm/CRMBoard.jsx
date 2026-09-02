@@ -3,6 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, RADIUS, todayStr } from "../../theme.jsx";
 import { PageTitle, Btn } from "../../components/ui/index.js";
 import { COLUMNS } from "./crmHelpers.js";
+import { profileFieldsFromIntake } from "../../lib/leadIntake.js";
 import { LeadCard } from "./LeadCard.jsx";
 import { LeadModal } from "./LeadModal.jsx";
 import { TodayPanel } from "./TodayPanel.jsx";
@@ -85,8 +86,20 @@ export function CRMBoard() {
   };
 
   const accept = async (lead) => {
-    const { data: match } = await supabase.from("profiles").select("id").ilike("email", lead.email).maybeSingle();
+    const { data: match } = await supabase.from("profiles").select("id,age,sex").ilike("email", lead.email).maybeSingle();
     await updateLead(lead.id, { status: "accepted", client_id: match?.id || null });
+    // Usually there's no matching profile yet (acceptance happens before
+    // signup — link-lead.js backfills this same data at signup time), but
+    // if the client already exists (e.g. a Starter client being accepted
+    // into Coaching), backfill now instead of waiting on a link that
+    // already happened.
+    if (match?.id) {
+      const fields = profileFieldsFromIntake(lead.intake_data);
+      const patch = {};
+      if (fields.age != null && match.age == null) patch.age = fields.age;
+      if (fields.sex && !match.sex) patch.sex = fields.sex;
+      if (Object.keys(patch).length) await supabase.from("profiles").update(patch).eq("id", match.id);
+    }
   };
   const reject = async (lead, status) => updateLead(lead.id, { status });
 

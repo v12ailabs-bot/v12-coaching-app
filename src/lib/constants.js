@@ -26,12 +26,18 @@ export const INTAKE_FIELDS = [
   { key: "name", label: "Full Name", type: "text" },
   { key: "email", label: "Email", type: "email" },
   { key: "height", label: "Height", type: "text", ph: "e.g. 5'10\"", required: true },
-  { key: "packageInterest", label: "Which package are you interested in?", type: "select", options: [
+  // Split into two dropdowns (one per delivery format) instead of one mixed
+  // 5-option list — applicants were picking the wrong section because
+  // "Local" only showed up as a prefix inside an otherwise-online-looking
+  // list. An applicant fills in exactly one of the two.
+  { key: "onlinePackage", label: "Online Program — pick one if this is what you want", type: "select", options: [
     "V12 Program — $47/month, includes app access",
     "Standard Coaching — 12 Weeks: $750 in full or $250/month x3 ($750 total)",
     "1:1 Elite Performance — 12 Weeks: $1500 in full or $600/month x3 ($1800 total)",
-    "Local — Group PT Training (max 3 people): $300/month each",
-    "Local — 1-on-1 Premium: $400/month, 12 Weeks",
+  ] },
+  { key: "localPackage", label: "Local In-Person Training (Dominica) — pick one if this is what you want", type: "select", options: [
+    "Group PT Training (max 3 people): $300/month each",
+    "1-on-1 Premium: $400/month, 12 Weeks",
   ] },
   { key: "goal", label: "Primary Goal", type: "text" },
   { key: "daysAvailable", label: "Days Available / Week", type: "text" },
@@ -51,7 +57,6 @@ export const INTAKE_FIELDS = [
   { key: "commitmentLevel", label: "Commitment Level (1-10)", type: "number" },
   { key: "confidence", label: "Confidence in following a 12-week program (1-10)", type: "number" },
   { key: "pastBarriers", label: "What has prevented you from reaching your goal before?", type: "textarea" },
-  { key: "pastStruggles", label: "Past Struggles", type: "textarea" },
   { key: "whyNow", label: "Why Now?", type: "textarea" },
   { key: "dietaryPreference", label: "Dietary Preference", type: "text" },
   { key: "allergies", label: "Allergies", type: "text" },

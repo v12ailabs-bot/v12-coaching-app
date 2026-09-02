@@ -38,6 +38,7 @@ export function IntakeForm({ onDone, requestedTier }) {
   const submit = async () => {
     setError("");
     if (!form.name || !form.email || !form.height) { setError("Name, email, and height are required."); return; }
+    if (!form.onlinePackage && !form.localPackage) { setError("Please select an Online Program or a Local In-Person Training option."); return; }
     setSaving(true);
     // Goes through the server (not a direct Supabase insert) so submissions
     // can be rate-limited and mirrored into Notion server-side.

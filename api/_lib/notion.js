@@ -38,7 +38,6 @@ export const PROP = {
   commitmentLevel: "Commitment Level (1–10)",
   confidence: "How confident are you that can follow a structured program for the next 12 weeks? (1-10)",
   pastBarriers: "what has prevented you from reaching your goal in the past? ",
-  pastStruggles: "Past Struggles",
   whyNow: "Why Now?",
   // Not collected in the current intake DB — left mapped for other databases;
   // resolve to null here and the AI prompt falls back gracefully.
@@ -236,7 +235,6 @@ export async function getClientFromNotion(email) {
     commitment_level: get("commitmentLevel"),
     confidence: get("confidence"),
     past_barriers: get("pastBarriers"),
-    past_struggles: get("pastStruggles"),
     why_now: get("whyNow"),
     session_length: get("sessionLength"),
     dietary_preference: get("dietaryPreference"),

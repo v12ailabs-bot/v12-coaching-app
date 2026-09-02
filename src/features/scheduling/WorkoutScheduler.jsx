@@ -57,6 +57,7 @@ export async function resolveTodayDayOfWeek(clientId) {
 function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
   const [openWeekday, setOpenWeekday] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const dayGroups = groupByDay(exercises).filter((g) => g.day !== "Unscheduled");
   const colorForWeekday = (weekday) => {
     const idx = dayGroups.findIndex((g) => g.day === weekday);
@@ -64,19 +65,26 @@ function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
   };
 
   const assign = async (weekday, targetGroupDay) => {
-    setSaving(true); setOpenWeekday(null);
+    setSaving(true); setOpenWeekday(null); setSaveError(null);
     const occupant = dayGroups.find((g) => g.day === weekday);
+    const errors = [];
     if (targetGroupDay === "__rest__") {
-      if (occupant) await supabase.from("exercises").update({ day_of_week: null }).in("id", occupant.exercises.map((e) => e.id));
+      if (occupant) {
+        const { error } = await supabase.from("exercises").update({ day_of_week: null }).in("id", occupant.exercises.map((e) => e.id));
+        if (error) errors.push(error);
+      }
     } else {
       const targetGroup = dayGroups.find((g) => g.day === targetGroupDay);
       if (targetGroup && targetGroup.day !== weekday) {
-        await supabase.from("exercises").update({ day_of_week: weekday }).in("id", targetGroup.exercises.map((e) => e.id));
+        const r1 = await supabase.from("exercises").update({ day_of_week: weekday }).in("id", targetGroup.exercises.map((e) => e.id));
+        if (r1.error) errors.push(r1.error);
         if (occupant && occupant.day !== targetGroup.day) {
-          await supabase.from("exercises").update({ day_of_week: targetGroup.day }).in("id", occupant.exercises.map((e) => e.id));
+          const r2 = await supabase.from("exercises").update({ day_of_week: targetGroup.day }).in("id", occupant.exercises.map((e) => e.id));
+          if (r2.error) errors.push(r2.error);
         }
       }
     }
+    if (errors.length) setSaveError(errors[0].message || "Couldn't save that change — please try again.");
     await onReload();
     setSaving(false);
   };
@@ -90,6 +98,7 @@ function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
       <div style={{ fontSize: 11, color: S.muted, marginBottom: 14, lineHeight: 1.6 }}>
         Click a day to assign or swap which workout falls there — a fixed, repeating Monday-Sunday pattern.
       </div>
+      {saveError && <div style={{ fontSize: 12, color: S.danger, marginBottom: 12 }}>{saveError}</div>}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(88px,1fr))", gap: 10 }}>
         {WEEKDAY_ORDER.map((weekday) => {
           const occupant = dayGroups.find((g) => g.day === weekday);
@@ -139,6 +148,7 @@ function FixedWeeklySchedule({ trainOwnerId, exercises, onReload }) {
 function CustomDaysPicker({ dayGroups, onSaved }) {
   const [selected, setSelected] = useState(new Set());
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
 
   const toggle = (weekday) => setSelected((prev) => {
     const next = new Set(prev);
@@ -148,10 +158,11 @@ function CustomDaysPicker({ dayGroups, onSaved }) {
 
   const save = async () => {
     const chosen = WEEKDAY_ORDER.filter((w) => selected.has(w));
-    setSaving(true);
+    setSaving(true); setSaveError(null);
     for (let i = 0; i < dayGroups.length; i++) {
       const weekday = chosen[i] ?? null; // extra groups beyond the picked days become rest
-      await supabase.from("exercises").update({ day_of_week: weekday }).in("id", dayGroups[i].exercises.map((e) => e.id));
+      const { error } = await supabase.from("exercises").update({ day_of_week: weekday }).in("id", dayGroups[i].exercises.map((e) => e.id));
+      if (error) { setSaveError(error.message || "Couldn't save your schedule — please try again."); break; }
     }
     setSaving(false);
     await onSaved();
@@ -179,6 +190,7 @@ function CustomDaysPicker({ dayGroups, onSaved }) {
           background: S.accent, color: "white", opacity: saving || selected.size === 0 ? 0.5 : 1 }}>
         {saving ? "Saving..." : `Save as My Fixed Schedule (${selected.size} day${selected.size === 1 ? "" : "s"})`}
       </button>
+      {saveError && <div style={{ fontSize: 12, color: S.danger, marginTop: 10 }}>{saveError}</div>}
     </div>
   );
 }

@@ -46,7 +46,6 @@ export async function getClientFromLead(email) {
     commitment_level: d.commitmentLevel ? Number(d.commitmentLevel) : null,
     confidence: d.confidence ? Number(d.confidence) : null,
     past_barriers: d.pastBarriers || null,
-    past_struggles: d.pastStruggles || null,
     why_now: d.whyNow || null,
     session_length: d.sessionLength || null,
     dietary_preference: d.dietaryPreference || null,

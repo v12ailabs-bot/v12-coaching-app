@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
+import { profileFieldsFromIntake } from "../src/lib/leadIntake.js";
 
 // POST /api/link-lead  { client_id }
 // Links a newly-created profile back to its accepted lead. Needed because
@@ -21,13 +22,27 @@ export default async function handler(req, res) {
   if (!user || user.id !== client_id) return res.status(401).json({ error: "Not authenticated" });
 
   try {
-    const { error } = await supabaseAdmin
+    const { data: linked, error } = await supabaseAdmin
       .from("leads")
       .update({ client_id })
       .ilike("email", user.email)
       .eq("status", "accepted")
-      .is("client_id", null);
+      .is("client_id", null)
+      .select("intake_data");
     if (error) throw error;
+
+    // Backfill age/sex from the application onto the new profile — see
+    // src/lib/leadIntake.js — so the Body Composition estimate can show
+    // without asking the client to retype what they already told us.
+    const fields = profileFieldsFromIntake(linked?.[0]?.intake_data);
+    if (fields.age != null || fields.sex) {
+      const { data: profile } = await supabaseAdmin.from("profiles").select("age,sex").eq("id", client_id).maybeSingle();
+      const patch = {};
+      if (fields.age != null && profile?.age == null) patch.age = fields.age;
+      if (fields.sex && !profile?.sex) patch.sex = fields.sex;
+      if (Object.keys(patch).length) await supabaseAdmin.from("profiles").update(patch).eq("id", client_id);
+    }
+
     return res.status(200).json({ linked: true });
   } catch (err) {
     console.error("link-lead error:", err, "client_id:", client_id);

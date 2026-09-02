@@ -50,7 +50,7 @@ function MilestoneRow({ goal, onAchieved, onNextTarget }) {
       )}
       {achieved && (
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <Btn sm onClick={() => onAchieved(goal.id)}>Mark Achieved</Btn>
+          <Btn sm onClick={() => onAchieved(goal)}>Mark Achieved</Btn>
           <Btn sm teal onClick={() => onNextTarget(goal)}>Set Next Target</Btn>
         </div>
       )}
@@ -87,7 +87,11 @@ export function MilestonesCard({ client }) {
     setForm(blankForm()); setShowForm(false); load();
   };
 
-  const achieve = async (id) => { await markMilestoneAchieved(id); load(); };
+  const achieve = async (goal) => {
+    await markMilestoneAchieved(goal.id);
+    setMsg({ ok: true, text: `"${goal.exercise_name || MILESTONE_CATEGORY_LABELS[goal.category]}" marked achieved.` });
+    load();
+  };
 
   const saveNextTarget = async () => {
     if (!nextTargetOf || nextTargetValue === "") return;
@@ -109,6 +113,7 @@ export function MilestonesCard({ client }) {
         <CardTitle>Milestones</CardTitle>
         <Btn sm onClick={() => setShowForm((v) => !v)}>{showForm ? "Cancel" : "+ Add Milestone"}</Btn>
       </div>
+      {msg && !showForm && <Alert variant={msg.ok === false ? "error" : "success"}>{msg.text}</Alert>}
       {milestones.length === 0 && !showForm && <EmptyState title="No milestones yet" sub="Add a strength, rep, or conditioning target to track alongside this client's phase." />}
       {milestones.map((g) => <MilestoneRow key={g.id} goal={g} onAchieved={achieve} onNextTarget={(g2) => { setNextTargetOf(g2); setNextTargetValue(""); }} />)}
 

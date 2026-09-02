@@ -4,7 +4,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../components/ui/index.js";
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
-import { computeBodyFatEstimate, bodyFatCategory } from "../../lib/bodyComposition.js";
+import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -112,7 +112,13 @@ export function Progress({ profile, coachView }) {
   };
   const waistEntries = weekly.filter((w) => w.waist != null);
   const latestWaist = waistEntries.length ? waistEntries[waistEntries.length - 1].waist : null;
-  const bodyFatPct = computeBodyFatEstimate(Number(savedHeight), latestWaist, savedSex);
+  // Waist-based (most accurate) once a waist measurement exists, else a
+  // weight-based fallback (age/sex are usually already on file from the
+  // client's application — see src/lib/leadIntake.js) so this shows without
+  // requiring manual entry the moment weight + height + age + sex are known.
+  const { pct: bodyFatPct, method: bodyFatMethod } = estimateBodyComposition({
+    heightIn: Number(savedHeight), weightLb: lastWeight, waistIn: latestWaist, age: savedAge, sex: savedSex,
+  });
   const bodyFatCat = bodyFatCategory(bodyFatPct, savedAge, savedSex);
 
   return (
@@ -257,7 +263,7 @@ export function Progress({ profile, coachView }) {
           {(!savedAge || !savedSex) ? (
             <Card style={{marginBottom:20}}>
               <CardTitle>Body Composition</CardTitle>
-              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>A separate estimate from BMI — uses your height, waist, age, and sex. Set age and sex once to see it (height comes from the Weight tab).</div>
+              <div style={{fontSize:12,color:S.muted,marginBottom:12,lineHeight:1.6}}>We don't have your age and sex on file yet, so this can't be estimated automatically — enter them once and it'll take it from there.</div>
               <div style={{display:"flex",gap:16,alignItems:"flex-end",flexWrap:"wrap"}}>
                 <Fld label="Age"><Inp type="number" value={ageIn} onChange={e=>setAgeIn(e.target.value)} placeholder="e.g. 32"/></Fld>
                 <Fld label="Sex"><RG options={["male","female"]} value={sexIn} onChange={setSexIn} cap/></Fld>
@@ -279,9 +285,12 @@ export function Progress({ profile, coachView }) {
                 <div>
                   <span style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:30}}>{bodyFatPct}%</span>
                   <span style={{fontSize:12,color:S.muted,marginLeft:8}}>body fat (est.) · {bodyFatCat}</span>
+                  {bodyFatMethod === "weight" && (
+                    <div style={{fontSize:11,color:S.muted,marginTop:6}}>Estimated from weight — log a waist measurement in a weekly check-in for a more accurate estimate.</div>
+                  )}
                 </div>
               ) : (
-                <div style={{fontSize:12,color:S.muted}}>Log a waist measurement in a weekly check-in to see this estimate.</div>
+                <div style={{fontSize:12,color:S.muted}}>Log a weight (daily check-in) or waist measurement (weekly check-in) to see this estimate.</div>
               )}
             </Card>
           )}

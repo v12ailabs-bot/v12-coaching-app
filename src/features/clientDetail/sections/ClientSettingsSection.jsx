@@ -4,7 +4,7 @@ import { Card, CardTitle, Fld, Inp, RG, Btn } from "../../../components/ui/index
 // `embedded` skips the outer Card/title — used when a parent already
 // provides the framing (e.g. the gear-icon settings Modal, which supplies
 // its own "Client Settings" title bar).
-export function ClientSettingsSection({ client, settings, setSettings, saveSettings, savingSettings, settingsMsg, resetGoalToNotion, resettingGoal, syncing, embedded = false }) {
+export function ClientSettingsSection({ client, settings, setSettings, saveSettings, savingSettings, settingsMsg, resetGoalToNotion, resettingGoal, syncing, resetBodyCompToApplication, resettingBodyComp, embedded = false }) {
   const body = (
     <>
       <div style={{fontSize:11,color:S.muted,marginBottom:16}}>
@@ -45,7 +45,11 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
         </Fld>
         <Fld label="Sex">
           <RG options={["male","female"]} value={settings.sex} onChange={v=>setSettings(p=>({...p,sex:v}))} cap/>
-          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Age + sex feed the separate Body Composition estimate (Progress &gt; Measurements) — not used for BMI.</div>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Age + sex feed the separate Body Composition estimate (Progress &gt; Measurements) — not used for BMI. New clients get these filled in automatically from their application; use this for existing clients who don't have them yet.</div>
+          <button onClick={()=>resetBodyCompToApplication(client)} disabled={resettingBodyComp||syncing}
+            style={{marginTop:8,padding:"6px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+S.border,background:"transparent",color:S.muted}}>
+            {resettingBodyComp?"Loading...":"↺ Pull from Application"}
+          </button>
         </Fld>
         <Fld label="Phone">
           <Inp type="tel" value={settings.phone} onChange={e=>setSettings(p=>({...p,phone:e.target.value}))} placeholder="e.g. +1 555 123 4567"/>

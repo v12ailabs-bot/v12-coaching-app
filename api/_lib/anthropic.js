@@ -124,7 +124,6 @@ ADHERENCE & COACHING CONTEXT (use to set plan complexity, sustainability, and to
 - Self-Rated Commitment (1-10): ${client.commitment_level ?? "Not specified"}
 - Confidence to Follow a 12-Week Program (1-10): ${client.confidence || "Not specified"}
 - Past Barriers to Progress: ${client.past_barriers || "Not specified"}
-- Past Struggles (their words): ${client.past_struggles || "Not specified"}
 - Why Now / Motivation: ${client.why_now || "Not specified"}`;
 }
 

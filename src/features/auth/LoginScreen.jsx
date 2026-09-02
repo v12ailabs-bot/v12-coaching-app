@@ -210,12 +210,13 @@ export function LoginScreen() {
                 style={{ ...bS({ width: "100%", padding: 14 }), background: S.accent, color: "white", opacity: loading ? 0.5 : 1 }}>
                 {loading ? "Please wait..." : "Sign In"}
               </button>
+              <button onClick={() => { setSigninView("createAccount"); clearMsgs(); }}
+                style={{ ...bS({ width: "100%", padding: 14, marginTop: 10 }), background: "transparent", border: "1px solid " + S.accent, color: S.accent }}>
+                Already Accepted? Create Your Account →
+              </button>
               <p style={{ marginTop: 16, fontSize: 11, color: S.muted, textAlign: "center", lineHeight: 1.7 }}>
                 Works with any email — Gmail, Yahoo, Hotmail, etc.<br />Coach login: coach@v12system.com
               </p>
-              <div onClick={() => { setSigninView("createAccount"); clearMsgs(); }} style={{ color: S.muted, fontSize: 11, cursor: "pointer", marginTop: 10, textAlign: "center" }}>
-                Already accepted? Create your account →
-              </div>
             </>
           )
         ) : (
