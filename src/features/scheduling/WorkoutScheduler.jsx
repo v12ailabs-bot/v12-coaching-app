@@ -218,7 +218,7 @@ export function WorkoutScheduler({ clientId, trainOwnerId }) {
 
   const load = async () => {
     const [{ data: ex }, { data: sched }] = await Promise.all([
-      supabase.from("exercises").select("day_of_week").eq("client_id", trainOwnerId),
+      supabase.from("exercises").select("id,day_of_week").eq("client_id", trainOwnerId),
       supabase.from("scheduled_workouts").select("*").eq("client_id", clientId).in("date", dates),
     ]);
     setExercises(ex || []);
