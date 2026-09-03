@@ -18,7 +18,7 @@ export function ClientInsightCard({ client }) {
 
   const load = useCallback(async () => {
     const [{ data: g }, { data: ins }] = await Promise.all([
-      supabase.from("client_goals").select("id").eq("client_id", client.id).eq("status", "active").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("client_goals").select("id").eq("client_id", client.id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("client_goal_insights").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     ]);
     setGoal(g || null);

@@ -58,7 +58,7 @@ export function GoalsSection({ client }) {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 44);
     const cut = cutoff.toISOString().split("T")[0];
     const [{ data: goals }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: insights }] = await Promise.all([
-      supabase.from("client_goals").select("*").eq("client_id", client.id).eq("status", "active").order("created_at", { ascending: false }).limit(1),
+      supabase.from("client_goals").select("*").eq("client_id", client.id).eq("status", "active").eq("metric_key", DEFAULT_METRIC_KEY).order("created_at", { ascending: false }).limit(1),
       supabase.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g,workout").eq("client_id", client.id).gte("date", cut).order("date"),
       supabase.from("weekly_checkins").select("date,bodyweight,sleep_quality,hydration_quality").eq("client_id", client.id).gte("date", cut).order("date"),
       supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
