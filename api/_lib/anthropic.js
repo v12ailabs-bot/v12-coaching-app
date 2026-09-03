@@ -702,3 +702,63 @@ If exit_criteria or milestones are empty, say so plainly rather than guessing re
   try { return JSON.parse(raw); }
   catch { return { recommendation: raw, reasoning: null, suggested_action: null }; }
 }
+
+// Full multi-phase roadmap proposal from client + program data — the AI's
+// entire output lands in the coach's existing ProgramRoadmapPlanner form
+// state for review, never written to program_phases directly, so this
+// mirrors generatePhaseRecommendation's "advisory only, real data only"
+// contract but proposes a whole roadmap instead of a single next-step nudge.
+export async function generateRoadmap({ profile = {}, program = {}, exerciseSummary = {}, nutritionPlan = null, milestones = [] }) {
+  const data = {
+    client_goal: profile.goal || program.goal,
+    experience_level: program.experience_level,
+    program_weeks: program.weeks,
+    program_description: program.description,
+    training_summary: exerciseSummary,
+    nutrition_target: nutritionPlan ? {
+      calories: nutritionPlan.calories, protein_g: nutritionPlan.protein_g,
+      carbs_g: nutritionPlan.carbs_g, fats_g: nutritionPlan.fats_g,
+    } : null,
+    active_goals_and_milestones: milestones.map((m) => ({
+      exercise: m.exercise_name, category: m.category, goal_type: m.goal_type,
+      baseline: m.baseline_value, target: m.target_value, unit: m.unit, current: m.current_value,
+    })),
+  };
+  const message = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 2000,
+    messages: [
+      {
+        role: "user",
+        content: `You are an experienced strength coach building a phased training roadmap for ${profile.name || "the client"}. Use ONLY the data below — never invent numbers, PRs, or history that isn't shown. If a field is empty or null, either omit criteria that would depend on it or write generic adherence/technique-based criteria instead, and say so in "data_used".
+
+CLIENT + PROGRAM DATA: ${JSON.stringify(data)}
+
+Design a sequence of training phases that together span the full ${data.program_weeks || "?"}-week program length, in order, with non-overlapping week ranges starting at week 1. Choose however many phases genuinely fit this client's experience level, goal, and timeline — do not default to a fixed number (a short program may only need one phase, a long one several). Base training_focus, movement_focus, and progression_strategy on what the training_summary actually shows about how this program is built. Personalize exit_criteria to this specific client wherever the data supports it (e.g. cite a milestone's actual target/unit), and fall back to measurable but generic criteria (adherence %, technique checks, baseline performance tests) when data is sparse — this is common for beginners with no history, and that's fine.
+
+Respond with ONLY valid JSON (no markdown fences), matching exactly this shape:
+{
+  "phases": [
+    {
+      "phase": "short phase name, e.g. Foundation",
+      "week_start": 1,
+      "week_end": 4,
+      "note": "one short client-facing sentence",
+      "objective": "1-2 sentences: why this phase exists",
+      "training_focus": "e.g. Strength",
+      "movement_focus": "e.g. Squat, Hinge, Push",
+      "progression_strategy": "e.g. Double progression",
+      "exit_criteria": ["short measurable criterion", "..."]
+    }
+  ],
+  "confidence": "high | medium | low",
+  "data_used": ["short phrase per data source actually used, e.g. '12-week program', '2 active goals', 'sparse workout history'"]
+}
+This is a proposal only — the coach reviews and edits every field before saving, so don't phrase anything as already decided.`,
+      },
+    ],
+  });
+  const raw = message.content[0].text.trim().replace(/^```json?\s*/i, "").replace(/```$/, "");
+  try { return JSON.parse(raw); }
+  catch { return { phases: [], confidence: "low", data_used: [], error: "Could not parse AI response." }; }
+}

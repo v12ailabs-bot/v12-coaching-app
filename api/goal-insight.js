@@ -1,9 +1,27 @@
-import { generateGoalInsight, generatePhaseRecommendation } from "./_lib/anthropic.js";
+import { generateGoalInsight, generatePhaseRecommendation, generateRoadmap } from "./_lib/anthropic.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
+
+// Current value per exercise-tracked milestone, same "top set on most recent
+// logged date" convention as MilestonesCard/currentExerciseValue. Shared by
+// handlePhaseRecommendation and handleGenerateRoadmap — both feed the AI a
+// client's live milestone progress, just for different-shaped outputs.
+async function currentMilestoneValues(clientId, milestones) {
+  return Promise.all((milestones || []).map(async (m) => {
+    if (!m.exercise_name) return { ...m, current_value: null };
+    const { data: exs } = await supabaseAdmin.from("exercises").select("id").eq("client_id", clientId).ilike("name", m.exercise_name);
+    const ids = (exs || []).map((e) => e.id);
+    if (!ids.length) return { ...m, current_value: null };
+    const { data: logs } = await supabaseAdmin.from("workout_logs").select("date,weight,reps").in("exercise_id", ids).order("date", { ascending: false }).limit(10);
+    if (!logs?.length) return { ...m, current_value: null };
+    const key = m.unit === "reps" ? "reps" : "weight";
+    const values = logs.filter((l) => l.date === logs[0].date).map((l) => l[key]).filter((v) => v != null);
+    return { ...m, current_value: values.length ? Math.max(...values) : null };
+  }));
+}
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -24,19 +42,7 @@ async function handlePhaseRecommendation(req, res) {
       supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
     ]);
 
-    // Current value per exercise-tracked milestone, same "top set on most
-    // recent logged date" convention as MilestonesCard/currentExerciseValue.
-    const withCurrent = await Promise.all((milestones || []).map(async (m) => {
-      if (!m.exercise_name) return { ...m, current_value: null };
-      const { data: exs } = await supabaseAdmin.from("exercises").select("id").eq("client_id", program.client_id).ilike("name", m.exercise_name);
-      const ids = (exs || []).map((e) => e.id);
-      if (!ids.length) return { ...m, current_value: null };
-      const { data: logs } = await supabaseAdmin.from("workout_logs").select("date,weight,reps").in("exercise_id", ids).order("date", { ascending: false }).limit(10);
-      if (!logs?.length) return { ...m, current_value: null };
-      const key = m.unit === "reps" ? "reps" : "weight";
-      const values = logs.filter((l) => l.date === logs[0].date).map((l) => l[key]).filter((v) => v != null);
-      return { ...m, current_value: values.length ? Math.max(...values) : null };
-    }));
+    const withCurrent = await currentMilestoneValues(program.client_id, milestones);
 
     const rec = await generatePhaseRecommendation({ profile: profile || {}, phase, exitCriteria: phase.exit_criteria || [], milestones: withCurrent });
 
@@ -53,7 +59,47 @@ async function handlePhaseRecommendation(req, res) {
   }
 }
 
-// POST /api/goal-insight  { goal_id } | { phase_id }
+// AI-generated full roadmap proposal for an existing program (works for both
+// AI-generated and manually-built programs — it only reads exercises, never
+// their `source`). Purely advisory: returns the proposed phases directly to
+// the caller, no DB write — the coach reviews/edits them in the existing
+// ProgramRoadmapPlanner form and only they persist by saving, same as a
+// hand-typed roadmap.
+async function handleGenerateRoadmap(req, res) {
+  const { program_id } = req.body || {};
+  if (!program_id) return res.status(400).json({ error: "program_id is required" });
+  try {
+    const { data: program } = await supabaseAdmin.from("programs").select("id,client_id,goal,experience_level,weeks,description").eq("id", program_id).maybeSingle();
+    if (!program) return res.status(404).json({ error: "Program not found." });
+
+    const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("name,goal,age,sex").eq("id", program.client_id).maybeSingle(),
+      supabaseAdmin.from("exercises").select("category,day_of_week,sets,reps").eq("program_id", program_id),
+      supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
+    ]);
+
+    // Compact aggregate, not a raw dump — days/week + category counts + a
+    // rep-range sample is enough context for phase design without sending
+    // every exercise row.
+    const days = new Set((exercises || []).map((e) => e.day_of_week).filter(Boolean));
+    const categoryCounts = {};
+    (exercises || []).forEach((e) => { if (e.category) categoryCounts[e.category] = (categoryCounts[e.category] || 0) + 1; });
+    const repRangeSample = [...new Set((exercises || []).map((e) => e.reps).filter(Boolean))].slice(0, 6);
+    const exerciseSummary = { days_per_week: days.size, category_counts: categoryCounts, rep_range_sample: repRangeSample };
+
+    const withCurrent = await currentMilestoneValues(program.client_id, milestones);
+
+    const result = await generateRoadmap({ profile: profile || {}, program, exerciseSummary, nutritionPlan: nutritionPlan || null, milestones: withCurrent });
+
+    return res.status(200).json(result);
+  } catch (e) {
+    console.error("generate-roadmap error:", e, "program_id:", program_id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -63,9 +109,10 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id } = req.body || {};
+  const { goal_id, phase_id, program_id } = req.body || {};
   if (phase_id) return handlePhaseRecommendation(req, res);
-  if (!goal_id) return res.status(400).json({ error: "goal_id or phase_id is required" });
+  if (program_id) return handleGenerateRoadmap(req, res);
+  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, or program_id is required" });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();

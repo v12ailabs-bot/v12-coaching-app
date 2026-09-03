@@ -314,6 +314,9 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const [genErr, setGenErr] = useState(null);
+  const [genInfo, setGenInfo] = useState(null);
 
   const load = useCallback(async () => {
     const { data: prog } = await supabase.from("programs").select("id,phase,start_date").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -362,6 +365,35 @@ export function ProgramRoadmapPlanner({ clientId }) {
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Roadmap saved." });
     if (!error) setRows(clean);
+  };
+
+  // Proposes a full phase sequence from the client's actual program/goal/
+  // milestone data (works for AI-generated or manually-built programs alike —
+  // the analysis only reads exercises, not how they were created). Purely
+  // advisory: populates the same editable rows the coach already types into,
+  // nothing is saved until they click Save Roadmap.
+  const generateRoadmap = async () => {
+    if (!program) return;
+    if (rows.length && !window.confirm("Replace the current roadmap rows with an AI-generated proposal? Nothing is saved until you click Save Roadmap.")) return;
+    setGenerating(true); setGenErr(null); setGenInfo(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/goal-insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ program_id: program.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not generate a roadmap.");
+      setRows((json.phases || []).map((p) => ({
+        phase: p.phase || "", week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",
+        objective: p.objective || "", training_focus: p.training_focus || "", movement_focus: p.movement_focus || "",
+        progression_strategy: p.progression_strategy || "",
+        exit_criteria: (p.exit_criteria || []).map((label) => ({ label, status: "incomplete" })),
+      })));
+      setGenInfo({ confidence: json.confidence, dataUsed: json.data_used || [] });
+    } catch (e) { setGenErr(e.message); }
+    finally { setGenerating(false); }
   };
 
   if (loading) return null;
@@ -439,10 +471,18 @@ export function ProgramRoadmapPlanner({ clientId }) {
             style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "8px 14px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px", marginTop: 4 }}>
             + Add Phase
           </button>
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
             <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
+            <Btn teal onClick={generateRoadmap} disabled={generating}>{generating ? "Generating..." : "Generate Roadmap"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
+          <Alert variant="error">{genErr}</Alert>
+          {genInfo && (
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
+              Generated from: {genInfo.dataUsed.join(", ") || "limited client data"}
+              {genInfo.confidence && ` · Confidence: ${genInfo.confidence}`} — review and edit before saving.
+            </div>
+          )}
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Preview</div>
