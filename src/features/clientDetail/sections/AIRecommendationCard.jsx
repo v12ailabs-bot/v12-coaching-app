@@ -4,15 +4,19 @@ import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Alert } from "../../../components/ui/index.js";
 
 const STATUS_LABEL = { pending: "Pending Review", approved: "Approved", modified: "Modified", held: "Held", rejected: "Rejected" };
+const CRITERION_ICON = { complete: "✓", na: "–", incomplete: "○" };
 
 // Advisory-only AI progression recommendation for the client's current
 // phase (Part 25/26) — the AI never touches programs/exercises; this card
 // is the entire coach decision surface: Approve / Modify / Hold / Reject.
-// Resolves the current phase's own program_phases row itself (needs its id,
-// which ProgramPhase's plannedPhases list already has but doesn't expose)
-// rather than threading it through the parent.
+// Resolves the current phase's own program_phases row itself (needs its id
+// and exit_criteria/objective, which ProgramPhase's plannedPhases list
+// already has but doesn't expose) rather than threading it through the
+// parent — this is also the deep-link target ("Review →" on the Coach
+// Dashboard's Phase Check-ins panel), so it doubles as the read-only
+// "where does this client actually stand" checklist, not just the AI text.
 export function AIRecommendationCard({ clientId }) {
-  const [phaseId, setPhaseId] = useState(undefined);
+  const [phase, setPhase] = useState(undefined);
   const [latest, setLatest] = useState(undefined);
   const [generating, setGenerating] = useState(false);
   const [err, setErr] = useState(null);
@@ -22,11 +26,12 @@ export function AIRecommendationCard({ clientId }) {
   useEffect(() => {
     supabase.from("programs").select("id,phase").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
       .then(async ({ data: program }) => {
-        if (!program?.phase) return setPhaseId(null);
-        const { data: phase } = await supabase.from("program_phases").select("id").eq("program_id", program.id).eq("phase", program.phase).maybeSingle();
-        setPhaseId(phase?.id || null);
+        if (!program?.phase) return setPhase(null);
+        const { data: p } = await supabase.from("program_phases").select("id,phase,objective,exit_criteria").eq("program_id", program.id).eq("phase", program.phase).maybeSingle();
+        setPhase(p || null);
       });
   }, [clientId]);
+  const phaseId = phase?.id;
 
   const load = useCallback(() => {
     supabase.from("program_phase_recommendations").select("*").eq("client_id", clientId)
@@ -67,6 +72,20 @@ export function AIRecommendationCard({ clientId }) {
         <CardTitle>AI Analysis — Recommendation Only</CardTitle>
         <Btn sm teal onClick={generate} disabled={generating}>{generating ? "Analyzing..." : latest ? "Re-run" : "Generate"}</Btn>
       </div>
+      {phase.objective && <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6, marginBottom: 12 }}>{phase.objective}</div>}
+      {(phase.exit_criteria || []).length > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>{phase.phase} — Exit Criteria</div>
+          {phase.exit_criteria.map((c, i) => (
+            <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, color: S.text, padding: "4px 0" }}>
+              <span style={{ width: 18, textAlign: "center", fontWeight: 700, color: c.status === "complete" ? S.success : c.status === "na" ? S.muted : S.warning }}>
+                {CRITERION_ICON[c.status] || "○"}
+              </span>
+              <span>{c.label}</span>
+            </div>
+          ))}
+        </div>
+      )}
       <Alert variant="error">{err}</Alert>
       {!latest && !generating && <div style={{ fontSize: 13, color: S.muted }}>No recommendation yet for this phase.</div>}
       {latest && (

@@ -669,7 +669,7 @@ Plain text only — no markdown headers, no bullet lists.`,
 // separate fields with Approve/Modify/Hold/Reject actions. The AI never
 // writes to the program itself — this only ever produces a row the coach
 // reviews.
-export async function generatePhaseRecommendation({ profile = {}, phase = {}, exitCriteria = [], milestones = [] }) {
+export async function generatePhaseRecommendation({ profile = {}, phase = {}, exitCriteria = [], milestones = [], strengthTrends = [] }) {
   const data = {
     phase_name: phase.phase,
     objective: phase.objective,
@@ -680,6 +680,14 @@ export async function generatePhaseRecommendation({ profile = {}, phase = {}, ex
     milestones: milestones.map((m) => ({
       exercise: m.exercise_name, category: m.category, baseline: m.baseline_value,
       target: m.target_value, unit: m.unit, current: m.current_value,
+    })),
+    // Per-exercise top-set movement over the last 30 days (weight in lb, or
+    // reps for bodyweight moves), same shape/source as generateGoalInsight —
+    // a real PR or a stalled lift is often the clearest evidence for whether
+    // this phase is working, separate from milestone baseline/target math.
+    recent_strength_trends: strengthTrends.map((t) => ({
+      exercise: t.exercise, first_value: t.first_value, first_date: t.first_date,
+      latest_value: t.latest_value, latest_date: t.latest_date,
     })),
   };
   const message = await anthropic.messages.create({
@@ -692,9 +700,11 @@ export async function generatePhaseRecommendation({ profile = {}, phase = {}, ex
 
 PHASE DATA: ${JSON.stringify(data)}
 
+"recent_strength_trends" is real logged performance, separate from milestone targets — a rising value can be cited as a PR ("you hit a new PR on X, now Y lb — close to the Z milestone"), and a flat/declining one as a stall worth naming ("X hasn't moved in your recent logs — try Y" e.g. a deload, a rep/rest change, or an exercise swap).
+
 Respond with ONLY valid JSON (no markdown fences), matching exactly this shape:
-{"recommendation": "one sentence, what to do next (e.g. continue current phase, adjust loading, consider transitioning)", "reasoning": "1-2 sentences citing the specific exit criteria / milestone numbers above that justify it", "suggested_action": "one short concrete next step for the coach"}
-If exit_criteria or milestones are empty, say so plainly rather than guessing readiness. This is a recommendation only — the coach decides, so don't phrase it as already decided.`,
+{"recommendation": "one sentence, what to do next (e.g. continue current phase, adjust loading, consider transitioning)", "reasoning": "1-2 sentences citing the specific exit criteria / milestone / strength-trend numbers above that justify it", "suggested_action": "one short concrete next step for the coach"}
+If exit_criteria, milestones, and recent_strength_trends are all empty, say so plainly rather than guessing readiness. This is a recommendation only — the coach decides, so don't phrase it as already decided.`,
       },
     ],
   });

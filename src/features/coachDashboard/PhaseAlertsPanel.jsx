@@ -17,7 +17,7 @@ export function PhaseAlertsPanel({ alerts, nameOf, openClient }) {
       {sorted.map((a) => {
         const overdue = a.daysUntilEnd < 0;
         return (
-          <div key={a.clientId} onClick={() => openClient(a.clientId, { section: "program-roadmap" })}
+          <div key={a.clientId} onClick={() => openClient(a.clientId, { section: "phase-review" })}
             style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", borderBottom: "1px solid " + S.border, cursor: "pointer" }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: S.text }}>{nameOf(a.clientId)}</div>
@@ -26,7 +26,7 @@ export function PhaseAlertsPanel({ alerts, nameOf, openClient }) {
               </div>
               {a.nextPhase && <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>Next: {a.nextPhase}</div>}
             </div>
-            <Btn sm teal onClick={(e) => { e.stopPropagation(); openClient(a.clientId, { section: "program-roadmap" }); }}>Review →</Btn>
+            <Btn sm teal onClick={(e) => { e.stopPropagation(); openClient(a.clientId, { section: "phase-review" }); }}>Review →</Btn>
           </div>
         );
       })}

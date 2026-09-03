@@ -7,11 +7,14 @@ import { MILESTONE_CATEGORY_LABELS, fetchMilestones, currentExerciseValue, miles
 const CATEGORY_OPTIONS = Object.keys(MILESTONE_CATEGORY_LABELS);
 const blankForm = () => ({ category: "strength", exercise_name: "", direction: "increase", unit: "lb", baseline_value: "", target_value: "", target_date: "", priority: "secondary" });
 
+const AUTO_TRACKED_CATEGORIES = ["strength", "rep_performance", "exercise_progression"];
+
 function MilestoneRow({ goal, onAchieved, onNextTarget }) {
   const [current, setCurrent] = useState(undefined);
+  const isAutoTracked = AUTO_TRACKED_CATEGORIES.includes(goal.category);
 
   useEffect(() => {
-    if (["strength", "rep_performance", "exercise_progression"].includes(goal.category) && goal.exercise_name) {
+    if (isAutoTracked && goal.exercise_name) {
       currentExerciseValue(goal.client_id, goal.exercise_name, goal.unit === "reps").then(setCurrent);
     } else {
       setCurrent(null);
@@ -48,10 +51,15 @@ function MilestoneRow({ goal, onAchieved, onNextTarget }) {
           </div>
         </div>
       )}
-      {achieved && (
+      {!isAutoTracked && !achieved && (
+        <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>
+          {MILESTONE_CATEGORY_LABELS[goal.category]} isn't auto-tracked from logged workouts — mark it achieved yourself once confirmed (e.g. a 5K time, a movement screen).
+        </div>
+      )}
+      {(achieved || !isAutoTracked) && (
         <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <Btn sm onClick={() => onAchieved(goal)}>Mark Achieved</Btn>
-          <Btn sm teal onClick={() => onNextTarget(goal)}>Set Next Target</Btn>
+          {achieved && <Btn sm teal onClick={() => onNextTarget(goal)}>Set Next Target</Btn>}
         </div>
       )}
     </div>

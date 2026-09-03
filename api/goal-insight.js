@@ -37,14 +37,29 @@ async function handlePhaseRecommendation(req, res) {
     const { data: program } = await supabaseAdmin.from("programs").select("id,client_id").eq("id", phase.program_id).maybeSingle();
     if (!program) return res.status(404).json({ error: "Program not found." });
 
-    const [{ data: profile }, { data: milestones }] = await Promise.all([
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cut = cutoff.toISOString().split("T")[0];
+    const [{ data: profile }, { data: milestones }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name").eq("id", program.client_id).maybeSingle(),
       supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
+      supabaseAdmin.from("workout_logs").select("date,exercise_id,weight,reps").eq("client_id", program.client_id).gte("date", cut),
     ]);
 
     const withCurrent = await currentMilestoneValues(program.client_id, milestones);
 
-    const rec = await generatePhaseRecommendation({ profile: profile || {}, phase, exitCriteria: phase.exit_criteria || [], milestones: withCurrent });
+    // Same per-exercise top-set movement used in generateGoalInsight/
+    // generateCheckinSummary (api/_lib/strengthTrends.js) — lets the
+    // recommendation cite a real PR or a stalled lift instead of only
+    // comparing a milestone's current value to its target.
+    const exerciseIds = [...new Set((workoutLogs || []).map((l) => l.exercise_id).filter(Boolean))];
+    const { data: exRows } = exerciseIds.length
+      ? await supabaseAdmin.from("exercises").select("id,name,is_bodyweight").in("id", exerciseIds)
+      : { data: [] };
+    const exerciseById = {};
+    (exRows || []).forEach((e) => { exerciseById[e.id] = e; });
+    const strengthTrends = strengthTrendsFrom(workoutLogs || [], exerciseById);
+
+    const rec = await generatePhaseRecommendation({ profile: profile || {}, phase, exitCriteria: phase.exit_criteria || [], milestones: withCurrent, strengthTrends });
 
     const { data: saved, error: insertErr } = await supabaseAdmin.from("program_phase_recommendations").insert({
       program_id: program.id, client_id: program.client_id, phase: phase.phase,

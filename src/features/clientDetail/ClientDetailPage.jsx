@@ -52,14 +52,16 @@ const TABS_FOR = (client) => [
 ];
 
 // Deep-link target (openClient(id,{section})) -> which tab it now lives in.
-// Only "program-roadmap" is actually used as a deep-link today (from the
-// coach Overview's Client Overview table), but every section key on the
+// "program-roadmap" is used from the coach Overview's Client Overview table;
+// "phase-review" is used from the Coach Dashboard's "Phase Check-ins Due"
+// panel (PhaseAlertsPanel) to land directly on the AI phase recommendation
+// card instead of the roadmap editor — every other section key on the
 // Overview grid is mapped here for completeness.
 const SECTION_TAB = {
   "program-roadmap": "overview", "program-history": "overview", "progress": "overview",
   "insights": "overview", "habits": "overview", "assessment": "overview",
   "goals": "goals", "milestones": "goals", "nutrition": "nutrition",
-  "program-phase": "program-phase", "exercises": "program-phase",
+  "program-phase": "program-phase", "exercises": "program-phase", "phase-review": "program-phase",
 };
 
 // Clients split workspace — persistent directory (left) + a selected
@@ -584,7 +586,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           onMessageClient={()=>setShowMessageModal(true)}/>
                       </div>
                       <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>openOverviewSection("program-roadmap")} />
-                      <AIRecommendationCard clientId={trainOwnerId} />
+                      <div id="section-phase-review"><AIRecommendationCard clientId={trainOwnerId} /></div>
                       <div id="exercises-section-anchor">
                         <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
                           newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}
