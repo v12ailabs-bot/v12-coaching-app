@@ -5,7 +5,7 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided, closeTaskAfterOutcome } from "./_lib/headCoachTasks.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
@@ -314,16 +314,16 @@ async function handleRecordOutcome(req, res, user) {
   if (!OUTCOME_VALUES.includes(outcome)) return res.status(400).json({ error: `outcome must be one of ${OUTCOME_VALUES.join(", ")}` });
 
   try {
+    // recordOutcome() now atomically claims the ACTION_PENDING -> CLOSED
+    // transition itself before inserting (HC-022 replay fix), so this
+    // route no longer needs a separate closeTaskAfterOutcome call.
     const result = await recordOutcome({
       recommendationId: record_outcome_for, actualResponse: actual_response, outcome,
       expectedResponse: expected_response, measurementPeriodStart: measurement_period_start, measurementPeriodEnd: measurement_period_end,
       notes, recordedBy: user.id,
     });
 
-    const { data: recRow } = await supabaseAdmin.from("head_coach_recommendations").select("client_id").eq("id", record_outcome_for).maybeSingle();
-    const task = await closeTaskAfterOutcome(result.taskId, recRow?.client_id, "coach", user.id);
-
-    return res.status(200).json({ outcome: result.outcome, task });
+    return res.status(200).json({ outcome: result.outcome, task: result.task });
   } catch (e) {
     console.error("record-outcome error:", e, "record_outcome_for:", record_outcome_for);
     return res.status(500).json({ error: e.message });

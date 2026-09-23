@@ -31,7 +31,6 @@ const cutoffDate = (days: number): string => {
 export interface ClientCore {
   id: string;
   name: string | null;
-  email: string;
   role: string;
   clientType: string;
   goal: string | null;
@@ -47,17 +46,23 @@ export interface ClientCore {
 // Client + service tier in one read -- the spec's "client" and "service" are
 // both just columns on the existing `profiles` row in this app (client_type
 // doubles as tier), not separate tables.
+//
+// Deliberately excludes email (HC-022 PII-minimization finding): this
+// object flows verbatim into the prompt sent to Anthropic (a third party)
+// and into the immutable context snapshot -- email served no reasoning
+// purpose anywhere downstream (grepped every Head Coach module and the UI;
+// nothing read it) and audit reconstruction can always join back to
+// profiles.email via client_id if it's ever genuinely needed.
 export async function getClientCore(clientId: string): Promise<ClientCore | null> {
   const { data } = await supabaseAdmin
     .from("profiles")
-    .select("id,name,email,role,client_type,goal,age,sex,nervous_system_recruitment,muscular_density_to_size,metabolic_work_capacity")
+    .select("id,name,role,client_type,goal,age,sex,nervous_system_recruitment,muscular_density_to_size,metabolic_work_capacity")
     .eq("id", clientId)
     .maybeSingle();
   if (!data) return null;
   return {
     id: data.id,
     name: data.name,
-    email: data.email,
     role: data.role,
     clientType: data.client_type,
     goal: data.goal,
