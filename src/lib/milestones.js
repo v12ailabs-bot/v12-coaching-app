@@ -39,19 +39,9 @@ export async function currentExerciseValue(clientId, exerciseName, isBodyweight)
   return values.length ? Math.max(...values) : null;
 }
 
-// direction 'increase' (default) — most milestone categories move upward
-// (more weight/reps/capacity); body_composition milestones can move either
-// way, so direction is read off the goal row like the existing bodyweight
-// goal system already does.
-export function milestoneProgress(goal, currentValue) {
-  if (currentValue == null) return { progressPct: null, achieved: false };
-  const { baseline_value: base, target_value: target, direction } = goal;
-  const dir = direction || "increase";
-  const achieved = dir === "decrease" ? currentValue <= target : currentValue >= target;
-  const span = target - base;
-  const progressPct = span === 0 ? 100 : Math.max(0, Math.min(100, Math.round(((currentValue - base) / span) * 100)));
-  return { progressPct, achieved };
-}
+// Moved to src/lib/milestoneProgress.js (no browser-client import) so
+// server-side code can reuse it; re-exported here unchanged.
+export { milestoneProgress } from "./milestoneProgress.js";
 
 export async function markMilestoneAchieved(goalId) {
   await supabase.from("client_goals").update({ status: "achieved", updated_at: new Date().toISOString() }).eq("id", goalId);
