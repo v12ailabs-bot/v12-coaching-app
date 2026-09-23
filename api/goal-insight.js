@@ -87,11 +87,20 @@ async function handleGenerateRoadmap(req, res) {
     const { data: program } = await supabaseAdmin.from("programs").select("id,client_id,goal,experience_level,weeks,description").eq("id", program_id).maybeSingle();
     if (!program) return res.status(404).json({ error: "Program not found." });
 
-    const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }] = await Promise.all([
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cut = cutoff.toISOString().split("T")[0];
+
+    const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }, { data: weightGoal }, { data: daily }, { data: weekly }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal,age,sex").eq("id", program.client_id).maybeSingle(),
       supabaseAdmin.from("exercises").select("category,day_of_week,sets,reps").eq("program_id", program_id),
       supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
+      // Primary bodyweight goal, same metric_key convention as GoalsSection —
+      // excluded by the milestones query above since it has no category.
+      supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabaseAdmin.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).gte("date", cut).order("date"),
+      supabaseAdmin.from("weekly_checkins").select("date,bodyweight").eq("client_id", program.client_id).gte("date", cut).order("date"),
+      supabaseAdmin.from("workout_logs").select("date,exercise_id,weight,reps").eq("client_id", program.client_id).gte("date", cut),
     ]);
 
     // Compact aggregate, not a raw dump — days/week + category counts + a
@@ -103,9 +112,30 @@ async function handleGenerateRoadmap(req, res) {
     const repRangeSample = [...new Set((exercises || []).map((e) => e.reps).filter(Boolean))].slice(0, 6);
     const exerciseSummary = { days_per_week: days.size, category_counts: categoryCounts, rep_range_sample: repRangeSample };
 
+    // Same daily/weekly merge as GoalsSection/goal-insight's single-goal
+    // path, so "current weight" here matches what the coach sees elsewhere.
+    const byDate = {};
+    (daily || []).forEach((d) => { if (d.weight != null) byDate[d.date] = d.weight; });
+    (weekly || []).forEach((w) => { if (w.bodyweight != null && byDate[w.date] == null) byDate[w.date] = w.bodyweight; });
+    const weightSeries = Object.entries(byDate).map(([date, value]) => ({ date, value })).sort((a, b) => (a.date < b.date ? -1 : 1));
+    const latestWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].value : null;
+
+    const nutritionAdherence = nutritionAdherenceFrom(daily || [], nutritionPlan || null, 30).score;
+
+    const exerciseIds = [...new Set((workoutLogs || []).map((l) => l.exercise_id).filter(Boolean))];
+    const { data: exRows } = exerciseIds.length
+      ? await supabaseAdmin.from("exercises").select("id,name,is_bodyweight").in("id", exerciseIds)
+      : { data: [] };
+    const exerciseById = {};
+    (exRows || []).forEach((e) => { exerciseById[e.id] = e; });
+    const strengthTrends = strengthTrendsFrom(workoutLogs || [], exerciseById);
+
     const withCurrent = await currentMilestoneValues(program.client_id, milestones);
 
-    const result = await generateRoadmap({ profile: profile || {}, program, exerciseSummary, nutritionPlan: nutritionPlan || null, milestones: withCurrent });
+    const result = await generateRoadmap({
+      profile: profile || {}, program, exerciseSummary, nutritionPlan: nutritionPlan || null,
+      milestones: withCurrent, weightGoal: weightGoal || null, latestWeight, nutritionAdherence, strengthTrends,
+    });
 
     return res.status(200).json(result);
   } catch (e) {

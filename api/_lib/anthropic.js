@@ -718,7 +718,7 @@ If exit_criteria, milestones, and recent_strength_trends are all empty, say so p
 // state for review, never written to program_phases directly, so this
 // mirrors generatePhaseRecommendation's "advisory only, real data only"
 // contract but proposes a whole roadmap instead of a single next-step nudge.
-export async function generateRoadmap({ profile = {}, program = {}, exerciseSummary = {}, nutritionPlan = null, milestones = [] }) {
+export async function generateRoadmap({ profile = {}, program = {}, exerciseSummary = {}, nutritionPlan = null, milestones = [], weightGoal = null, latestWeight = null, nutritionAdherence = null, strengthTrends = [] }) {
   const data = {
     client_goal: profile.goal || program.goal,
     experience_level: program.experience_level,
@@ -729,9 +729,23 @@ export async function generateRoadmap({ profile = {}, program = {}, exerciseSumm
       calories: nutritionPlan.calories, protein_g: nutritionPlan.protein_g,
       carbs_g: nutritionPlan.carbs_g, fats_g: nutritionPlan.fats_g,
     } : null,
+    nutrition_adherence_pct_last_30d: nutritionAdherence,
+    // Primary bodyweight goal (separate from the exercise-based milestones
+    // below) — same metric_key='bodyweight' row GoalsSection tracks.
+    weight_goal: weightGoal ? {
+      direction: weightGoal.direction, current: latestWeight,
+      target: weightGoal.target_value, target_date: weightGoal.target_date,
+    } : null,
     active_goals_and_milestones: milestones.map((m) => ({
       exercise: m.exercise_name, category: m.category, goal_type: m.goal_type,
       baseline: m.baseline_value, target: m.target_value, unit: m.unit, current: m.current_value,
+    })),
+    // Per-exercise top-set movement over the last 30 days, same shape/source
+    // as generatePhaseRecommendation — a real PR or a stalled lift is
+    // evidence for how aggressive/conservative the next phase should be.
+    recent_strength_trends: strengthTrends.map((t) => ({
+      exercise: t.exercise, first_value: t.first_value, first_date: t.first_date,
+      latest_value: t.latest_value, latest_date: t.latest_date,
     })),
   };
   const message = await anthropic.messages.create({
@@ -745,6 +759,8 @@ export async function generateRoadmap({ profile = {}, program = {}, exerciseSumm
 CLIENT + PROGRAM DATA: ${JSON.stringify(data)}
 
 Design a sequence of training phases that together span the full ${data.program_weeks || "?"}-week program length, in order, with non-overlapping week ranges starting at week 1. Choose however many phases genuinely fit this client's experience level, goal, and timeline — do not default to a fixed number (a short program may only need one phase, a long one several). Base training_focus, movement_focus, and progression_strategy on what the training_summary actually shows about how this program is built. Personalize exit_criteria to this specific client wherever the data supports it (e.g. cite a milestone's actual target/unit), and fall back to measurable but generic criteria (adherence %, technique checks, baseline performance tests) when data is sparse — this is common for beginners with no history, and that's fine.
+
+If "weight_goal" is present, its direction/current/target/target_date is this client's primary body-composition target — let it inform overall pacing (e.g. a tight timeline or large gap argues for more conditioning/nutrition-adherence emphasis, not just lifting numbers), and factor "nutrition_adherence_pct_last_30d" into whether exit_criteria should include a nutrition/adherence component. "recent_strength_trends" is real logged performance, separate from milestone targets — a rising value supports a more aggressive next phase, a flat/stalled one argues for a deload or technique-focused phase before pushing load further.
 
 Respond with ONLY valid JSON (no markdown fences), matching exactly this shape:
 {
