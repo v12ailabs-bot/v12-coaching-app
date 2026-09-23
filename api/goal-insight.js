@@ -5,13 +5,14 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying } from "./_lib/headCoachTasks.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
 import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheckInPrompt.ts";
 import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.ts";
 import { determineAuthority } from "./_lib/headCoachAuthorityEngine.ts";
+import { createRecommendation } from "./_lib/headCoachRecommendations.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -134,17 +135,19 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005/HC-006/HC-008/HC-009/HC-011/HC-012/HC-013: Head Coach task
-// creation, claiming, context assembly, rule evaluation, the safety gate,
-// AI reasoning, output validation, and backend-determined authority for a
-// specific check-in -- coach-triggered (no automatic check-in->task
-// trigger, no cron worker, per the owner's decision), same synchronous
-// shape as every other action on this route. A no_action/escalate
-// safety-gate outcome resolves the task right here (CLOSED/ESCALATED) and
-// never reaches the model at all. The AI's declared authority is advisory
-// only -- determineAuthority() independently computes the real value; still
-// not persisted as a recommendation row -- HC-014 onward.
-// requireCoach() above already satisfies the HC-003
+// HC-005/HC-006/HC-008/HC-009/HC-011 through HC-014: Head Coach task
+// creation, claiming, context assembly, rule evaluation, the safety gate, AI
+// reasoning, output validation, backend-determined authority, and
+// persisting the recommendation for a specific check-in -- coach-triggered
+// (no automatic check-in->task trigger, no cron worker, per the owner's
+// decision), same synchronous shape as every other action on this route. A
+// no_action/escalate safety-gate outcome resolves the task right here
+// (CLOSED/ESCALATED) and never reaches the model at all; on "proceed" a
+// head_coach_recommendations row is always created (status 'pending') and
+// the task moves to DECISION_READY (clean outcome) or ESCALATED (failed
+// validation or AI-declared escalate) -- deciding the recommendation is
+// HC-015, Coach Approval, not this route. requireCoach() above already
+// satisfies the HC-003
 // authorization requirement for this coach-driven Head Coach operation
 // (this route is coach-only end to end; there is no separate
 // requireCoachForHeadCoach() call needed since it's the same underlying
@@ -200,14 +203,16 @@ async function handleReviewCheckIn(req, res, user) {
     else if (gate.decision === "escalate") gateOutcomeTask = await escalateTask(task.id, checkin.client_id, gate.reason, "coach", user.id);
     if (gateOutcomeTask) task = gateOutcomeTask;
 
-    // HC-011/HC-012: only reached on "proceed" -- a no_action/escalate
-    // verdict resolved the task above and never gets here. Validation order
-    // per spec: JSON -> schema -> enums -> evidence -> rules -> fabrication
-    // -> authority -> safety. One bounded retry on failure; still invalid
-    // (or the AI itself declares "escalate") after that -> ESCALATED, same
-    // human-review mechanism the deterministic safety gate uses. Output is
-    // still not persisted as a recommendation row (that's HC-013/HC-014 --
-    // authority engine + recommendation manager).
+    // HC-011/HC-012/HC-013/HC-014: only reached on "proceed" -- a
+    // no_action/escalate verdict resolved the task above and never gets
+    // here. Validation order per spec: JSON -> schema -> enums -> evidence
+    // -> rules -> fabrication -> authority -> safety. One bounded retry on
+    // failure; still invalid (or the AI itself declares "escalate") after
+    // that -> ESCALATED, same human-review mechanism the deterministic
+    // safety gate uses. A head_coach_recommendations row is persisted
+    // regardless of outcome (HC-014) -- even a failed/escalated attempt is
+    // worth a permanent record -- always with status 'pending', since
+    // deciding it is HC-015 (Coach Approval), not this route.
     let aiReasoning = null;
     if (gate.decision === "proceed_to_reasoning") {
       let generation = await generateReviewCheckInRecommendation(finalContext, ruleResult.outcomes);
@@ -220,25 +225,29 @@ async function handleReviewCheckIn(req, res, user) {
         validation = validateReviewCheckInOutput(generation, ruleResult.outcomes);
       }
 
+      // "The backend is authoritative" means this runs regardless of
+      // validation.valid/requiresEscalation, not skipped because the AI
+      // asked for something risky -- determineAuthority() treats a
+      // missing/invalid AI-declared value defensively (falls back to its
+      // own ceiling), so it's safe to call even on output that failed
+      // validation or has no output at all.
+      const authority = determineAuthority("REVIEW_CHECK_IN", ruleResult.outcomes, generation.output?.authority ?? null);
+
+      const recommendation = await createRecommendation({
+        taskId: task.id, clientId: checkin.client_id, contextSnapshotId: snapshot.id,
+        generation, validation, authority,
+      });
+
       if (!validation.valid || validation.requiresEscalation) {
         const reason = validation.requiresEscalation ? "AI output declared status: escalate" : "Output failed validation after one retry";
         const escalated = await escalateTask(task.id, checkin.client_id, reason, "coach", user.id);
         if (escalated) task = escalated;
+      } else {
+        const decisionReady = await markDecisionReady(task.id, checkin.client_id, "coach", user.id);
+        if (decisionReady) task = decisionReady;
       }
 
-      // HC-013: only meaningful once a real, parsed AI output exists (a
-      // pure JSON-parse failure has no authority field to consider at
-      // all). "The backend is authoritative" means this runs independently
-      // of validation.valid/requiresEscalation, not skipped because the AI
-      // asked for something risky -- determineAuthority() already treats a
-      // missing/invalid AI-declared value defensively (falls back to the
-      // backend's own ceiling), so it's safe to call even on output that
-      // failed a later validation stage.
-      const authority = generation.output
-        ? determineAuthority("REVIEW_CHECK_IN", ruleResult.outcomes, generation.output.authority ?? null)
-        : null;
-
-      aiReasoning = { generation, validation, authority };
+      aiReasoning = { generation, validation, authority, recommendation };
     }
 
     return res.status(200).json({
@@ -248,7 +257,7 @@ async function handleReviewCheckIn(req, res, user) {
       safetyGate: gate,
       aiReasoning,
       context_snapshot_id: snapshot.id,
-      note: "HC-013 only: full pipeline through backend-determined authority. Output is NOT yet persisted as a recommendation (HC-014 onward).",
+      note: "HC-014: full pipeline through a persisted head_coach_recommendations row (status 'pending'). Coach approve/modify/reject/defer is HC-015, not built yet.",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);

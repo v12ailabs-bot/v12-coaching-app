@@ -189,6 +189,17 @@ export async function markReady(taskId: string, clientId: string, actor: Actor, 
   return task;
 }
 
+// HC-014: a real head_coach_recommendations row now exists for this task
+// and the outcome was clean (validated, not escalating) -- the task is
+// ready for the coach's normal approve/modify/reject/defer decision
+// (HC-015), distinct from ESCALATED which means something needs more
+// urgent/careful attention than the routine review queue.
+export async function markDecisionReady(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["READY"], "DECISION_READY", { completed_at: new Date().toISOString() });
+  if (task) await writeAuditEvent({ eventType: "decision_ready", taskId, clientId, actor, actorId });
+  return task;
+}
+
 // HC-009 Safety Gate outcomes: a task the gate resolves deterministically
 // (no_action or escalate) never reaches AI reasoning at all -- it goes
 // straight from READY to a terminal/flagged state.
@@ -202,7 +213,7 @@ export async function closeTaskNoAction(taskId: string, clientId: string, reason
 // output declaring status "escalate") or RETRYING (HC-012's output
 // validator giving up after a bounded retry) -- either path lands here.
 export async function escalateTask(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
-  const task = await transitionTask(taskId, ["READY", "RETRYING"], "ESCALATED", {});
+  const task = await transitionTask(taskId, ["READY", "RETRYING"], "ESCALATED", { completed_at: new Date().toISOString() });
   if (task) await writeAuditEvent({ eventType: "escalated", taskId, clientId, actor, actorId, payload: { reason } });
   return task;
 }
