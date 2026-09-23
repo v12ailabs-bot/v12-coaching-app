@@ -7,6 +7,7 @@ import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
 import { createTask, claimTask, markReady, failTask } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
+import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -129,12 +130,13 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005/HC-006: Head Coach task creation, claiming, and context assembly
-// for a specific check-in -- coach-triggered (no automatic check-in->task
-// trigger, no cron worker, per the owner's decision), same synchronous shape
-// as every other action on this route. Stops at READY with a persisted
-// context snapshot -- rule evaluation and AI reasoning are HC-007 onward and
-// don't exist yet. requireCoach() above already satisfies the HC-003
+// HC-005/HC-006/HC-008: Head Coach task creation, claiming, context
+// assembly, and rule evaluation for a specific check-in -- coach-triggered
+// (no automatic check-in->task trigger, no cron worker, per the owner's
+// decision), same synchronous shape as every other action on this route.
+// Stops at READY with a persisted context snapshot and a rule-engine
+// verdict -- AI reasoning is HC-009 onward and doesn't exist yet.
+// requireCoach() above already satisfies the HC-003
 // authorization requirement for this coach-driven Head Coach operation
 // (this route is coach-only end to end; there is no separate
 // requireCoachForHeadCoach() call needed since it's the same underlying
@@ -170,16 +172,22 @@ async function handleReviewCheckIn(req, res, user) {
     task = claimed;
 
     const context = await buildReviewCheckInContext(checkin.client_id);
-    const snapshot = await persistContextSnapshot(task.id, context);
+    // Rules run against the context BEFORE it's persisted -- the snapshot
+    // is insert-only, so applicableRules/rule_versions must be final at
+    // insert time, not patched in afterward.
+    const ruleResult = evaluateRules("REVIEW_CHECK_IN", context);
+    const finalContext = { ...context, applicableRules: ruleResult.outcomes };
+    const snapshot = await persistContextSnapshot(task.id, finalContext, ruleResult.outcomes);
 
     const ready = await markReady(task.id, checkin.client_id, "coach", user.id);
     if (ready) task = ready;
 
     return res.status(200).json({
       task,
-      context,
+      context: finalContext,
+      ruleEngine: { verdict: ruleResult.verdict, verdictReason: ruleResult.verdictReason, registryVersion: ruleResult.ruleRegistryVersion },
       context_snapshot_id: snapshot.id,
-      note: "HC-006 only: task created, context assembled and persisted, moved to READY. Rule evaluation and AI reasoning are not built yet (HC-007 onward).",
+      note: "HC-008 only: task created, context assembled, rules evaluated, persisted, moved to READY. AI reasoning is not built yet (HC-009 onward).",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);

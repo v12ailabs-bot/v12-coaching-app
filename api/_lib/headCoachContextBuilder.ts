@@ -14,10 +14,13 @@ import {
 // insert-only on that table). This is the ONLY place a REVIEW_CHECK_IN
 // context gets assembled; nothing else should hand-roll a second version.
 //
-// Two spec fields are intentionally placeholders, not fabricated content:
-// `applicableRules` (HC-007, not built) and `authority` (HC-013, not built).
-// A caller reading `applicableRules: []` should read that as "rules don't
-// exist yet," never as "no rules apply."
+// Two spec fields are intentionally placeholders here, not fabricated
+// content: `applicableRules` and `authority`. This builder always sets
+// applicableRules to [] -- populating it with real rule-evaluation outcomes
+// is the caller's job (HC-008's evaluateRules(), run against this context
+// AFTER it's built, then merged in before persisting the snapshot), not
+// this module's, so Context Builder never has to import the Rule Engine.
+// `authority` stays null until HC-013 (Authority Engine) exists.
 //
 // Two other spec fields ("constraints", "relevant history") have no
 // dedicated schema in this app -- there is no structured constraints table,
@@ -106,13 +109,22 @@ export async function buildReviewCheckInContext(clientId: string): Promise<HeadC
   };
 }
 
-export async function persistContextSnapshot(taskId: string, context: HeadCoachContext): Promise<{ id: string }> {
+// ruleVersions is written into the same insert as the snapshot itself,
+// never added after the fact -- head_coach_context_snapshots is insert-only
+// at the DB level (HC-002), so there is no later opportunity to attach it.
+// Callers (HC-008's Rule Engine result) must evaluate rules BEFORE calling
+// this, then pass the outcome in.
+export async function persistContextSnapshot(
+  taskId: string,
+  context: HeadCoachContext,
+  ruleVersions: unknown[] = [],
+): Promise<{ id: string }> {
   const { data, error } = await supabaseAdmin
     .from("head_coach_context_snapshots")
     .insert({
       task_id: taskId,
       snapshot: context as unknown as Record<string, unknown>,
-      rule_versions: [],
+      rule_versions: ruleVersions,
       methodology_version: context.methodologyVersion,
     })
     .select("id")
