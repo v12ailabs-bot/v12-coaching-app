@@ -1,7 +1,7 @@
 import { S, RADIUS, avatarFrom, useIsMobile } from "../../theme.jsx";
 import { StatusBadge } from "../../components/ui/index.js";
 
-const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋" };
+const TAB_ICON = { overview: "📊", goals: "🎯", nutrition: "🥗", "program-phase": "📋", "head-coach": "🤖" };
 
 // Mobile-only action row: Message / Call / Progress / More. "Call" opens a
 // WhatsApp chat with the number on file (new profiles.phone field, set via
@@ -116,7 +116,11 @@ export function ClientDetailHeader({ client, lastCheckin, onArchiveToggle, onOpe
                   border: "1px solid " + (isActive ? S.accent : S.border),
                   background: isActive ? S.accent : "transparent",
                   color: isActive ? "white" : S.text,
-                  flex: "1 1 140px", justifyContent: "center", minWidth: 130,
+                  // flex-grow 0, not 1: with 5 tabs (added for Head Coach,
+                  // HC-019) a wrapped lone tab on its own row would
+                  // otherwise stretch to fill the entire row width instead
+                  // of sitting at its natural size.
+                  flex: "0 1 140px", justifyContent: "center", minWidth: 130,
                 }}>
                 <span style={{ fontSize: 15 }}>{TAB_ICON[t.key] || "•"}</span>
                 <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 15, letterSpacing: 0.5 }}>{t.label}</span>

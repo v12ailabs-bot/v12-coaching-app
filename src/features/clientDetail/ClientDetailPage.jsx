@@ -26,6 +26,7 @@ import { CoachNotes } from "./sections/CoachNotesSection.jsx";
 import { CoachConversations } from "./sections/ConversationLogSection.jsx";
 import { CheckinNotesPanel } from "./sections/CheckinNotesPanel.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
+import { HeadCoachSection } from "./sections/HeadCoachSection.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
 import { WorkoutScheduler } from "../scheduling/WorkoutScheduler.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
@@ -44,11 +45,17 @@ async function authHeaders() {
 // Assessment isn't its own tab — with Overview/Goals/Nutrition/Program Phase
 // it's still 4 tabs at most, and folding it into Overview keeps that row
 // from needing to scroll (see Tabs.jsx: it never wraps to a second line).
+// "Head Coach" (HC-019) is excluded for program_only clients same as
+// Goals -- REVIEW_CHECK_IN reasons about daily_checkins, which program-only
+// clients don't have a check-in flow for -- and hidden entirely when
+// VITE_HEAD_COACH_ENABLED="false" (the feature-flag kill-switch).
+const HEAD_COACH_UI_ENABLED = import.meta.env.VITE_HEAD_COACH_ENABLED !== "false";
 const TABS_FOR = (client) => [
   { key: "overview", label: "Overview" },
   ...(client?.client_type === "program_only" ? [] : [{ key: "goals", label: "Goals" }]),
   { key: "nutrition", label: "Nutrition" },
   { key: "program-phase", label: "Program Phase" },
+  ...(HEAD_COACH_UI_ENABLED && client?.client_type !== "program_only" ? [{ key: "head-coach", label: "Head Coach" }] : []),
 ];
 
 // Deep-link target (openClient(id,{section})) -> which tab it now lives in.
@@ -61,6 +68,7 @@ const SECTION_TAB = {
   "program-roadmap": "overview", "program-history": "overview", "progress": "overview",
   "insights": "overview", "habits": "overview", "assessment": "overview",
   "goals": "goals", "milestones": "goals", "nutrition": "nutrition",
+  "head-coach": "head-coach",
   "program-phase": "program-phase", "exercises": "program-phase", "phase-review": "program-phase",
 };
 
@@ -567,6 +575,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   )}
                   {validTab === "goals" && (<><div id="section-milestones"><MilestonesCard client={client} /></div><GoalsSection client={client} /></>)}
                   {validTab === "nutrition" && <CoachNutrition clientId={client.id} refreshKey={progTick} />}
+                  {validTab === "head-coach" && <HeadCoachSection client={client} />}
                   {validTab === "program-phase" && (
                     <>
                       <ProgramGenerateActions client={client} templateId={templateId} setTemplateId={setTemplateId}

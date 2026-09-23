@@ -343,6 +343,17 @@ export default async function handler(req, res) {
   const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for } = req.body || {};
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);
+
+  // HC-019 feature-flag kill-switch: only gates Head Coach actions
+  // (checkin_id/recommendation_id/record_outcome_for) -- every other action
+  // on this route (goal insights, phase recommendations, roadmap
+  // generation, above) is unaffected. Unset or anything other than "false"
+  // means enabled.
+  const isHeadCoachAction = checkin_id || recommendation_id || record_outcome_for;
+  if (isHeadCoachAction && process.env.HEAD_COACH_ENABLED === "false") {
+    return res.status(503).json({ error: "Head Coach is currently disabled." });
+  }
+
   if (checkin_id) return handleReviewCheckIn(req, res, user);
   if (recommendation_id) return handleCoachDecision(req, res, user);
   if (record_outcome_for) return handleRecordOutcome(req, res, user);
