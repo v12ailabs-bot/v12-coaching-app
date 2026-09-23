@@ -4,24 +4,7 @@ import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
-
-// Current value per exercise-tracked milestone, same "top set on most recent
-// logged date" convention as MilestonesCard/currentExerciseValue. Shared by
-// handlePhaseRecommendation and handleGenerateRoadmap — both feed the AI a
-// client's live milestone progress, just for different-shaped outputs.
-async function currentMilestoneValues(clientId, milestones) {
-  return Promise.all((milestones || []).map(async (m) => {
-    if (!m.exercise_name) return { ...m, current_value: null };
-    const { data: exs } = await supabaseAdmin.from("exercises").select("id").eq("client_id", clientId).ilike("name", m.exercise_name);
-    const ids = (exs || []).map((e) => e.id);
-    if (!ids.length) return { ...m, current_value: null };
-    const { data: logs } = await supabaseAdmin.from("workout_logs").select("date,weight,reps").in("exercise_id", ids).order("date", { ascending: false }).limit(10);
-    if (!logs?.length) return { ...m, current_value: null };
-    const key = m.unit === "reps" ? "reps" : "weight";
-    const values = logs.filter((l) => l.date === logs[0].date).map((l) => l[key]).filter((v) => v != null);
-    return { ...m, current_value: values.length ? Math.max(...values) : null };
-  }));
-}
+import { currentMilestoneValues } from "./_lib/milestones.js";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;

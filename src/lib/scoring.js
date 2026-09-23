@@ -1,4 +1,4 @@
-import { todayStr } from "../theme.jsx";
+import { todayStr } from "./dates.js";
 import { computeGoalScore } from "./scoring/goalScoring.js";
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the

@@ -67,19 +67,10 @@ export const TT = {
 };
 
 // Today's date as YYYY-MM-DD, in the browser's local timezone. toISOString()
-// converts to UTC first, which rolls to "tomorrow" in the evening for any
-// timezone west of UTC (e.g. from ~4-8pm in US timezones) — that off-by-one
-// broke check-in dates for evening submissions, so this formats from local
-// getFullYear/getMonth/getDate instead.
-export const todayStr = () => localDateStr(new Date());
-
-// Formats a Date as YYYY-MM-DD using its local calendar fields (not UTC).
-export function localDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
+// Moved to src/lib/dates.js (plain JS, no JSX) so server-side code can
+// import it without a bundler; re-exported here unchanged so every existing
+// importer of todayStr/localDateStr from theme.jsx keeps working as-is.
+export { todayStr, localDateStr } from "./lib/dates.js";
 
 // True when the viewport is at the mobile breakpoint, so components can swap a
 // dense desktop table for a stacked card layout. Mirrors the 720px CSS query.
