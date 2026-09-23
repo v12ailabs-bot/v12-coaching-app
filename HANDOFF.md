@@ -293,4 +293,20 @@ A separate, much larger architecture spec was introduced 2026-09-23: an AI-drive
 - **Decision: defer, keep operating as this whole effort already has.** No real staging environment. Continue the practice used since HC-002: careful, disclosed live testing against production, with real fixes verified live before committing — the same approach the owner has approved at every single HC step so far.
 - Revisit if/when the owner sets up a second Supabase project and separate Vercel Preview env vars — the technical wiring (schema migration, env var setup, deployment config) can be helped with once those account-level decisions are made.
 
-**Next task:** HC-025 (Controlled Pilot) — not started, awaiting go-ahead.
+**HC-025 (Controlled Pilot) — complete. No code, a pilot guide.**
+- **Owner decision**: no code-enforced allowlist. The feature already requires explicit human action at every single step (no autonomous execution, per HC-016) — that IS the real containment. What follows is the operational guide for actually piloting it.
+
+**How to pilot Head Coach safely:**
+1. **Start with 2-4 real clients you know well**, ideally a mix: one stable/on-track, one you'd expect to trigger an at-risk flag, one with sparse check-in data. Use the real "Review This Check-In" button on their Head Coach tab.
+2. **Read the full reasoning before deciding, not just the recommendation line.** Check `observation`, `evidence`, `competing_hypotheses`, and `confidence_level` against what you actually know about the client. A low-confidence output is a legitimate, correct answer when data is genuinely sparse — don't treat it as a failure, and don't rubber-stamp a recommendation you haven't actually read.
+3. **Red flags to stop and investigate, not just note:**
+   - Evidence that doesn't check out against what you know to be true about the client (possible fabrication).
+   - Confidence that feels miscalibrated (high confidence on thin evidence, or vice versa).
+   - An escalation that doesn't make sense, or — more importantly — a real concern that *should* have escalated but didn't.
+   - Anything that reads like it assumes an action will happen automatically. It shouldn't — authority should always show `L0`/`L1` right now (no action executor exists, HC-016), and nothing acts on a client without you approving and then doing it yourself.
+4. **Known gap to work around manually during the pilot: escalations are not surfaced anywhere else.** An `ESCALATED` task only shows up on that specific client's Head Coach tab — there is no dashboard alert, no email, no notification of any kind (checked: nothing in `CoachHome`'s existing alert panels knows about Head Coach at all). During the pilot, you have to proactively open each piloted client's tab to see if anything needs your attention.
+5. **Cost awareness**: each "Review This Check-In" click is a real Anthropic API call (real cost, ~15-25 seconds). Don't trigger it reflexively — same discipline as any other paid AI action in this app.
+6. **Reviewing what happened**: the Head Coach tab shows each task's outcome inline. For a deeper look at any single review (full context, rule evaluation, audit trail), `scripts/head-coach-e2e-check.mjs`'s pattern of calling `reconstructTaskHistory()` (HC-018) is the tool — there's no dedicated UI for this yet; that would be a real future enhancement, not built in this MVP.
+7. **When to expand**: once you've run enough real cycles across your pilot clients (rough guideline: 10-20) without a concerning finding, you can reasonably extend it to more clients. There's no code gate stopping you either way — this is entirely your judgment call.
+
+**This closes the full HC-001 through HC-025 execution order.** Every step is either built, applied, and live-verified, or explicitly and deliberately deferred with the reasoning documented in place. The core coaching loop (check-in → task → context → rules → safety gate → AI reasoning → validation → authority → recommendation → coach approval → outcome tracking) works end to end against real production data.
