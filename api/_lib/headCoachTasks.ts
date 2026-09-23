@@ -221,6 +221,17 @@ export async function closeTaskDecided(taskId: string, clientId: string, decisio
   return task;
 }
 
+// HC-017: the coach came back and recorded what actually happened -- this
+// closes the loop on the ACTION_PENDING state (per the HC-016 decision, the
+// coach carried out the recommendation manually; MONITORING is not
+// modeled as a separate step in this MVP, the task just waits in
+// ACTION_PENDING until an outcome is recorded).
+export async function closeTaskAfterOutcome(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["ACTION_PENDING"], "CLOSED", { completed_at: new Date().toISOString() });
+  if (task) await writeAuditEvent({ eventType: "outcome_recorded", taskId, clientId, actor, actorId });
+  return task;
+}
+
 // HC-009 Safety Gate outcomes: a task the gate resolves deterministically
 // (no_action or escalate) never reaches AI reasoning at all -- it goes
 // straight from READY to a terminal/flagged state.

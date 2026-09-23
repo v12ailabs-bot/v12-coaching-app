@@ -5,7 +5,7 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided, closeTaskAfterOutcome } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
@@ -14,6 +14,7 @@ import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.ts"
 import { determineAuthority } from "./_lib/headCoachAuthorityEngine.ts";
 import { createRecommendation } from "./_lib/headCoachRecommendations.ts";
 import { applyCoachDecision } from "./_lib/headCoachApproval.ts";
+import { recordOutcome, OUTCOME_VALUES } from "./_lib/headCoachOutcomes.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -302,7 +303,34 @@ async function handleCoachDecision(req, res, user) {
   }
 }
 
-// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id } | { recommendation_id }
+// HC-017 Outcome Tracker: coach-initiated (no automated executor exists,
+// HC-016), only meaningful for a recommendation the coach actually acted on
+// (approved/modified -- enforced in recordOutcome itself). Closes the loop
+// on ACTION_PENDING -> CLOSED.
+async function handleRecordOutcome(req, res, user) {
+  const { record_outcome_for, actual_response, outcome, expected_response, measurement_period_start, measurement_period_end, notes } = req.body || {};
+  if (!record_outcome_for) return res.status(400).json({ error: "record_outcome_for is required" });
+  if (!actual_response) return res.status(400).json({ error: "actual_response is required" });
+  if (!OUTCOME_VALUES.includes(outcome)) return res.status(400).json({ error: `outcome must be one of ${OUTCOME_VALUES.join(", ")}` });
+
+  try {
+    const result = await recordOutcome({
+      recommendationId: record_outcome_for, actualResponse: actual_response, outcome,
+      expectedResponse: expected_response, measurementPeriodStart: measurement_period_start, measurementPeriodEnd: measurement_period_end,
+      notes, recordedBy: user.id,
+    });
+
+    const { data: recRow } = await supabaseAdmin.from("head_coach_recommendations").select("client_id").eq("id", record_outcome_for).maybeSingle();
+    const task = await closeTaskAfterOutcome(result.taskId, recRow?.client_id, "coach", user.id);
+
+    return res.status(200).json({ outcome: result.outcome, task });
+  } catch (e) {
+    console.error("record-outcome error:", e, "record_outcome_for:", record_outcome_for);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id } | { recommendation_id } | { record_outcome_for }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -312,12 +340,13 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id, program_id, checkin_id, recommendation_id } = req.body || {};
+  const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for } = req.body || {};
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);
   if (checkin_id) return handleReviewCheckIn(req, res, user);
   if (recommendation_id) return handleCoachDecision(req, res, user);
-  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, program_id, checkin_id, or recommendation_id is required" });
+  if (record_outcome_for) return handleRecordOutcome(req, res, user);
+  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, program_id, checkin_id, recommendation_id, or record_outcome_for is required" });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();
