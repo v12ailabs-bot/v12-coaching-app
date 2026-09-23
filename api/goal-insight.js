@@ -5,9 +5,10 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask } from "./_lib/headCoachTasks.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
+import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -130,13 +131,14 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005/HC-006/HC-008: Head Coach task creation, claiming, context
-// assembly, and rule evaluation for a specific check-in -- coach-triggered
-// (no automatic check-in->task trigger, no cron worker, per the owner's
-// decision), same synchronous shape as every other action on this route.
-// Stops at READY with a persisted context snapshot and a rule-engine
-// verdict -- AI reasoning is HC-009 onward and doesn't exist yet.
-// requireCoach() above already satisfies the HC-003
+// HC-005/HC-006/HC-008/HC-009: Head Coach task creation, claiming, context
+// assembly, rule evaluation, and the safety gate for a specific check-in --
+// coach-triggered (no automatic check-in->task trigger, no cron worker, per
+// the owner's decision), same synchronous shape as every other action on
+// this route. A no_action/escalate safety-gate outcome resolves the task
+// right here (CLOSED/ESCALATED) and it never reaches AI reasoning; a
+// "proceed" outcome leaves the task at READY, since AI reasoning is HC-010
+// onward and doesn't exist yet. requireCoach() above already satisfies the HC-003
 // authorization requirement for this coach-driven Head Coach operation
 // (this route is coach-only end to end; there is no separate
 // requireCoachForHeadCoach() call needed since it's the same underlying
@@ -182,12 +184,23 @@ async function handleReviewCheckIn(req, res, user) {
     const ready = await markReady(task.id, checkin.client_id, "coach", user.id);
     if (ready) task = ready;
 
+    // Safety Gate: a no_action/escalate verdict resolves the task right
+    // here and it never reaches AI reasoning (not built yet regardless) --
+    // "proceed" means no safety objection, task is left at READY since
+    // there's nothing built yet for it to proceed to.
+    const gate = applySafetyGate(ruleResult);
+    let gateOutcomeTask = null;
+    if (gate.decision === "close_no_action") gateOutcomeTask = await closeTaskNoAction(task.id, checkin.client_id, gate.reason, "coach", user.id);
+    else if (gate.decision === "escalate") gateOutcomeTask = await escalateTask(task.id, checkin.client_id, gate.reason, "coach", user.id);
+    if (gateOutcomeTask) task = gateOutcomeTask;
+
     return res.status(200).json({
       task,
       context: finalContext,
       ruleEngine: { verdict: ruleResult.verdict, verdictReason: ruleResult.verdictReason, registryVersion: ruleResult.ruleRegistryVersion },
+      safetyGate: gate,
       context_snapshot_id: snapshot.id,
-      note: "HC-008 only: task created, context assembled, rules evaluated, persisted, moved to READY. AI reasoning is not built yet (HC-009 onward).",
+      note: "HC-009 only: task created, context assembled, rules evaluated, safety gate applied. AI reasoning is not built yet (HC-010 onward).",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);

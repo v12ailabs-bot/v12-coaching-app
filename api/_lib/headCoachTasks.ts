@@ -189,6 +189,21 @@ export async function markReady(taskId: string, clientId: string, actor: Actor, 
   return task;
 }
 
+// HC-009 Safety Gate outcomes: a task the gate resolves deterministically
+// (no_action or escalate) never reaches AI reasoning at all -- it goes
+// straight from READY to a terminal/flagged state.
+export async function closeTaskNoAction(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["READY"], "CLOSED", { completed_at: new Date().toISOString() });
+  if (task) await writeAuditEvent({ eventType: "safety_gate_no_action", taskId, clientId, actor, actorId, payload: { reason } });
+  return task;
+}
+
+export async function escalateTask(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["READY"], "ESCALATED", {});
+  if (task) await writeAuditEvent({ eventType: "safety_gate_escalated", taskId, clientId, actor, actorId, payload: { reason } });
+  return task;
+}
+
 // attemptCount is passed in (not read fresh) so the caller doesn't need an
 // extra round-trip -- every caller already has the current task row from
 // create/claim before it can fail.
