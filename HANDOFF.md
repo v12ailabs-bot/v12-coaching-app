@@ -1,0 +1,128 @@
+# V12 Coaching App — Handoff Doc
+
+Read this before touching the codebase. It's the current, verified state of the app as of 2026-09-23 — not aspirational, not historical. Where something is unfinished, it says so explicitly.
+
+## 1. What this is
+
+A coaching platform for a fitness coach (V12) and their clients. The coach runs client intake, AI-assisted program generation, phase progression, check-ins, goals, and business metrics from a coach dashboard. Clients get a tiered app experience (full coaching / program-only / starter) for logging workouts, nutrition, check-ins, and viewing their program/roadmap.
+
+Client-facing copy should match the voice in the V12 Bible (Notion) — read it before generating any client-facing text; don't just pull data from it.
+
+## 2. Tech stack
+
+- **Frontend**: Vite + React 18 SPA. **Not** Next.js — no file-based routing. `src/App.jsx` is a large root component that renders `CoachDashboard` or `ClientDashboard` based on role, each managing its own `page` state (hand-rolled nav, no react-router).
+- **Language**: plain JS/JSX, no TypeScript.
+- **Backend**: Vercel serverless functions in `/api/*.js` (Node, ESM), separate from the Vite build.
+- **Database/Auth**: Supabase (Postgres + Auth + Storage). Schema lives in `db/*.sql` — one baseline `schema.sql` plus ~50 incremental `add_*`/`fix_*` files, applied **manually** via the Supabase SQL editor (no migration runner/CLI in the loop).
+- **Email**: Resend (`api/_lib/resend.js`).
+- **AI**: Anthropic (`api/_lib/anthropic.js`, model `claude-opus-4-8`), used for program generation, nutrition generation, check-in summaries/recaps, goal insights, and phase recommendations.
+- **CRM/intake source**: Notion (`@notionhq/client`) — used as the source of truth for client intake, program templates, and CRM pipeline. Program templates are now sourced from Notion, **not** the legacy Supabase `program_templates` table.
+- **Payments**: Payoneer — **stubbed, not implemented** (see §6).
+- **Charts**: Recharts. **Tests**: Node's built-in `node --test`. **CI**: GitHub Actions runs `npm ci && npm test && npm run build` on PR/push to main.
+
+## 3. Architecture / how routing works
+
+No page-based routing — `App.jsx` picks `CoachDashboard` vs `ClientDashboard` from `profiles.role` (plus a hardcoded `COACH_EMAIL` fallback in `src/lib/constants.js`). Each dashboard keeps a `page` string in state and a `Sidebar` renders nav items for it.
+
+**Coach pages**: `dashboard` (overview/at-risk/alerts), `clients` (per-client deep dive), `crm` (lead pipeline board), `metrics` (business/content KPIs), `assess` (pre-signup assessments), `templates` (legacy program templates), `progression` (progression-model library), `library` (shared resources).
+
+**Client pages depend on tier**:
+- **Full coaching**: dashboard, check-in (daily/weekly), workouts, progress, program, nutrition, habits, resources, schedule, roadmap.
+- **Program-only**: program home, program, workouts, progress, more — no check-in flow.
+- **Starter**: starter home, workouts, schedule, resources — no Progress/Plan tabs at all (deliberate spec restriction, not a bug if it looks missing).
+
+Auth screens: `LoginScreen`, `IntakeForm` (public lead capture), `ResetPasswordScreen`.
+
+Server-side coach gating: `api/_lib/auth.js` `requireCoach()` verifies the bearer token via Supabase and checks `profiles.role === 'coach'`. API routes use the Supabase **service-role key** and bypass RLS entirely — RLS is the client-side safety net, not the only one.
+
+## 4. Core data model (by group)
+
+- **Core**: `profiles` (role + client_type + V12 3-system assessment scores), `programs`, `exercises`, `nutrition_plans`, `daily_checkins`, `weekly_checkins`, `workout_logs`, `progress_photos`, `habits`/`habit_logs`, `coach_notes`, `conversations`, `resources`, `program_versions` (immutable snapshots).
+- **Notion migration staging**: `staged_clients`/`staged_daily_checkins`/`staged_weekly_checkins`/`staged_exercises`/`staged_workout_logs`/`staged_nutrition_plans` — claimed into real tables via `claim_staged_data()` RPC on signup.
+- **Assessment/goals**: `client_assessments` (coach's pre-signup intake), `client_goals` + `client_goal_insights`, `client_goal_scores` (write-only history, nothing reads it yet — see §6).
+- **Coaching ops**: `coach_messages` (versioned), `daily_metrics` (coach-entered business KPIs, manual), `exercise_diagrams`, `meal_logs` (additive to `daily_checkins` macros, not overwriting), `client_onboarding_tasks` (day-0 gate: assessment → coach_review → roadmap_ready).
+- **Phases/programming**: `program_phase_recommendations` (AI-advisory, requires explicit coach approve/modify/hold/reject — mirrors the note in `db/add_phase_recommendations.sql` you had open), `program_phase_history` (append-only log), `program_phases` (coach's forward-looking planned sequence, read by `ProgramRoadmap`), `progression_models` (coach-editable methodology library fed into AI prompts), `programs.top_phase`/`sub_phase`, `exercise_upgrades` (exists, unused — see §6).
+- **Scheduling/CRM/ops**: `scheduled_workouts` (per-date override vs. legacy weekday matching), `client_summaries` (monthly AI recap text), `leads` (unified CRM/intake table), `rate_limits` (Postgres-backed limiter, survives cold starts), `starter_checkout_sessions`.
+
+**RLS pattern**: `public.is_coach()` (SECURITY DEFINER) gates almost every policy — `client_id = auth.uid() OR is_coach()` for reads, coach-only for most writes; clients can write their own `daily_checkins`/`weekly_checkins`/`workout_logs`/`habit_logs`.
+
+**Known gap**: `db/fix_client_goals_write_policy.sql` and `db/add_upgrade_requests.sql` are empty/stub files even though `upgrade_requests` and the goals write policy are live in prod and referenced in app code. The `db/` folder is the intended source of truth for schema but is **not fully accurate** for these two — those changes were applied directly in Supabase's SQL editor without being checked in. If you touch either area, verify actual prod schema before trusting the migration file.
+
+## 5. API endpoints
+
+Exactly **12 files** in `api/*.js` — this matches a hard constraint: **Vercel Hobby plan caps serverless functions at 12, and this project is at the limit.** Do not add new files under `api/` — extend an existing route by branching on payload shape instead (this is already the pattern: `goal-insight.js` multiplexes goal insights / phase recommendations / roadmap generation by which ID is present in the body; `starter-checkout.js` multiplexes checkout-start and payment-confirm).
+
+- **AI generation**: `generate-program.js`, `goal-insight.js` (3-in-1), `summary.js` (monthly recap).
+- **Leads/CRM/onboarding**: `submit-application.js`, `check-accepted.js`, `link-lead.js`, `sync-lead-to-notion.js`.
+- **Notion sync**: `sync-client.js`, `notion-goal.js`, `list-templates.js`.
+- **Payments**: `starter-checkout.js`.
+- **Cron**: `checkin-digest.js`.
+- Shared server libs (not counted against the function cap since they're imported, not deployed as routes): `api/_lib/{anthropic,auth,notion,notionCrm,notionTemplates,leads,paymentProvider,rateLimit,resend,scores,starterActivation,strengthTrends,supabaseAdmin}.js`.
+
+`vercel.json` sets `maxDuration: 180` on the three AI-heavy routes (`generate-program`, `summary`, `goal-insight`) — these are the ones most likely to hit timeout issues under load.
+
+## 6. What's mid-build / stubbed / deliberately incomplete
+
+- **Payoneer payments — not implemented.** `api/_lib/paymentProvider.js`: `createCheckoutSession()` throws "Payoneer integration not implemented yet" without an API key; `parseWebhookEvent()` always returns null. Code comments reference `api/payoneer-webhook.js` and `api/admin-confirm-starter-payment.js` as routes that don't exist. Starter checkout currently falls back to a manual coach-confirm path. **If asked to "finish payments," this is the work.**
+- **`exercise_upgrades` table has zero code references.** The migration comment points to an `api/advance-phase.js` "Advance to Next Phase" flow that does not exist. Likely scaffolding for a feature that got descoped — possibly related to the phase-aware generation effort that was built and fully reverted in a prior session (PRs #66-72; root cause of a 504 timeout was never resolved, and "Fast Mode" work is blocked on it — don't re-propose exercise-count caps as the fix without re-reading that history).
+- **`client_goal_scores`** is explicitly write-only per its own migration comment — daily snapshots are stored but nothing computes trends/predictions from them yet.
+- **Starter content library** — `add_starter_onboarding.sql` notes the "pick a workout" flow isn't trackable yet, pending a Notion DB that doesn't exist yet.
+- **`program_templates` table + coach "Templates" panel are legacy.** Program generation reads templates from Notion now; the old Supabase table/UI still exist and render but aren't in the live generation path. Don't assume editing a template there affects generated programs.
+- **Two empty migration stub files** noted in §4 — schema drift risk if anyone assumes `db/*.sql` is complete.
+
+## 7. Environment variables
+
+Server (Vercel): `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`, `ANTHROPIC_API_KEY`, `NOTION_API_KEY`, `NOTION_DATABASE_ID`, `NOTION_PROGRAM_LIBRARY_DB_ID`, `NOTION_CRM_DATA_SOURCE_ID`, `NOTION_CHECKINS_DB_ID`, `RESEND_API_KEY`, `COACH_NOTIFICATION_EMAIL`, `PAYONEER_API_KEY` (unused until payments are built), `CRON_SECRET`.
+
+Frontend (Vite, build-time): `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (note: `src/supabaseClient.js` has hardcoded dev fallbacks if these are unset — don't rely on that in prod).
+
+One-off migration scripts only (not needed on Vercel): `SHEET_ID`, `SHEET_RANGE`, `GOOGLE_API_KEY`, `NOTION_MEASUREMENTS_DB_ID`.
+
+## 8. Cron jobs
+
+`vercel.json` → `checkin-digest` runs daily at 12:00 UTC, hits `api/checkin-digest.js`, requires `Authorization: Bearer <CRON_SECRET>` (Vercel sends this automatically for cron triggers, rejects any other caller). It rolls up the last 24h of daily/weekly check-ins into a single digest email to the coach via Resend, rather than per-check-in emails.
+
+## 9. Feature inventory
+
+**Client-facing**: daily/weekly check-ins, habit tracker, workout logging with history/charts, progress photos (grouped by weekly check-in), body composition/BMI, goal tracking with computed scores, auto-detected milestones, macro calculator, nutrition plan + per-meal logging (additive), resource/recipe library, custom workout scheduling (per-date overrides), program roadmap view, training-partner program sharing, tiered access (coaching/program-only/starter) with access-window expiry, monthly AI recap banner + email.
+
+**Coach-facing**: AI program + nutrition generation (Notion intake/templates → Anthropic → Supabase), coach notes + conversation log, versioned coach messages, phase control + history + planned roadmap, AI phase recommendations (advisory-only, approve/modify/hold/reject), AI-generated full roadmap proposal, progression-model library, client assessments, CRM/lead pipeline board, business+content metrics dashboard, client archive, program version history (snapshot/restore), at-risk/alert panels (missed check-ins, low adherence, milestone/phase/onboarding alerts), superset/circuit workout-block grouping.
+
+## 10. Working conventions worth knowing
+
+- **Don't propose big architecture changes or risky refactors unprompted** — this team ships in small, bounded slices; propose small pieces first and ask before large restructuring.
+- **Don't add new `api/*.js` files** — Vercel Hobby plan is at the 12-function cap; extend an existing endpoint instead.
+- Silent Supabase write failures are very often an **RLS policy mismatch**, not a form/UI bug — check `is_coach()` policies first.
+- A prior "phase-aware generation" build was fully reverted after real problems (504s, blocked Fast Mode) — read that history before re-attempting anything phase-generation-related.
+- No error boundary exists at the app root — a single bad ref/render can white-screen the whole app (has happened once, in `CoachHome`). Be careful with refactors that touch shared render paths.
+
+## 11. V12 Head Coach initiative (in progress, not yet live)
+
+A separate, much larger architecture spec was introduced 2026-09-23: an AI-driven coaching decision pipeline — `check-in → event → task → context assembly → safety gate → rule engine → Claude → structured output → validation → authority check → recommendation → coach approval → intervention → outcome → audit` — being built on top of this app in small, owner-approved slices (per the working convention in §10; this is exactly the kind of change that convention exists for).
+
+**Status: HC-001 (repo audit) and HC-002 (database foundation) are complete and applied to prod. HC-003 onward has not started.** None of this is wired into the running app yet — no UI, no endpoint, no trigger fires it. It's inert schema waiting on HC-003+.
+
+**HC-002 — what was actually applied to Supabase:**
+- 5 new tables: `head_coach_tasks`, `head_coach_context_snapshots`, `head_coach_recommendations`, `head_coach_outcomes`, `head_coach_audit_events`.
+- 2 enums (`head_coach_task_status`, `head_coach_recommendation_status`), 2 trigger functions, 4 triggers.
+- Immutability is DB-enforced, not just RLS: `supabaseAdmin` (service role) bypasses RLS like every other `api/*.js` file in this repo, so RLS alone can't guarantee a "never overwrite" property — `head_coach_context_snapshots`/`head_coach_audit_events` are insert-only (trigger blocks UPDATE/DELETE outright) and `head_coach_recommendations` locks after its first coach decision (trigger blocks further UPDATE; DELETE is blocked always).
+- `task_id`/`recommendation_id`/`context_snapshot_id` FKs use `ON DELETE RESTRICT`, not `CASCADE` — a real finding from review, not stylistic: a cascading delete in Postgres fires the child table's own triggers, so `CASCADE` here would never actually cascade, it'd hit the immutability trigger and abort. `RESTRICT` states the real, guaranteed behavior instead of a misleading one. Net effect: once a client has any Head Coach recommendation history, deleting their profile fails outright rather than silently losing that history.
+- Migration file: `db/proposed_head_coach_foundation.sql` (filename says "proposed" but this was reviewed and applied — treat it as the historical record, not a pending change). Verification scripts also live in `db/`: `verify_hc002_catalog.sql` (read-only catalog check), `verify_hc002_functional.sql` (rollback-wrapped live trigger/RESTRICT test, persists nothing).
+
+**Design decisions baked in, all explicitly owner-approved (see the file's own header comments for full rationale):**
+- New Head Coach code will be TypeScript; the rest of the app stays plain JS — no full-repo migration.
+- No new `objectives`/`current_states` tables — reuses `client_goals` (§4) as-is, per the same "don't create a second read path for the same data" reasoning as the metric_key bug fixed earlier this session.
+- Rule registry will be a versioned TS module (HC-007, not built yet), not a DB table — code-reviewed/deploy-gated rules are a stronger guarantee than a coach-editable table for something nothing should modify at runtime.
+- The spec's `decisions`/`recommendations`/`coach_overrides` were consolidated into one table, `head_coach_recommendations`, instead of three — a real, flagged deviation from the literal spec.
+- A future `api/head-coach.js` (HC-004, not built) will multiplex Head Coach actions by payload shape into one file, same pattern as `goal-insight.js`, to stay inside the 12-function Vercel cap (§5) — no plan upgrade needed.
+
+**Explicitly deferred, not built:** the check-in→task trigger mechanism, the task-processing worker, `api/head-coach.*` itself, a generic `requireClient()` auth helper, any action executor (no autonomous actions in MVP scope), an `alerts` table, an `interventions` table, and anything client-facing.
+
+**HC-003 (Authentication/RLS/Authorization) — complete.**
+- **`api/_lib/headCoachAuth.ts`** (first TypeScript file in this repo — added `typescript`/`@types/node` as dev deps and a minimal `tsconfig.json`, `noEmit`, not wired into any build step since Vercel transpiles `api/*.ts` itself): two primitives, and Head Coach code should never write its own auth check outside these. `requireCoachForHeadCoach()` is a thin, unchanged wrapper around the existing `requireCoach()` — for every coach-driven action (view/approve/modify/reject/defer/record-outcome). `requireHeadCoachWorker()` is new — a shared-secret check (reuses `CRON_SECRET`, same shape as `checkin-digest.js`) for system-driven writes (task/context/recommendation creation, system-authored audit events) that have no human caller to check a role for.
+- **No `requireClient()` built** — audited and confirmed unnecessary for MVP: no Head Coach operation is ever client-invoked (no client-facing UI in scope).
+- **No HC-002 schema/RLS changes** — audited specifically for defects and found none; the existing coach-only-`SELECT`/zero-write-policy posture on all 5 Head Coach tables already fully satisfies "no client access, no client-writable path."
+- **Found and fixed an unrelated, pre-existing, critical privilege-escalation gap** while auditing what `requireCoach()`/`is_coach()` actually depend on: `profiles`' RLS `UPDATE` policy is row-scoped (`id = auth.uid()`) but not column-scoped, so any client could `PATCH` their own `role` to `'coach'` via a direct Supabase REST call, bypassing the UI, and be trusted as a real coach everywhere in this app (not just Head Coach). Fixed in `db/fix_profiles_role_selfescalation.sql` — a `BEFORE UPDATE` trigger blocks a non-coach from changing `role`/`client_type`/the three assessment-score columns on their own row. Verified against every existing write path first: `api/_lib/starterActivation.js` (sets `client_type` via the service role during payment confirm) and `api/sync-client.js` (sets assessment scores via the service role) both still work, since the trigger only blocks when there's a live non-coach user session (`auth.uid()` non-null and `is_coach()` false) — service-role calls (`auth.uid()` null) and coach sessions are unaffected.
+- **Applied to prod and verified**, same manual-SQL-editor process as every other migration here.
+
+**Next task:** HC-004 (Core State APIs / the actual `api/head-coach.js`) — not started, awaiting go-ahead.
