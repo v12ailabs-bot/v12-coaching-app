@@ -9,6 +9,7 @@ import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalate
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
+import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheckInPrompt.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -131,14 +132,15 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005/HC-006/HC-008/HC-009: Head Coach task creation, claiming, context
-// assembly, rule evaluation, and the safety gate for a specific check-in --
-// coach-triggered (no automatic check-in->task trigger, no cron worker, per
-// the owner's decision), same synchronous shape as every other action on
-// this route. A no_action/escalate safety-gate outcome resolves the task
-// right here (CLOSED/ESCALATED) and it never reaches AI reasoning; a
-// "proceed" outcome leaves the task at READY, since AI reasoning is HC-010
-// onward and doesn't exist yet. requireCoach() above already satisfies the HC-003
+// HC-005/HC-006/HC-008/HC-009/HC-011: Head Coach task creation, claiming,
+// context assembly, rule evaluation, the safety gate, and (on "proceed")
+// real AI reasoning for a specific check-in -- coach-triggered (no
+// automatic check-in->task trigger, no cron worker, per the owner's
+// decision), same synchronous shape as every other action on this route. A
+// no_action/escalate safety-gate outcome resolves the task right here
+// (CLOSED/ESCALATED) and never reaches the model at all. The AI's output is
+// NOT yet validated or persisted as a recommendation -- HC-012 onward.
+// requireCoach() above already satisfies the HC-003
 // authorization requirement for this coach-driven Head Coach operation
 // (this route is coach-only end to end; there is no separate
 // requireCoachForHeadCoach() call needed since it's the same underlying
@@ -194,13 +196,25 @@ async function handleReviewCheckIn(req, res, user) {
     else if (gate.decision === "escalate") gateOutcomeTask = await escalateTask(task.id, checkin.client_id, gate.reason, "coach", user.id);
     if (gateOutcomeTask) task = gateOutcomeTask;
 
+    // HC-011: only reached on "proceed" -- a no_action/escalate verdict
+    // resolved the task above and never gets here. Not yet persisted as a
+    // head_coach_recommendations row (that table's ai_output is immutable
+    // the moment it's inserted; writing unvalidated output into it now
+    // would mean bad data could get stuck there forever) -- persisting is
+    // wired up once HC-012 (Output Validator) exists to check it first.
+    let aiReasoning = null;
+    if (gate.decision === "proceed_to_reasoning") {
+      aiReasoning = await generateReviewCheckInRecommendation(finalContext, ruleResult.outcomes);
+    }
+
     return res.status(200).json({
       task,
       context: finalContext,
       ruleEngine: { verdict: ruleResult.verdict, verdictReason: ruleResult.verdictReason, registryVersion: ruleResult.ruleRegistryVersion },
       safetyGate: gate,
+      aiReasoning,
       context_snapshot_id: snapshot.id,
-      note: "HC-009 only: task created, context assembled, rules evaluated, safety gate applied. AI reasoning is not built yet (HC-010 onward).",
+      note: "HC-011 only: full pipeline through raw AI reasoning. Output is NOT yet validated or persisted as a recommendation (HC-012 onward).",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);
