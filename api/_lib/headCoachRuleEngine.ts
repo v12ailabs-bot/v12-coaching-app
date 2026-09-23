@@ -22,6 +22,7 @@ export interface RuleOutcome {
   ruleId: string;
   version: number;
   category: Rule["category"];
+  authority: Rule["authority"];
   status: "fired" | "not_fired" | "data_missing" | "condition_error";
   error?: string;
 }
@@ -53,7 +54,7 @@ export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContex
   for (const rule of rules) {
     const missing = rule.requiredData.filter((path) => !hasRequiredData(context, path));
     if (missing.length) {
-      outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, status: "data_missing", error: `missing: ${missing.join(", ")}` });
+      outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, authority: rule.authority, status: "data_missing", error: `missing: ${missing.join(", ")}` });
       if (rule.failureBehavior === "task_failure") {
         throw new Error(`Rule ${rule.ruleId}: required data missing (${missing.join(", ")}) and failure_behavior is task_failure.`);
       }
@@ -65,7 +66,7 @@ export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContex
     try {
       fired = rule.condition(context);
     } catch (e: any) {
-      outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, status: "condition_error", error: e?.message ?? String(e) });
+      outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, authority: rule.authority, status: "condition_error", error: e?.message ?? String(e) });
       if (rule.failureBehavior === "task_failure") {
         throw new Error(`Rule ${rule.ruleId}: condition threw (${e?.message ?? e}) and failure_behavior is task_failure.`);
       }
@@ -73,7 +74,7 @@ export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContex
       continue;
     }
 
-    outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, status: fired ? "fired" : "not_fired" });
+    outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, authority: rule.authority, status: fired ? "fired" : "not_fired" });
     if (fired) verdictCandidates.push({ rule, actions: rule.allowedActions });
   }
 

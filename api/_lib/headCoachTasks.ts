@@ -198,10 +198,23 @@ export async function closeTaskNoAction(taskId: string, clientId: string, reason
   return task;
 }
 
+// Allowed from READY (HC-009's deterministic safety gate, or the AI's own
+// output declaring status "escalate") or RETRYING (HC-012's output
+// validator giving up after a bounded retry) -- either path lands here.
 export async function escalateTask(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
-  const task = await transitionTask(taskId, ["READY"], "ESCALATED", {});
-  if (task) await writeAuditEvent({ eventType: "safety_gate_escalated", taskId, clientId, actor, actorId, payload: { reason } });
+  const task = await transitionTask(taskId, ["READY", "RETRYING"], "ESCALATED", {});
+  if (task) await writeAuditEvent({ eventType: "escalated", taskId, clientId, actor, actorId, payload: { reason } });
   return task;
+}
+
+// HC-012 Output Validator's "bounded retry": one retry attempt when the
+// model's first response fails validation, per the spec's "if output is
+// invalid: bounded retry." attempt_count is incremented so a retried task
+// is distinguishable from a clean first-try success in the record.
+export async function markRetrying(taskId: string, clientId: string, task: HeadCoachTask, issues: unknown, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const retried = await transitionTask(taskId, ["READY"], "RETRYING", { attempt_count: task.attemptCount + 1 });
+  if (retried) await writeAuditEvent({ eventType: "output_validation_retry", taskId, clientId, actor, actorId, payload: { issues } });
+  return retried;
 }
 
 // attemptCount is passed in (not read fresh) so the caller doesn't need an

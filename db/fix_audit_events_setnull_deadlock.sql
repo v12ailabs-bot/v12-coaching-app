@@ -20,7 +20,7 @@
 -- undeletable forever, including test/debug ones -- a real problem given
 -- this repo has no staging environment, so all HC-006 onward development
 -- will keep live-testing directly against prod.
---
+
 -- Fix instead: keep ON DELETE SET NULL, but make the trigger smart enough to
 -- allow exactly that pattern (task_id/recommendation_id transitioning to
 -- NULL, nothing else about the row changing) while still blocking any
