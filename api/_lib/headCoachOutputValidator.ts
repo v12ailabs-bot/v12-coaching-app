@@ -80,13 +80,19 @@ export function validateReviewCheckInOutput(
   if (o.evidence.some((e) => !isNonEmptyString(e))) issues.push({ stage: "evidence", message: "every evidence entry must be a non-empty string" });
   if (issues.length) return { valid: false, issues, requiresEscalation };
 
-  // 5. rules -- authority must not exceed what any fired rule permits. By
+  // 5. rules -- authority must not exceed what EVERY fired rule permits. By
   // construction this is only ever reached after a Safety Gate "proceed"
   // (HC-009), so any fired rule here is advisory-category; the check is
   // still fully data-driven (reads rule.authority, doesn't hardcode "L1")
   // so it stays correct if a future rule with a different ceiling is added.
+  // Uses the MINIMUM (most restrictive) across fired rules, not the
+  // maximum -- if rule A caps at L0 and rule B caps at L1 and both fire,
+  // the binding ceiling is L0: rule A's reason for caution still applies
+  // even though rule B is more permissive. (Not currently reachable with
+  // today's rule set -- every rule that can co-fire by the time reasoning
+  // happens is L1 -- but the composition must be correct regardless.)
   const fired = ruleOutcomes.filter((r) => r.status === "fired");
-  const maxAllowedRank = fired.length ? Math.max(...fired.map((r) => AUTHORITY_RANK[r.authority] ?? 0)) : AUTHORITY_RANK.L1;
+  const maxAllowedRank = fired.length ? Math.min(...fired.map((r) => AUTHORITY_RANK[r.authority] ?? 0)) : AUTHORITY_RANK.L1;
   if (AUTHORITY_RANK[o.authority] > maxAllowedRank) {
     issues.push({ stage: "rules", message: `authority ${o.authority} exceeds the ceiling set by fired rules (max allowed rank ${maxAllowedRank})` });
   }

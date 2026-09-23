@@ -11,6 +11,7 @@ import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
 import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheckInPrompt.ts";
 import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.ts";
+import { determineAuthority } from "./_lib/headCoachAuthorityEngine.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -133,15 +134,17 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005/HC-006/HC-008/HC-009/HC-011/HC-012: Head Coach task creation,
-// claiming, context assembly, rule evaluation, the safety gate, AI
-// reasoning, and output validation for a specific check-in -- coach-
-// triggered (no automatic check-in->task trigger, no cron worker, per the
-// owner's decision), same synchronous shape as every other action on this
-// route. A no_action/escalate safety-gate outcome resolves the task right
-// here (CLOSED/ESCALATED) and never reaches the model at all. Validated AI
-// output is still not persisted as a recommendation row -- HC-013/HC-014
-// onward. requireCoach() above already satisfies the HC-003
+// HC-005/HC-006/HC-008/HC-009/HC-011/HC-012/HC-013: Head Coach task
+// creation, claiming, context assembly, rule evaluation, the safety gate,
+// AI reasoning, output validation, and backend-determined authority for a
+// specific check-in -- coach-triggered (no automatic check-in->task
+// trigger, no cron worker, per the owner's decision), same synchronous
+// shape as every other action on this route. A no_action/escalate
+// safety-gate outcome resolves the task right here (CLOSED/ESCALATED) and
+// never reaches the model at all. The AI's declared authority is advisory
+// only -- determineAuthority() independently computes the real value; still
+// not persisted as a recommendation row -- HC-014 onward.
+// requireCoach() above already satisfies the HC-003
 // authorization requirement for this coach-driven Head Coach operation
 // (this route is coach-only end to end; there is no separate
 // requireCoachForHeadCoach() call needed since it's the same underlying
@@ -223,7 +226,19 @@ async function handleReviewCheckIn(req, res, user) {
         if (escalated) task = escalated;
       }
 
-      aiReasoning = { generation, validation };
+      // HC-013: only meaningful once a real, parsed AI output exists (a
+      // pure JSON-parse failure has no authority field to consider at
+      // all). "The backend is authoritative" means this runs independently
+      // of validation.valid/requiresEscalation, not skipped because the AI
+      // asked for something risky -- determineAuthority() already treats a
+      // missing/invalid AI-declared value defensively (falls back to the
+      // backend's own ceiling), so it's safe to call even on output that
+      // failed a later validation stage.
+      const authority = generation.output
+        ? determineAuthority("REVIEW_CHECK_IN", ruleResult.outcomes, generation.output.authority ?? null)
+        : null;
+
+      aiReasoning = { generation, validation, authority };
     }
 
     return res.status(200).json({
@@ -233,7 +248,7 @@ async function handleReviewCheckIn(req, res, user) {
       safetyGate: gate,
       aiReasoning,
       context_snapshot_id: snapshot.id,
-      note: "HC-012 only: full pipeline through validated AI reasoning (bounded retry, escalation on failure). Output is NOT yet persisted as a recommendation (HC-013/HC-014 onward).",
+      note: "HC-013 only: full pipeline through backend-determined authority. Output is NOT yet persisted as a recommendation (HC-014 onward).",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);
