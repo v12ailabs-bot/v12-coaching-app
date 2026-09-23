@@ -20,6 +20,16 @@ import { Card, CardTitle, Btn, StatusBadge, Alert, EmptyState, Fld, Inp, RG } fr
 // Gated by VITE_HEAD_COACH_ENABLED (unset or anything but "false" = shown).
 // This only hides the UI -- HEAD_COACH_ENABLED (server-side, checked in
 // goal-insight.js) is the actual enforcement point.
+//
+// HC-020 Client Integration: deliberately NOT a new client-facing surface or
+// any automated sending -- per the owner's decision, this is a small
+// connector into the EXISTING, already-manual coach_messages feature. Once
+// a recommendation with client_communication_needed=true is approved/
+// modified, "Send to Client" pre-fills that feature's composer (via
+// onSendToClient, wired up in ClientDetailPage) with the AI's
+// communication_draft -- the coach still reviews/edits/sends it themselves.
+// The client never sees any AI reasoning directly, only whatever message
+// text the coach actually chooses to send.
 
 const HEAD_COACH_ENABLED = import.meta.env.VITE_HEAD_COACH_ENABLED !== "false";
 
@@ -45,9 +55,15 @@ async function callHeadCoach(body) {
 
 const textareaStyle = { width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: 12, fontSize: 13, fontFamily: "inherit", outline: "none" };
 
-function TaskCard({ task, onDecide, onRecordOutcome }) {
+function TaskCard({ task, onDecide, onRecordOutcome, onSendToClient }) {
   const rec = task.recommendation;
   const output = rec?.ai_output;
+  // HC-020: coach_modification only ever edits `recommendation` today (see
+  // the Modify form below), never communication_draft -- checking it first
+  // anyway keeps this correct if that ever changes, falling back to the
+  // AI's original draft otherwise.
+  const communicationDraft = rec?.coach_modification?.communication_draft ?? output?.communication_draft;
+  const canSendToClient = output?.client_communication_needed && communicationDraft && (rec?.status === "approved" || rec?.status === "modified");
   const [note, setNote] = useState("");
   const [modText, setModText] = useState(output?.recommendation || "");
   const [busy, setBusy] = useState(false);
@@ -123,13 +139,19 @@ function TaskCard({ task, onDecide, onRecordOutcome }) {
               Decision: <b>{rec.status}</b>{rec.coach_decision_note ? ` — "${rec.coach_decision_note}"` : ""}
             </div>
           )}
+
+          {canSendToClient && (
+            <div style={{ marginTop: 10 }}>
+              <Btn teal sm onClick={() => onSendToClient(communicationDraft)}>Send to Client via Coach Messages</Btn>
+            </div>
+          )}
         </>
       )}
     </Card>
   );
 }
 
-export function HeadCoachSection({ client }) {
+export function HeadCoachSection({ client, onSendToClient }) {
   const [recentCheckin, setRecentCheckin] = useState(null);
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -201,7 +223,7 @@ export function HeadCoachSection({ client }) {
       {tasks.length === 0 ? (
         <EmptyState title="No reviews yet" sub='Click "Review This Check-In" above to run the first one.' />
       ) : (
-        tasks.map((t) => <TaskCard key={t.id} task={t} onDecide={decide} onRecordOutcome={recordOutcome} />)
+        tasks.map((t) => <TaskCard key={t.id} task={t} onDecide={decide} onRecordOutcome={recordOutcome} onSendToClient={onSendToClient} />)
       )}
     </>
   );

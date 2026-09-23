@@ -7,9 +7,15 @@ import { Card, CardTitle, Btn, EmptyState } from "../../../components/ui/index.j
 // manages its own coach_messages history for this client. Replaces the old
 // single-textarea "Client-Visible Message" (profiles.coach_message) — each
 // send is now a new row with its own read-state, not an overwrite.
-export function CoachMessagesSection({ clientId }) {
+//
+// initialBody (HC-020): lets a caller (the Head Coach tab's "Send to
+// Client" button) pre-fill the composer with an approved AI
+// communication_draft. Read once at mount -- this component only ever
+// mounts fresh inside its modal (ClientDetailPage conditionally renders it),
+// so a plain useState initializer is enough, no effect needed to re-sync it.
+export function CoachMessagesSection({ clientId, initialBody = "" }) {
   const [messages, setMessages] = useState([]);
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(initialBody);
   const [sending, setSending] = useState(false);
 
   const load = useCallback(async () => {

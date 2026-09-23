@@ -87,6 +87,9 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [activeTab, setActiveTab] = useState("overview");
   const [lastCheckin, setLastCheckin] = useState(null);
   const [showMessageModal, setShowMessageModal] = useState(false);
+  // HC-020: set by HeadCoachSection's "Send to Client" action so the
+  // Coach Messages modal opens pre-filled with the approved AI draft.
+  const [messageDraft, setMessageDraft] = useState("");
   const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [showProgressModal, setShowProgressModal] = useState(false);
   // Applied at most once per mount — after that, the coach's own in-page
@@ -575,7 +578,9 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   )}
                   {validTab === "goals" && (<><div id="section-milestones"><MilestonesCard client={client} /></div><GoalsSection client={client} /></>)}
                   {validTab === "nutrition" && <CoachNutrition clientId={client.id} refreshKey={progTick} />}
-                  {validTab === "head-coach" && <HeadCoachSection client={client} />}
+                  {validTab === "head-coach" && (
+                    <HeadCoachSection client={client} onSendToClient={(draft) => { setMessageDraft(draft); setShowMessageModal(true); }} />
+                  )}
                   {validTab === "program-phase" && (
                     <>
                       <ProgramGenerateActions client={client} templateId={templateId} setTemplateId={setTemplateId}
@@ -653,8 +658,8 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       </div>
 
       {client && showMessageModal && (
-        <Modal title="Send Client Message" onClose={()=>setShowMessageModal(false)}>
-          <CoachMessagesSection clientId={client.id} />
+        <Modal title="Send Client Message" onClose={()=>{setShowMessageModal(false); setMessageDraft("");}}>
+          <CoachMessagesSection clientId={client.id} initialBody={messageDraft} />
         </Modal>
       )}
       {client && showSettingsModal && (
