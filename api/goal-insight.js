@@ -5,6 +5,7 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
+import { createTask, claimTask, markReady, failTask } from "./_lib/headCoachTasks.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -127,7 +128,54 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id }
+// HC-005: Head Coach task creation + claiming for a specific check-in --
+// coach-triggered (no automatic check-in->task trigger, no cron worker, per
+// the owner's decision), same synchronous shape as every other action on
+// this route. This is ONLY task-lifecycle infrastructure: it creates the
+// task, claims it, and marks it READY -- context assembly, rules, and AI
+// reasoning are HC-006 onward and don't exist yet, so this intentionally
+// stops at READY rather than pretending to produce a recommendation.
+// requireCoach() above already satisfies the HC-003 authorization
+// requirement for this coach-driven Head Coach operation (this route is
+// coach-only end to end; there is no separate requireCoachForHeadCoach()
+// call needed since it's the same underlying check).
+async function handleReviewCheckIn(req, res, user) {
+  const { checkin_id } = req.body || {};
+  if (!checkin_id) return res.status(400).json({ error: "checkin_id is required" });
+  let task = null;
+  try {
+    const { data: checkin } = await supabaseAdmin.from("daily_checkins").select("id,client_id").eq("id", checkin_id).maybeSingle();
+    if (!checkin) return res.status(404).json({ error: "Check-in not found." });
+
+    task = await createTask({
+      clientId: checkin.client_id,
+      taskType: "REVIEW_CHECK_IN",
+      sourceTable: "daily_checkins",
+      sourceId: checkin.id,
+      actor: "coach",
+      actorId: user.id,
+      actorLabel: user.email,
+    });
+
+    // Not QUEUED anymore -- either already claimed/advanced by a prior
+    // click, or (in a future automatic-trigger world) by something else.
+    // Return its current state rather than erroring.
+    const claimed = await claimTask(task.id);
+    if (!claimed) return res.status(200).json({ task });
+
+    const ready = await markReady(claimed.id, checkin.client_id, "coach", user.id);
+    return res.status(200).json({
+      task: ready || claimed,
+      note: "HC-005 only: task created and moved to READY. Context assembly, rule evaluation, and AI reasoning are not built yet (HC-006 onward).",
+    });
+  } catch (e) {
+    console.error("review-checkin error:", e, "checkin_id:", checkin_id);
+    if (task) await failTask(task, e.message, "coach", user.id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -137,10 +185,11 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id, program_id } = req.body || {};
+  const { goal_id, phase_id, program_id, checkin_id } = req.body || {};
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);
-  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, or program_id is required" });
+  if (checkin_id) return handleReviewCheckIn(req, res, user);
+  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, program_id, or checkin_id is required" });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();
