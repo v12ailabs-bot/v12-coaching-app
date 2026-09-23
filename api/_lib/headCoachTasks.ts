@@ -195,8 +195,17 @@ export async function markReady(taskId: string, clientId: string, actor: Actor, 
 // (HC-015), distinct from ESCALATED which means something needs more
 // urgent/careful attention than the routine review queue. Not terminal (a
 // coach decision still moves it further, see below) -- no completed_at yet.
+//
+// Allowed from READY (first attempt validated cleanly) OR RETRYING (HC-012's
+// bounded retry validated cleanly on the second attempt) -- found live
+// during the pilot as a real bug: this only accepted READY, so a task whose
+// FIRST output failed validation (e.g. the model's JSON got truncated) but
+// whose RETRY produced a perfectly valid, persisted recommendation got
+// stuck showing RETRYING forever, with no way for the coach to act on the
+// (valid, sitting-right-there) recommendation. escalateTask already
+// correctly accepted both states; this didn't.
 export async function markDecisionReady(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
-  const task = await transitionTask(taskId, ["READY"], "DECISION_READY", {});
+  const task = await transitionTask(taskId, ["READY", "RETRYING"], "DECISION_READY", {});
   if (task) await writeAuditEvent({ eventType: "decision_ready", taskId, clientId, actor, actorId });
   return task;
 }
