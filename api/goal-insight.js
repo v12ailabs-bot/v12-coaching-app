@@ -5,7 +5,7 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady } from "./_lib/headCoachTasks.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.ts";
 import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
 import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
@@ -13,6 +13,7 @@ import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheck
 import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.ts";
 import { determineAuthority } from "./_lib/headCoachAuthorityEngine.ts";
 import { createRecommendation } from "./_lib/headCoachRecommendations.ts";
+import { applyCoachDecision } from "./_lib/headCoachApproval.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -257,7 +258,7 @@ async function handleReviewCheckIn(req, res, user) {
       safetyGate: gate,
       aiReasoning,
       context_snapshot_id: snapshot.id,
-      note: "HC-014: full pipeline through a persisted head_coach_recommendations row (status 'pending'). Coach approve/modify/reject/defer is HC-015, not built yet.",
+      note: "HC-015: full pipeline including the persisted recommendation. Coach decisions (approve/modify/reject/defer) go through the { recommendation_id, decision } action on this same route.",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);
@@ -266,7 +267,42 @@ async function handleReviewCheckIn(req, res, user) {
   }
 }
 
-// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id }
+const COACH_DECISIONS = ["approve", "modify", "reject", "defer"];
+
+// HC-015 Coach Approval: the coach's decision on a pending recommendation.
+// "Expected state validation" is the compare-and-swap on status='pending'
+// inside applyCoachDecision itself -- see that file's header. Approve/
+// modify move the task to ACTION_PENDING (no automated executor exists,
+// HC-016 is deferred -- the coach carries it out manually); reject/defer
+// close the task out, since the recommendation row is locked the moment
+// it's decided and revisiting it means a new review, not resuming this one.
+async function handleCoachDecision(req, res, user) {
+  const { recommendation_id, decision, note, modification } = req.body || {};
+  if (!recommendation_id) return res.status(400).json({ error: "recommendation_id is required" });
+  if (!COACH_DECISIONS.includes(decision)) return res.status(400).json({ error: `decision must be one of ${COACH_DECISIONS.join(", ")}` });
+  if (decision === "modify" && !modification) return res.status(400).json({ error: "modification is required when decision is 'modify'" });
+
+  try {
+    const { data: existing } = await supabaseAdmin.from("head_coach_recommendations").select("id,task_id,client_id,status").eq("id", recommendation_id).maybeSingle();
+    if (!existing) return res.status(404).json({ error: "Recommendation not found." });
+
+    const result = await applyCoachDecision({ recommendationId: recommendation_id, decision, decidedBy: user.id, note, modification });
+    if (result.alreadyDecided) {
+      return res.status(409).json({ error: "This recommendation has already been decided.", currentStatus: existing.status });
+    }
+
+    const task = decision === "approve" || decision === "modify"
+      ? await markActionPending(existing.task_id, existing.client_id, "coach", user.id)
+      : await closeTaskDecided(existing.task_id, existing.client_id, decision, "coach", user.id);
+
+    return res.status(200).json({ recommendation: result.recommendation, task });
+  } catch (e) {
+    console.error("coach-decision error:", e, "recommendation_id:", recommendation_id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id } | { recommendation_id }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -276,11 +312,12 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id, program_id, checkin_id } = req.body || {};
+  const { goal_id, phase_id, program_id, checkin_id, recommendation_id } = req.body || {};
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);
   if (checkin_id) return handleReviewCheckIn(req, res, user);
-  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, program_id, or checkin_id is required" });
+  if (recommendation_id) return handleCoachDecision(req, res, user);
+  if (!goal_id) return res.status(400).json({ error: "goal_id, phase_id, program_id, checkin_id, or recommendation_id is required" });
 
   try {
     const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", goal_id).maybeSingle();

@@ -193,10 +193,31 @@ export async function markReady(taskId: string, clientId: string, actor: Actor, 
 // and the outcome was clean (validated, not escalating) -- the task is
 // ready for the coach's normal approve/modify/reject/defer decision
 // (HC-015), distinct from ESCALATED which means something needs more
-// urgent/careful attention than the routine review queue.
+// urgent/careful attention than the routine review queue. Not terminal (a
+// coach decision still moves it further, see below) -- no completed_at yet.
 export async function markDecisionReady(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
-  const task = await transitionTask(taskId, ["READY"], "DECISION_READY", { completed_at: new Date().toISOString() });
+  const task = await transitionTask(taskId, ["READY"], "DECISION_READY", {});
   if (task) await writeAuditEvent({ eventType: "decision_ready", taskId, clientId, actor, actorId });
+  return task;
+}
+
+// HC-015 Coach Approval outcomes, from DECISION_READY. Approve/modify imply
+// something should now happen (even though no automated executor exists
+// yet -- HC-016 is deferred -- ACTION_PENDING accurately represents "coach
+// approved this, a human carries it out manually outside the system," per
+// the same convention documented since HC-002). Reject/defer close the task
+// out -- a deferred recommendation's row is locked once decided (HC-002),
+// so revisiting it later means a new REVIEW_CHECK_IN task, not resuming
+// this one.
+export async function markActionPending(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["DECISION_READY"], "ACTION_PENDING", {});
+  if (task) await writeAuditEvent({ eventType: "action_pending", taskId, clientId, actor, actorId });
+  return task;
+}
+
+export async function closeTaskDecided(taskId: string, clientId: string, decision: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+  const task = await transitionTask(taskId, ["DECISION_READY"], "CLOSED", { completed_at: new Date().toISOString() });
+  if (task) await writeAuditEvent({ eventType: "recommendation_decided_closed", taskId, clientId, actor, actorId, payload: { decision } });
   return task;
 }
 
