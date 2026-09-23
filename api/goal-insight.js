@@ -6,6 +6,7 @@ import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
 import { createTask, claimTask, markReady, failTask } from "./_lib/headCoachTasks.ts";
+import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;
@@ -128,20 +129,24 @@ async function handleGenerateRoadmap(req, res) {
   }
 }
 
-// HC-005: Head Coach task creation + claiming for a specific check-in --
-// coach-triggered (no automatic check-in->task trigger, no cron worker, per
-// the owner's decision), same synchronous shape as every other action on
-// this route. This is ONLY task-lifecycle infrastructure: it creates the
-// task, claims it, and marks it READY -- context assembly, rules, and AI
-// reasoning are HC-006 onward and don't exist yet, so this intentionally
-// stops at READY rather than pretending to produce a recommendation.
-// requireCoach() above already satisfies the HC-003 authorization
-// requirement for this coach-driven Head Coach operation (this route is
-// coach-only end to end; there is no separate requireCoachForHeadCoach()
-// call needed since it's the same underlying check).
+// HC-005/HC-006: Head Coach task creation, claiming, and context assembly
+// for a specific check-in -- coach-triggered (no automatic check-in->task
+// trigger, no cron worker, per the owner's decision), same synchronous shape
+// as every other action on this route. Stops at READY with a persisted
+// context snapshot -- rule evaluation and AI reasoning are HC-007 onward and
+// don't exist yet. requireCoach() above already satisfies the HC-003
+// authorization requirement for this coach-driven Head Coach operation
+// (this route is coach-only end to end; there is no separate
+// requireCoachForHeadCoach() call needed since it's the same underlying
+// check).
 async function handleReviewCheckIn(req, res, user) {
   const { checkin_id } = req.body || {};
   if (!checkin_id) return res.status(400).json({ error: "checkin_id is required" });
+  // `task` is kept in sync with the LATEST successful transition throughout,
+  // not just the initial create -- failTask() compares-and-swaps against
+  // task.status, so if it were left stale (e.g. still QUEUED after a
+  // successful claim), a later failure would silently fail to record
+  // FAILED instead of erroring loudly.
   let task = null;
   try {
     const { data: checkin } = await supabaseAdmin.from("daily_checkins").select("id,client_id").eq("id", checkin_id).maybeSingle();
@@ -162,11 +167,19 @@ async function handleReviewCheckIn(req, res, user) {
     // Return its current state rather than erroring.
     const claimed = await claimTask(task.id);
     if (!claimed) return res.status(200).json({ task });
+    task = claimed;
 
-    const ready = await markReady(claimed.id, checkin.client_id, "coach", user.id);
+    const context = await buildReviewCheckInContext(checkin.client_id);
+    const snapshot = await persistContextSnapshot(task.id, context);
+
+    const ready = await markReady(task.id, checkin.client_id, "coach", user.id);
+    if (ready) task = ready;
+
     return res.status(200).json({
-      task: ready || claimed,
-      note: "HC-005 only: task created and moved to READY. Context assembly, rule evaluation, and AI reasoning are not built yet (HC-006 onward).",
+      task,
+      context,
+      context_snapshot_id: snapshot.id,
+      note: "HC-006 only: task created, context assembled and persisted, moved to READY. Rule evaluation and AI reasoning are not built yet (HC-007 onward).",
     });
   } catch (e) {
     console.error("review-checkin error:", e, "checkin_id:", checkin_id);
