@@ -22,20 +22,29 @@ function MacroBar({ label, logged, target, color }) {
 }
 
 // Targets come from nutrition_plans (existing, coach-set daily target);
-// logged macros are the SUM of this week's daily_checkins self-reports
-// (existing self-report columns, entered once per day at check-in — not a
-// live in-app food log). Framed as a weekly target (daily × 7) against the
-// week's running total instead of a single day's "remaining," since that's
-// what the underlying data actually represents.
+// logged macros are the SUM of this week's daily_checkins self-reports PLUS
+// this week's meal_logs (per-meal "as you go" entries) — both are
+// independent contributions to the same daily total, same semantics as
+// TodaysMealsCard's sumField, so nutrition logged via meal-by-meal entry
+// shows up here too instead of only in the daily check-in fields.
 export function NutritionMacroBars({ profile, checkins, setPage }) {
   const [plan, setPlan] = useState(null);
+  const [mealLogs, setMealLogs] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g")
-      .eq("client_id", profile.id).eq("active", true)
-      .order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => { setPlan(data || null); setLoading(false); });
+    const weekStart = (() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return localDateStr(d); })();
+    Promise.all([
+      supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g")
+        .eq("client_id", profile.id).eq("active", true)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle(),
+      supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g")
+        .eq("client_id", profile.id).gte("date", weekStart),
+    ]).then(([{ data: planData }, { data: mealLogData }]) => {
+      setPlan(planData || null);
+      setMealLogs(mealLogData || []);
+      setLoading(false);
+    });
   }, [profile.id]);
 
   if (loading) return null;
@@ -43,7 +52,9 @@ export function NutritionMacroBars({ profile, checkins, setPage }) {
 
   const weekStart = (() => { const d = new Date(); d.setDate(d.getDate() - d.getDay()); return localDateStr(d); })();
   const weekCheckins = (checkins || []).filter((c) => c.date >= weekStart);
-  const loggedSum = (key) => weekCheckins.reduce((s, c) => s + (Number(c[key]) || 0), 0);
+  const loggedSum = (key) =>
+    weekCheckins.reduce((s, c) => s + (Number(c[key]) || 0), 0) +
+    mealLogs.reduce((s, m) => s + (Number(m[key]) || 0), 0);
   const loggedCalories = loggedSum("calories");
 
   const weeklyTarget = (daily) => (daily == null ? null : daily * 7);

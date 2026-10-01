@@ -27,6 +27,8 @@ import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, CO
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
+import { TodayScreen } from "./features/today/TodayScreen.jsx";
+import { weekStartStr, isWithinWeeklyBackdateWindow } from "./lib/dates.js";
 import { LoginScreen } from "./features/auth/LoginScreen.jsx";
 import { ResetPasswordScreen } from "./features/auth/ResetPasswordScreen.jsx";
 
@@ -809,61 +811,10 @@ function ClientWelcome({ profile, onEnter }) {
   );
 }
 
-function DailyCheckin({ profile, onDone }) {
-  const [form, setForm] = useState({weight:"",sleep:7,energy:7,mood:7,water:8,diet:"On track",workout:"completed",calories:"",protein_g:"",carbs_g:"",fats_g:""});
-  const [loading, setLoading] = useState(false);
-  const [saved, setSaved] = useState(false);
-  const [existing, setExisting] = useState(null);
-  // Guards against the fetch below overwriting text the client already
-  // started typing before it resolved — render nothing until it's settled.
-  const [ready, setReady] = useState(false);
-  const set = (k,v) => setForm(p=>({...p,[k]:v}));
-
-  useEffect(()=>{
-    supabase.from("daily_checkins").select("*").eq("client_id",profile.id).eq("date",todayStr()).maybeSingle()
-      .then(({data})=>{if(data){setExisting(data);setForm({weight:data.weight||"",sleep:data.sleep,energy:data.energy,mood:data.mood,water:data.water,diet:data.diet,workout:data.workout,calories:data.calories??"",protein_g:data.protein_g??"",carbs_g:data.carbs_g??"",fats_g:data.fats_g??""});}setReady(true);});
-  },[profile.id]);
-
-  if(!ready) return <div className="spinner" style={{ margin: "80px auto" }} />;
-
-  const submit = async () => {
-    setLoading(true);
-    const num = (v)=>{const n=parseFloat(v);return Number.isNaN(n)?null:n;};
-    const entry = {client_id:profile.id,date:todayStr(),...form,weight:parseFloat(form.weight)||null,
-      calories:num(form.calories),protein_g:num(form.protein_g),carbs_g:num(form.carbs_g),fats_g:num(form.fats_g)};
-    if(existing) await supabase.from("daily_checkins").update(entry).eq("id",existing.id);
-    else await supabase.from("daily_checkins").insert(entry);
-    setSaved(true);setLoading(false);setTimeout(onDone,1400);
-  };
-
-  if(saved) return <div style={{textAlign:"center",paddingTop:80}}><div style={{background:"rgba(0,201,167,.14)",color:S.accent2,padding:"16px 32px",display:"inline-flex",fontSize:16,fontWeight:600}}>Check-in logged!</div></div>;
-
-  return (
-    <div>
-      <PageTitle title="Daily Check-In" sub={todayStr()+(existing?" · Updating today":"")}/>
-      <Card>
-        <div className="cg" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-          <Fld label="Weight (lbs)"><Inp type="number" step="0.1" value={form.weight} onChange={e=>set("weight",e.target.value)} placeholder="185.0"/></Fld>
-          <div/>
-          <Sld label="Sleep Quality" val={form.sleep} min={1} max={10} sfx="/10" onChange={v=>set("sleep",v)}/>
-          <Sld label="Energy Level" val={form.energy} min={1} max={10} sfx="/10" onChange={v=>set("energy",v)}/>
-          <Sld label="Mood" val={form.mood} min={1} max={10} sfx="/10" onChange={v=>set("mood",v)}/>
-          <Sld label="Water (glasses)" val={form.water} min={0} max={16} sfx=" glasses" onChange={v=>set("water",v)}/>
-          <Fld label="Nutrition Today"><RG options={["On track","Mostly clean","Struggled","Off plan"]} value={form.diet} onChange={v=>set("diet",v)}/></Fld>
-          <Fld label="Training Today"><RG options={["completed","rest","missed"]} value={form.workout} onChange={v=>set("workout",v)} cap/></Fld>
-          <Fld label="Calories"><Inp type="number" value={form.calories} onChange={e=>set("calories",e.target.value)} placeholder="e.g. 2200"/></Fld>
-          <Fld label="Protein (g)"><Inp type="number" value={form.protein_g} onChange={e=>set("protein_g",e.target.value)} placeholder="e.g. 180"/></Fld>
-          <Fld label="Carbs (g)"><Inp type="number" value={form.carbs_g} onChange={e=>set("carbs_g",e.target.value)} placeholder="e.g. 220"/></Fld>
-          <Fld label="Fats (g)"><Inp type="number" value={form.fats_g} onChange={e=>set("fats_g",e.target.value)} placeholder="e.g. 70"/></Fld>
-        </div>
-        <div style={{marginTop:20}}><Btn onClick={submit} disabled={loading}>{loading?"Saving...":"Log Check-In"}</Btn></div>
-      </Card>
-    </div>
-  );
-}
-
 function WeeklyCheckin({ profile, onDone }) {
-  const weekStart = (()=>{const d=new Date();d.setDate(d.getDate()-d.getDay());return localDateStr(d);})();
+  const currentWeekStart = weekStartStr();
+  const priorWeekStart = (()=>{const d=new Date(currentWeekStart+"T00:00:00");d.setDate(d.getDate()-7);return localDateStr(d);})();
+  const [weekStart, setWeekStart] = useState(currentWeekStart);
   const [form, setForm] = useState({
     bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
@@ -886,9 +837,11 @@ function WeeklyCheckin({ profile, onDone }) {
   const NUMERIC = ["bodyweight","waist","chest","hips","arms","week_number","training_days","nutrition_compliance","sleep_quality","hydration_quality","discipline_level","confidence_level","goal_progress","feeling"];
 
   useEffect(()=>{
+    setReady(false);
     (async()=>{
       const {data} = await supabase.from("weekly_checkins").select("*").eq("client_id",profile.id).eq("date",weekStart).maybeSingle();
       if(data){ setExisting(data); setForm(f=>{const next={...f};Object.keys(f).forEach(k=>{if(data[k]!=null)next[k]=data[k];});return next;}); setReady(true); return; }
+      setExisting(null);
       // No entry yet this week — prefill the stable measurements from the most
       // recent prior check-in (and bump the week number) so the client only
       // updates what changed instead of re-typing everything.
@@ -896,13 +849,14 @@ function WeeklyCheckin({ profile, onDone }) {
       if(prev){ setForm(f=>({...f, bodyweight:prev.bodyweight??"", waist:prev.waist??"", chest:prev.chest??"", hips:prev.hips??"", arms:prev.arms??"", week_number:prev.week_number!=null?String(Number(prev.week_number)+1):""})); }
       setReady(true);
     })();
-  },[profile.id]);
+  },[profile.id,weekStart]);
 
   if(!ready) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
   const submit = async () => {
+    if(!isWithinWeeklyBackdateWindow(weekStart)) return;
     setLoading(true); setError("");
-    const entry = {client_id:profile.id, date:weekStart, ...form};
+    const entry = {client_id:profile.id, date:weekStart, submitted_date:todayStr(), ...form};
     NUMERIC.forEach(k=>{const n=parseFloat(entry[k]);entry[k]=Number.isNaN(n)?null:n;});
     const { error } = existing
       ? await supabase.from("weekly_checkins").update(entry).eq("id",existing.id)
@@ -934,6 +888,13 @@ function WeeklyCheckin({ profile, onDone }) {
   return (
     <div>
       <PageTitle title="Weekly Check-In" sub={"Week of "+weekStart}/>
+      <Card>
+        <Fld label="Which week is this for?">
+          <RG options={["This week","Last week"]} value={weekStart===currentWeekStart?"This week":"Last week"}
+            onChange={(v)=>setWeekStart(v==="This week"?currentWeekStart:priorWeekStart)}/>
+        </Fld>
+        {weekStart!==currentWeekStart && <div style={{fontSize:11,color:S.warning}}>Logging for a past week — this will be flagged as backdated.</div>}
+      </Card>
       <Card style={{borderLeft:"3px solid "+S.accent2,paddingTop:16,paddingBottom:16}}>
         <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>Only the ratings are required — everything else is optional. Your measurements are pre-filled from last week, so just update what changed.</div>
       </Card>
@@ -1015,116 +976,9 @@ function WeeklyCheckin({ profile, onDone }) {
 
 
 
-// ---------------------------------------------------------------------------
-// CLIENT — DAILY HABITS (coach defines them; client checks them off daily)
-// ---------------------------------------------------------------------------
-function Habits({ profile }) {
-  const [habits, setHabits] = useState([]);
-  const [logs, setLogs] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const today = todayStr();
-
-  const load = useCallback(async () => {
-    const { data: hs } = await supabase.from("habits").select("*").eq("client_id", profile.id).eq("active", true).order("order_index");
-    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 13);
-    const cut = cutoff.toISOString().split("T")[0];
-    const { data: ls } = await supabase.from("habit_logs").select("*").eq("client_id", profile.id).gte("date", cut);
-    setHabits(hs || []); setLogs(ls || []); setLoading(false);
-  }, [profile.id]);
-  useEffect(() => { load(); }, [load]);
-
-  const doneOn = (habitId, date) => logs.some((l) => l.habit_id === habitId && l.date === date && l.done);
-
-  const toggle = async (habit) => {
-    const existing = logs.find((l) => l.habit_id === habit.id && l.date === today);
-    if (existing) {
-      setLogs((prev) => prev.filter((l) => l.id !== existing.id));
-      await supabase.from("habit_logs").delete().eq("id", existing.id);
-    } else {
-      const row = { client_id: profile.id, habit_id: habit.id, date: today, done: true };
-      const { data } = await supabase.from("habit_logs").insert(row).select().maybeSingle();
-      setLogs((prev) => [...prev, data || { ...row, id: `tmp-${habit.id}` }]);
-    }
-  };
-
-  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
-
-  const days14 = Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return d.toISOString().split("T")[0]; });
-  const doneToday = habits.filter((h) => doneOn(h.id, today)).length;
-  const pct = habits.length ? Math.round((doneToday / habits.length) * 100) : 0;
-  // Streak: consecutive days back from today where every habit was completed.
-  const streak = (() => {
-    if (!habits.length) return 0;
-    let s = 0;
-    for (let i = days14.length - 1; i >= 0; i--) {
-      const all = habits.every((h) => doneOn(h.id, days14[i]));
-      if (all) s++; else break;
-    }
-    return s;
-  })();
-
-  return (
-    <div>
-      {habits.length === 0 ? (
-        <Card style={{ textAlign: "center", padding: 48 }}>
-          <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
-          <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 22, marginBottom: 8 }}>No habits assigned yet</div>
-          <div style={{ color: S.muted, fontSize: 13 }}>Your coach will set up daily habits for you. Check back soon.</div>
-        </Card>
-      ) : (
-        <>
-          <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 22 }}>
-            <Stat label="Done Today" value={doneToday} unit={"/" + habits.length} />
-            <Stat label="Today's Completion" value={pct} unit="%" />
-            <Stat label="Perfect-Day Streak" value={streak} unit="days" />
-          </div>
-          <Card>
-            <CardTitle>Today · {today}</CardTitle>
-            {habits.map((h) => {
-              const done = doneOn(h.id, today);
-              return (
-                <div key={h.id} onClick={() => toggle(h)}
-                  style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 4px", borderBottom: "1px solid " + S.border, cursor: "pointer" }}>
-                  <div style={{ width: 26, height: 26, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 14, fontWeight: 700, background: done ? S.neon : "transparent", color: done ? "#0A0A0B" : S.muted, border: done ? "none" : "1px solid " + S.border }}>
-                    {done ? "✓" : ""}
-                  </div>
-                  <span style={{ fontSize: 14, color: done ? S.text : S.muted, textDecoration: done ? "none" : "none" }}>{h.name}</span>
-                </div>
-              );
-            })}
-          </Card>
-          <Card>
-            <CardTitle>Last 14 days</CardTitle>
-            <div style={{ overflowX: "auto" }}>
-              <table style={{ borderCollapse: "collapse", minWidth: 540 }}>
-                <thead>
-                  <tr>
-                    <th style={{ textAlign: "left", padding: "6px 10px", fontSize: 10, color: S.muted }}></th>
-                    {days14.map((d) => (
-                      <th key={d} style={{ padding: "6px 4px", fontSize: 9, color: S.muted, fontWeight: 600 }}>{d.slice(5)}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {habits.map((h) => (
-                    <tr key={h.id}>
-                      <td style={{ padding: "6px 10px", fontSize: 12, whiteSpace: "nowrap", color: S.text }}>{h.name}</td>
-                      {days14.map((d) => (
-                        <td key={d} style={{ padding: "5px 4px", textAlign: "center" }}>
-                          <div style={{ width: 16, height: 16, borderRadius: 3, margin: "0 auto", background: doneOn(h.id, d) ? S.neon : S.surface2, border: "1px solid " + S.border }} />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        </>
-      )}
-    </div>
-  );
-}
+// Non-program-only clients' daily habits now live inside TodayScreen (see
+// src/features/today/TodayScreen.jsx) — this standalone page was retired
+// when Daily Check-In + Habits merged into one "Today" workflow.
 
 // ---------------------------------------------------------------------------
 // PROGRAM-ONLY — SELF-GUIDED HABITS + PROGRESS (no coach, client-only)
@@ -2995,10 +2849,10 @@ function Shell({ profile, isCoach, logout, page, setPage, children, wide }) {
   );
 }
 
-// Unified "Check-In" tab: a small landing that shows today's daily status
-// and this week's weekly status side by side, then drills into the existing
-// DailyCheckin/WeeklyCheckin forms unchanged — the two flows aren't merged
-// into one form, just reachable from one nav destination instead of two.
+// Landing that shows today's daily status and this week's weekly status side
+// by side, then drills into TodayScreen (the merged daily check-in + habits
+// workflow) or WeeklyCheckin — daily and weekly stay two distinct flows, just
+// reachable from one nav destination.
 function CheckInHome({ profile, setPage }) {
   const [view, setView] = useState("menu");
   const [doneToday, setDoneToday] = useState(null);
@@ -3012,7 +2866,7 @@ function CheckInHome({ profile, setPage }) {
       .then(({ data }) => setWeeklyDone(!!data));
   }, [profile.id]);
 
-  if (view === "daily") return <DailyCheckin profile={profile} onDone={() => setView("menu")} />;
+  if (view === "daily") return <TodayScreen profile={profile} onDone={() => setView("menu")} />;
   if (view === "weekly") return <WeeklyCheckin profile={profile} onDone={() => setView("menu")} />;
 
   return (
@@ -3057,7 +2911,6 @@ function MoreMenu({ programOnly, setPage }) {
         { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
-        { id: "habits", icon: "✅", label: "Habits", sub: "Daily habit tracker" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ];
   return (
@@ -3158,21 +3011,17 @@ function ClientDashboard({ profile, logout }) {
       {page === "v12roadmap" && !isStarter && <V12RoadmapPage profile={profile} />}
       {page === "program" && !isStarter && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
-      {page === "daily" && !programOnly && !isStarter && <DailyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
+      {page === "daily" && !programOnly && !isStarter && <TodayScreen profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && !isStarter && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "progress" && !isStarter && (programOnly ? <ProgramProgress profile={profile} /> : <Progress profile={profile} />)}
       {page === "workouts" && <Workouts profile={profile} targetDay={workoutsTarget} onTargetConsumed={() => setWorkoutsTarget(null)} setPage={setPage} />}
       {page === "nutrition" && !isStarter && <Nutrition profile={profile} />}
-      {page === "habits" && !isStarter && (
-        programOnly ? (
-          <div>
-            <PageTitle title="Habits & Assessment" sub="Your daily habit tracker and V12 scores" />
-            <CollapsibleSection title="Habits"><ProgramHabits profile={profile} /></CollapsibleSection>
-            <AssessmentBar profile={profile} />
-          </div>
-        ) : (
-          <div><PageTitle title="Habits" sub="Your daily habit tracker" /><Habits profile={profile} /></div>
-        )
+      {page === "habits" && !isStarter && programOnly && (
+        <div>
+          <PageTitle title="Habits & Assessment" sub="Your daily habit tracker and V12 scores" />
+          <CollapsibleSection title="Habits"><ProgramHabits profile={profile} /></CollapsibleSection>
+          <AssessmentBar profile={profile} />
+        </div>
       )}
       {page === "resources" && <Resources profile={profile} />}
       {page === "schedule" && (

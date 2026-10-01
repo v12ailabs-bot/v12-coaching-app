@@ -1,23 +1,25 @@
 import { S, todayStr } from "../../theme.jsx";
 import { Card, CardTitle, Stat, DayFolder } from "../../components/ui/index.js";
+import { habitAdherenceFrom, isHabitSatisfied } from "../../lib/scoring.js";
 
 // Shared by the client-facing Progress page and the coach's per-client insights
 // card (CoachClientInsights) so both render the exact same habit-adherence grid.
-export function HabitsProgress({ habits, logs }) {
+// `checkins` (optional, daily_checkins rows) is only needed once linked_check_in_value
+// habits exist — it's used to look up that day's linked field value.
+export function HabitsProgress({ habits, logs, checkins = [] }) {
   if(!habits.length) return <Card style={{textAlign:"center",padding:40,color:S.muted}}>No habits assigned yet.</Card>;
+  const checkinByDate = {};
+  checkins.forEach((c) => { checkinByDate[c.date] = c; });
   const days14 = Array.from({length:14},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(13-i));return d.toISOString().split("T")[0];});
-  const doneOn = (habitId,date)=>logs.some(l=>l.habit_id===habitId && l.date===date && l.done);
-  const rate = (habitId)=>{ // % of the last 30 days this habit was completed
-    const done = logs.filter(l=>l.habit_id===habitId && l.done).length;
-    return Math.round((done/30)*100);
-  };
-  const overall = Math.round((logs.filter(l=>l.done).length/(habits.length*30))*100);
+  const valueOn = (habit,date)=> habit.type==="linked_check_in_value" ? checkinByDate[date]?.[habit.linked_field] ?? null : logs.find(l=>l.habit_id===habit.id && l.date===date)?.value ?? null;
+  const doneOn = (habit,date)=> isHabitSatisfied(habit, { done: logs.some(l=>l.habit_id===habit.id && l.date===date && l.done), value: valueOn(habit,date) });
+  const { overall, perHabit } = habitAdherenceFrom(habits, logs, { days: 30, checkinByDate });
   return (
     <div>
       <div className="g3" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:16,marginBottom:22}}>
         <Stat label="Active Habits" value={habits.length} unit=""/>
-        <Stat label="Adherence (30d)" value={isNaN(overall)?0:overall} unit="%"/>
-        <Stat label="Done Today" value={habits.filter(h=>doneOn(h.id,todayStr())).length} unit={"/"+habits.length}/>
+        <Stat label="Adherence (30d)" value={overall??0} unit="%"/>
+        <Stat label="Done Today" value={habits.filter(h=>doneOn(h,todayStr())).length} unit={"/"+habits.length}/>
       </div>
       <Card>
         <CardTitle>Last 14 days</CardTitle>
@@ -36,10 +38,10 @@ export function HabitsProgress({ habits, logs }) {
                   <td style={{padding:"6px 10px",fontSize:12,whiteSpace:"nowrap",color:S.text}}>{h.name}</td>
                   {days14.map(d=>(
                     <td key={d} style={{padding:"5px 4px",textAlign:"center"}}>
-                      <div style={{width:16,height:16,borderRadius:3,margin:"0 auto",background:doneOn(h.id,d)?S.neon:S.surface2,border:"1px solid "+S.border}}/>
+                      <div style={{width:16,height:16,borderRadius:3,margin:"0 auto",background:doneOn(h,d)?S.neon:S.surface2,border:"1px solid "+S.border}}/>
                     </td>
                   ))}
-                  <td style={{padding:"5px 8px",textAlign:"center",fontSize:12,fontWeight:600,color:S.text}}>{rate(h.id)}%</td>
+                  <td style={{padding:"5px 8px",textAlign:"center",fontSize:12,fontWeight:600,color:S.text}}>{perHabit[h.id]?.pct ?? 0}%</td>
                 </tr>
               ))}
             </tbody>

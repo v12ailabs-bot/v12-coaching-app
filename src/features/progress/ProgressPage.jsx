@@ -6,6 +6,7 @@ import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../c
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
+import { rangeStartStr } from "../../lib/dates.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
 import { StrengthTab } from "./StrengthTab.jsx";
@@ -18,6 +19,7 @@ import { ClientSummaries } from "./AISummarySection.jsx";
 // out of scope for this pass, left exactly as-is).
 export function Progress({ profile, coachView }) {
   const [tab, setTab] = useState("weight");
+  const [range, setRange] = useState("All");
   const [daily, setDaily] = useState([]);
   const [weekly, setWeekly] = useState([]);
   const [habits, setHabits] = useState([]);
@@ -62,8 +64,8 @@ export function Progress({ profile, coachView }) {
       .order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setInsight(data||null));
   },[profile.id]);
 
-  const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data yet. Complete check-ins to see charts.</Card>;
-  const emptyWeekly = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins yet. Submit a Weekly Check-In to see this chart.</Card>;
+  const empty = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No data in this range. Complete check-ins to see charts.</Card>;
+  const emptyWeekly = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins in this range.</Card>;
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
   const adh = adherenceFrom(daily,30);
   const nut = nutritionScoreFrom(daily,30);
@@ -77,6 +79,14 @@ export function Progress({ profile, coachView }) {
     return Object.values(byDate).sort((a,b)=>a.date<b.date?-1:1);
   })();
   const lastWeight = weightSeries.length?weightSeries[weightSeries.length-1].weight:null;
+  // Range filtering is purely a chart-display concern — do NOT refetch per
+  // range change, just filter the already-fetched full history client-side.
+  // Headline Stat cards above keep their own fixed trailing windows
+  // (adherenceFrom/nutritionScoreFrom), deliberately untouched by this.
+  const rangeStart = rangeStartStr(range);
+  const filteredDaily = rangeStart ? daily.filter(d=>d.date>=rangeStart) : daily;
+  const filteredWeekly = rangeStart ? weekly.filter(w=>w.date>=rangeStart) : weekly;
+  const filteredWeightSeries = rangeStart ? weightSeries.filter(w=>w.date>=rangeStart) : weightSeries;
   // Goal progress, computed with the exact same function GoalsSection uses —
   // one source of truth for "how is this goal going," never a duplicate calc.
   const goalScore = goal ? computeGoalScore(goal, weightSeries.map(w=>({date:w.date,value:w.weight})), {nutrition:nut.score,training:adh.trainingRate}) : null;
@@ -92,7 +102,7 @@ export function Progress({ profile, coachView }) {
     setSavingHeight(false);
     setSavedHeight(Number(heightIn));
   };
-  const bmiWeekly = weekly.filter((w) => w.bodyweight != null && savedHeight)
+  const bmiWeekly = filteredWeekly.filter((w) => w.bodyweight != null && savedHeight)
     .map((w) => ({ week: w.week, bmi: computeBMI(Number(savedHeight), w.bodyweight) }));
   // Always from `lastWeight` (the true latest weight across daily + weekly,
   // same value the headline "Current Weight" stat above uses) — NOT from
@@ -139,6 +149,12 @@ export function Progress({ profile, coachView }) {
         ))}
       </div>
 
+      {["weight","wellness","measurements"].includes(tab) && (
+        <div style={{marginBottom:20}}>
+          <RG options={["30D","3M","6M","1Y","All"]} value={range} onChange={setRange}/>
+        </div>
+      )}
+
       {tab==="weight" && (
         <>
           {!savedHeight ? (
@@ -164,13 +180,13 @@ export function Progress({ profile, coachView }) {
               )}
             </Card>
           )}
-          {(daily.length===0&&weightSeries.length===0)?empty:(
+          {(filteredDaily.length===0&&filteredWeightSeries.length===0)?empty:(
             <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <CC title="Bodyweight Trend" sub={goal?`Daily + weekly check-ins · target ${goal.target_value}${goal.unit}`:"Daily + weekly check-ins"}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={weightSeries}>
+                  <LineChart data={filteredWeightSeries}>
                     <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(weightSeries.length)}/>
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredWeightSeries.length)}/>
                     <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                     <Tooltip {...TT}/>
                     {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
@@ -191,11 +207,11 @@ export function Progress({ profile, coachView }) {
                   </ResponsiveContainer>
                 </CC>
               )}
-              <CC title="Workout Completion" sub="Full history">
+              <CC title="Workout Completion" sub={range==="All"?"Full history":range}>
                 <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={daily.map(d=>({...d,done:d.workout==="completed"?1:0}))}>
+                  <BarChart data={filteredDaily.map(d=>({...d,done:d.workout==="completed"?1:0}))}>
                     <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
+                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
                     <YAxis tick={false}/>
                     <Tooltip {...TT} formatter={v=>[v?"Done":"Rest/Missed",""]}/>
                     <Bar dataKey="done" fill={S.accent} radius={[2,2,0,0]}/>
@@ -207,14 +223,14 @@ export function Progress({ profile, coachView }) {
         </>
       )}
 
-      {tab==="wellness" && (daily.length===0?empty:(
+      {tab==="wellness" && (filteredDaily.length===0?empty:(
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["energy",S.accent,"Energy"],["sleep",S.accent2,"Sleep Quality"],["mood","#8B5CF6","Mood"],["water","#3B82F6","Water (glasses)"]].map(([key,color,label])=>(
-            <CC key={key} title={label} sub="Full history">
+            <CC key={key} title={label} sub={range==="All"?"Full history":range}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily}>
+                <LineChart data={filteredDaily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
                   <YAxis domain={[0,key==="water"?16:10]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{r:2}}/>
@@ -222,12 +238,25 @@ export function Progress({ profile, coachView }) {
               </ResponsiveContainer>
             </CC>
           ))}
-          {daily.some(d=>d.calories!=null) && (
-            <CC title="Calories" sub={target?.calories!=null?`Full history · target ${target.calories} kcal`:"Full history"}>
+          {filteredDaily.some(d=>d.sleep_hours!=null) && (
+            <CC title="Sleep Hours" sub={range==="All"?"Full history":range}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily}>
+                <LineChart data={filteredDaily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
+                  <YAxis domain={[0,12]} tick={{fontSize:10,fill:"#666"}}/>
+                  <Tooltip {...TT}/>
+                  <Line type="monotone" dataKey="sleep_hours" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
+                </LineChart>
+              </ResponsiveContainer>
+            </CC>
+          )}
+          {filteredDaily.some(d=>d.calories!=null) && (
+            <CC title="Calories" sub={target?.calories!=null?`${range==="All"?"Full history":range} · target ${target.calories} kcal`:(range==="All"?"Full history":range)}>
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={filteredDaily}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   {target?.calories!=null && <ReferenceLine y={target.calories} stroke={S.muted} strokeDasharray="4 4" label={{value:"Target",fontSize:9,fill:S.muted,position:"insideTopRight"}}/>}
@@ -236,12 +265,12 @@ export function Progress({ profile, coachView }) {
               </ResponsiveContainer>
             </CC>
           )}
-          {daily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
-            <CC title="Macros (g)" sub="Full history · dashed = target">
+          {filteredDaily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
+            <CC title="Macros (g)" sub={`${range==="All"?"Full history":range} · dashed = target`}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={daily}>
+                <LineChart data={filteredDaily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(daily.length)}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Legend wrapperStyle={{fontSize:11}}/>
@@ -294,12 +323,12 @@ export function Progress({ profile, coachView }) {
               )}
             </Card>
           )}
-          {weekly.length===0?emptyWeekly:(
+          {filteredWeekly.length===0?emptyWeekly:(
             <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               {[["chest","Chest"],["waist","Waist"],["hips","Hips"],["arms","Arms"]].map(([key,label])=>(
                 <CC key={key} title={label+" (inches)"} sub="Weekly tracking">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={weekly}>
+                    <LineChart data={filteredWeekly}>
                       <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
                       <XAxis dataKey="week" tick={{fontSize:10,fill:"#666"}}/>
                       <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
@@ -316,7 +345,7 @@ export function Progress({ profile, coachView }) {
 
       {tab==="strength" && <StrengthTab profile={profile}/>}
 
-      {tab==="habits" && <HabitsProgress habits={habits} logs={habitLogs}/>}
+      {tab==="habits" && <HabitsProgress habits={habits} logs={habitLogs} checkins={daily}/>}
 
       {tab==="notes" && coachView && <CheckinNotes weekly={weekly}/>}
 

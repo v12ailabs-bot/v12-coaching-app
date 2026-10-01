@@ -1,4 +1,4 @@
-import { todayStr } from "./dates.js";
+import { todayStr, localDateStr } from "./dates.js";
 import { computeGoalScore } from "./scoring/goalScoring.js";
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the
@@ -38,6 +38,144 @@ export function nutritionScoreFrom(checkins, days = 30, asOf = new Date()) {
   if (!recent.length) return { score: null, n: 0 };
   const total = recent.reduce((s, c) => s + (DIET_SCORE[c.diet] ?? 50), 0);
   return { score: Math.round(total / recent.length), n: recent.length };
+}
+
+// Whether a single day's value satisfies a habit, given its type/target/
+// direction. `done` applies to completion_button habits; `value` applies to
+// manual_value/linked_check_in_value habits (compared against habit.target_value).
+export function isHabitSatisfied(habit, { done, value } = {}) {
+  if (habit.type === "manual_value" || habit.type === "linked_check_in_value") {
+    if (value == null || habit.target_value == null) return false;
+    return habit.target_direction === "at_most" ? value <= habit.target_value : value >= habit.target_value;
+  }
+  return !!done;
+}
+
+// Single source of truth for habit adherence — replaces the 3 previously
+// duplicated `doneLogs / (habitCount*days)` reimplementations (Progress tab's
+// HabitsProgress, the old ClientOverviewMobile, and the Coach View). Per-habit
+// % and the overall % are derived from the exact same per-day satisfied counts,
+// so they can never visually contradict each other. `checkinByDate` (a
+// {date: daily_checkins row} map) is only needed for linked_check_in_value
+// habits, to read the day's logged value for that habit's linked field.
+export function habitAdherenceFrom(habits, logs, { days = 30, asOf = new Date(), checkinByDate = {} } = {}) {
+  const windowDates = Array.from({ length: days }, (_, i) => {
+    const d = new Date(asOf);
+    d.setDate(d.getDate() - (days - 1 - i));
+    return localDateStr(d);
+  });
+  const valueFor = (habit, date) => {
+    if (habit.type === "linked_check_in_value") return checkinByDate[date]?.[habit.linked_field] ?? null;
+    const log = (logs || []).find((l) => l.habit_id === habit.id && l.date === date);
+    return log?.value ?? null;
+  };
+  const doneFor = (habit, date) => (logs || []).some((l) => l.habit_id === habit.id && l.date === date && l.done);
+
+  let totalSatisfied = 0;
+  let totalPossible = 0;
+  const perHabit = {};
+  (habits || []).forEach((h) => {
+    let satisfied = 0;
+    windowDates.forEach((date) => {
+      if (isHabitSatisfied(h, { done: doneFor(h, date), value: valueFor(h, date) })) satisfied++;
+    });
+    perHabit[h.id] = { pct: Math.round((satisfied / days) * 100), satisfied, possible: days };
+    totalSatisfied += satisfied;
+    totalPossible += days;
+  });
+  return {
+    overall: totalPossible ? Math.round((totalSatisfied / totalPossible) * 100) : null,
+    perHabit,
+    windowDates,
+  };
+}
+
+// Workout adherence over scheduled days only (completed / (completed +
+// missed)) — rest days excluded from both numerator and denominator
+// entirely. Deliberately distinct from adherenceFrom().trainingRate (which
+// includes rest days in its denominator); existing callers of trainingRate
+// are left unchanged, this is only for surfaces that need the
+// scheduled-days-only definition.
+export function workoutAdherenceFrom(checkins, days = 30, asOf = new Date()) {
+  const cutoff = new Date(asOf);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cut = localDateStr(cutoff);
+  const asOfStr = localDateStr(asOf);
+  const recent = (checkins || []).filter((c) => c.date >= cut && c.date <= asOfStr);
+  const completed = recent.filter((c) => c.workout === "completed").length;
+  const missed = recent.filter((c) => c.workout === "missed").length;
+  const scheduled = completed + missed;
+  return { score: scheduled ? Math.round((completed / scheduled) * 100) : null, completed, scheduled };
+}
+
+// Average sleep hours (daily_checkins.sleep_hours) over a trailing window.
+// Returns null on no data — never 0, which would misleadingly read as "no sleep."
+export function avgSleepHoursFrom(checkins, days = 30, asOf = new Date()) {
+  const cutoff = new Date(asOf);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cut = localDateStr(cutoff);
+  const asOfStr = localDateStr(asOf);
+  const vals = (checkins || [])
+    .filter((c) => c.date >= cut && c.date <= asOfStr && c.sleep_hours != null)
+    .map((c) => Number(c.sleep_hours));
+  return vals.length ? Math.round((vals.reduce((s, v) => s + v, 0) / vals.length) * 10) / 10 : null;
+}
+
+// Weight change over an explicit trailing window — consolidates two
+// previously-divergent implementations (one scoped to 30 days, one
+// unscoped) into one that always reports the window it used, so every
+// caller can label its timeframe explicitly instead of showing a bare delta.
+export function weightChangeFrom(weightSeries, days = 30, asOf = new Date()) {
+  const cutoff = new Date(asOf);
+  cutoff.setDate(cutoff.getDate() - (days - 1));
+  const cut = localDateStr(cutoff);
+  const asOfStr = localDateStr(asOf);
+  const inWindow = (weightSeries || [])
+    .filter((w) => w.date >= cut && w.date <= asOfStr)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  if (inWindow.length < 2) return { delta: null, days };
+  return { delta: inWindow[inWindow.length - 1].weight - inWindow[0].weight, days };
+}
+
+// Calendar progress through the program's stated length (weeks elapsed ÷
+// total weeks) — distinct from computeGoalScore's overallScore, which blends
+// nutrition/training/weight-trend signals. `program` needs start_date + weeks
+// (both already exist on the programs table).
+export function programCalendarProgressFrom(program, asOf = new Date()) {
+  if (!program?.start_date || !program?.weeks) return null;
+  const elapsedDays = Math.floor((asOf - new Date(program.start_date + "T00:00:00")) / 86400000);
+  const pct = Math.max(0, Math.min(100, Math.round((elapsedDays / (program.weeks * 7)) * 100)));
+  return { pct, elapsedWeeks: Math.max(0, Math.floor(elapsedDays / 7)), totalWeeks: program.weeks };
+}
+
+// Status label for a manual-value/linked-check-in target: within ±5% of
+// target is "On Target", within ±15% is "Near Target", beyond that is
+// Over/Above or Under Target depending on direction. Thresholds confirmed
+// with the lead — not derived from the data.
+export function targetStatus(actual, target, direction = "at_least") {
+  if (actual == null || target == null || !target) return null;
+  const diffPct = ((actual - target) / target) * 100;
+  if (Math.abs(diffPct) <= 5) return "On Target";
+  if (Math.abs(diffPct) <= 15) return "Near Target";
+  if (diffPct > 15) return direction === "at_most" ? "Over Target" : "Above Target";
+  return "Under Target";
+}
+
+// "X of Y complete" for the Today screen: every active habit + workout +
+// nutrition counts as one item each. `habitLogs`/`checkin` can be live draft
+// state (not yet persisted) so the progress bar updates as the client fills
+// the form in, not only after submit. Never hardcoded — the denominator is
+// whatever this client's actual assigned workflow is.
+export function todayCompletionFrom({ habits, habitLogs, checkin, date }) {
+  const items = (habits || []).map((h) => {
+    const value = h.type === "linked_check_in_value" ? checkin?.[h.linked_field] : (habitLogs || []).find((l) => l.habit_id === h.id && l.date === date)?.value;
+    const done = (habitLogs || []).some((l) => l.habit_id === h.id && l.date === date && l.done);
+    return { key: `habit_${h.id}`, done: isHabitSatisfied(h, { done, value }) };
+  });
+  items.push({ key: "workout", done: checkin?.workout != null });
+  items.push({ key: "nutrition", done: checkin?.diet != null });
+  const done = items.filter((i) => i.done).length;
+  return { done, total: items.length, pct: items.length ? Math.round((done / items.length) * 100) : 0 };
 }
 
 // Logging/engagement signals — how consistently the client is checking in,
@@ -115,6 +253,10 @@ export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, to
     const priorAvg = priorWk.reduce((s, v) => s + v, 0) / priorWk.length;
     if (priorAvg - recentAvg >= 1.5) flags.push({ label: "Recovery down", tone: "amber", detail: `Self-rated sleep/hydration averaged ${recentAvg.toFixed(1)}/10 the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 the 2 weeks before.`, action: "Check in on sleep and stress load.", clientMessage: `Your self-rated sleep/hydration has dipped to ${recentAvg.toFixed(1)}/10 over the last 2 weeks, down from ${priorAvg.toFixed(1)}/10 before that — how are you feeling? Let's check in on that.` });
   }
+
+  const sleepAvg = avgSleepHoursFrom(ch, 14, new Date(today));
+  const sleepTarget = client?.sleep_target_hours ?? 7;
+  if (sleepAvg != null && sleepAvg < sleepTarget - 1) flags.push({ label: `Avg sleep ${sleepAvg}h`, tone: "amber", detail: `Averaging ${sleepAvg}h of sleep over the last 14 days, below the ${sleepTarget}h target.`, action: "Check in on sleep and recovery load.", clientMessage: `Your sleep has averaged ${sleepAvg}h over the last 2 weeks — let's see what's getting in the way of more rest.` });
 
   const severity = flags.reduce((s, f) => s + (f.tone === "red" ? 2 : 1), 0);
   const riskLevel = severity >= 4 ? "High" : severity >= 2 ? "Medium" : severity >= 1 ? "Low" : "On Track";

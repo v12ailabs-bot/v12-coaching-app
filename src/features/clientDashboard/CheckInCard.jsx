@@ -9,11 +9,11 @@ export function CheckInCard({ doneToday, adherenceScore, setPage }) {
     <Card style={{ display: "flex", alignItems: "center", gap: 20 }}>
       <ProgressRing value={adherenceScore ?? 0} size={100} caption="Adherence" />
       <div style={{ flex: 1, minWidth: 140 }}>
-        <CardTitle>Daily Check-In</CardTitle>
+        <CardTitle>Today</CardTitle>
         <div style={{ fontSize: 13, color: S.text, marginBottom: 14 }}>
-          {doneToday ? "Daily check-in completed. Nice work." : "Stay consistent with your daily check-in."}
+          {doneToday ? "Today completed. Nice work." : "Complete your targets, check-in, and nutrition for today."}
         </div>
-        {!doneToday && <Btn sm onClick={() => setPage("daily")}>Complete Check-In</Btn>}
+        {!doneToday && <Btn sm onClick={() => setPage("daily")}>Complete Today</Btn>}
       </div>
     </Card>
   );

@@ -106,7 +106,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
 
       <div className="g2" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14, marginBottom: 14 }}>
         <TodayWorkoutPreview profile={profile} onViewFull={() => goToWorkouts("today")} />
-        <HabitSummary profile={profile} setPage={setPage} />
+        <HabitSummary profile={profile} checkins={checkins} setPage={setPage} />
       </div>
 
       <div style={{ marginBottom: 14 }}><NextActionsCard profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} goToWorkouts={goToWorkouts} /></div>

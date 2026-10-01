@@ -55,6 +55,10 @@ export function ClientSettingsSection({ client, settings, setSettings, saveSetti
           <Inp type="tel" value={settings.phone} onChange={e=>setSettings(p=>({...p,phone:e.target.value}))} placeholder="e.g. +1 555 123 4567"/>
           <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Powers the "Call" action on the client's profile.</div>
         </Fld>
+        <Fld label="Sleep Target (hours)">
+          <Inp type="number" step="0.5" value={settings.sleep_target_hours} onChange={e=>setSettings(p=>({...p,sleep_target_hours:e.target.value}))} placeholder="e.g. 7"/>
+          <div style={{fontSize:11,color:S.muted,marginTop:6,lineHeight:1.5}}>Used by the Attention Needed sleep flag — flags when their 14-day average sleep drops more than 1h below this.</div>
+        </Fld>
       </div>
       <div style={{fontSize:11,color:S.muted,marginTop:2,marginBottom:2}}>
         Goal shows on this client's overview and their portal. Set it here to add or override it — your value then sticks through Notion syncs and program regenerations. Use "Reset to Notion" to load their Notion intake answer into the field; nothing changes until you click Save Settings.

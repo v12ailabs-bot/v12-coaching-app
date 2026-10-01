@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
 import { Card, CardTitle, Btn } from "../../components/ui/index.js";
+import { isHabitSatisfied } from "../../lib/scoring.js";
 
-// Compact dashboard version of the full Habits page (App.jsx) — same
-// habits/habit_logs data and the same toggle write path, just surfaced
-// directly instead of behind an accordion.
-export function HabitSummary({ profile, setPage }) {
+// Read-only "Today's Targets at a glance" preview — the actual toggle/entry
+// UI lives only in TodayScreen now. Once habits can be numeric (manual_value)
+// or linked to a check-in field, a simple tap-to-toggle widget can no longer
+// safely double as the write path, so this just previews status and
+// deep-links to Today for any actual entry.
+export function HabitSummary({ profile, checkins, setPage }) {
   const [habits, setHabits] = useState([]);
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -22,33 +25,25 @@ export function HabitSummary({ profile, setPage }) {
   if (loading) return null;
   if (habits.length === 0) return null;
 
-  const doneOn = (habitId) => logs.some((l) => l.habit_id === habitId && l.done);
-
-  const toggle = async (habit) => {
-    const existing = logs.find((l) => l.habit_id === habit.id);
-    if (existing) {
-      setLogs((prev) => prev.filter((l) => l.id !== existing.id));
-      await supabase.from("habit_logs").delete().eq("id", existing.id);
-    } else {
-      const row = { client_id: profile.id, habit_id: habit.id, date: today, done: true };
-      const { data } = await supabase.from("habit_logs").insert(row).select().maybeSingle();
-      setLogs((prev) => [...prev, data || { ...row, id: `tmp-${habit.id}` }]);
-    }
+  const todaysCheckin = (checkins || []).find((c) => c.date === today);
+  const satisfiedOn = (habit) => {
+    const value = habit.type === "linked_check_in_value" ? todaysCheckin?.[habit.linked_field] : logs.find((l) => l.habit_id === habit.id)?.value;
+    const done = logs.some((l) => l.habit_id === habit.id && l.done);
+    return isHabitSatisfied(habit, { done, value });
   };
-
-  const doneCount = habits.filter((h) => doneOn(h.id)).length;
+  const doneCount = habits.filter(satisfiedOn).length;
+  const total = habits.length;
 
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-        <CardTitle>Habits</CardTitle>
-        <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: S.accent }}>{doneCount}/{habits.length} completed</span>
+        <CardTitle>Today's Targets</CardTitle>
+        <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 18, color: S.accent }}>{doneCount}/{total} complete</span>
       </div>
       {habits.map((h) => {
-        const done = doneOn(h.id);
+        const done = satisfiedOn(h);
         return (
-          <div key={h.id} onClick={() => toggle(h)}
-            style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px", borderBottom: "1px solid " + S.border, cursor: "pointer" }}>
+          <div key={h.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 2px", borderBottom: "1px solid " + S.border }}>
             <div style={{ width: 22, height: 22, borderRadius: "50%", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, background: done ? S.success : "transparent", color: done ? "#0B0B0D" : S.muted, border: done ? "none" : "1px solid " + S.border }}>
               {done ? "✓" : ""}
             </div>
@@ -56,7 +51,7 @@ export function HabitSummary({ profile, setPage }) {
           </div>
         );
       })}
-      <div style={{ marginTop: 14 }}><Btn sm onClick={() => setPage("habits")}>View All Habits</Btn></div>
+      <div style={{ marginTop: 14 }}><Btn sm onClick={() => setPage("daily")}>View Today</Btn></div>
     </Card>
   );
 }

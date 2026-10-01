@@ -5,11 +5,9 @@ import { PageTitle, Modal, CollapsibleSection } from "../../components/ui/index.
 import { ClientSelector } from "../../components/ClientSelector.jsx";
 import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
-import { ClientOverviewMobile } from "./ClientOverviewMobile.jsx";
+import { CoachClientOverview } from "./CoachClientOverview.jsx";
 import { ProgramGenerateActions } from "./sections/ProgramGenerateActions.jsx";
-import { ProgressSummaryCard } from "./sections/ProgressSummaryCard.jsx";
 import { ClientInsightCard } from "./sections/ClientInsightCard.jsx";
-import { DailyHabitsPanel } from "./sections/DailyHabitsPanel.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
 import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
 import { AssessmentSection } from "./sections/AssessmentSection.jsx";
@@ -112,7 +110,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
-  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:"", phone:"", age:"", sex:""});
+  const [settings, setSettings] = useState({client_type:"coaching", dashboard_url:"", goal:"", access_until:"", is_local:false, height_in:"", phone:"", age:"", sex:"", sleep_target_hours:"7"});
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsMsg, setSettingsMsg] = useState(null);
   const [resettingGoal, setResettingGoal] = useState(false);
@@ -238,6 +236,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       phone: c.phone || "",
       age: c.age != null ? String(c.age) : "",
       sex: c.sex || "",
+      sleep_target_hours: c.sleep_target_hours != null ? String(c.sleep_target_hours) : "7",
     });
     if(c) setPartnerId(c.shared_program_owner_id || "");
     setAssessMsg(null);
@@ -266,6 +265,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       phone: settings.phone.trim() || null,
       age: settings.age ? Number(settings.age) : null,
       sex: settings.sex || null,
+      sleep_target_hours: settings.sleep_target_hours ? Number(settings.sleep_target_hours) : 7,
     }).eq("id",selected);
     setSavingSettings(false);
     if(error){ setSettingsMsg({ok:false,text:error.message}); return; }
@@ -544,18 +544,19 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   </div>
                 )}
                 <div>
-                  {validTab === "overview" && isMobile && (
-                    <ClientOverviewMobile client={client} trainOwnerId={trainOwnerId} progTick={progTick} loadEx={loadEx} assess={assess} lastCheckin={lastCheckin} />
-                  )}
-                  {validTab === "overview" && !isMobile && (
+                  {validTab === "overview" && (
                     <div className="overview-grid" style={{ display:"flex", flexDirection:"column", gap:20 }}>
-                      {/* Row 1: Progress | Client Insights — the reference mockup's
-                          "Current phase" + "Goals checklist" position/weight. */}
-                      <div className="overview-row-2" style={{ display:"grid", gridTemplateColumns: showProgress ? "1fr 1fr" : "1fr", gap:20, alignItems:"stretch" }}>
-                        {showProgress && <div id="section-progress"><ProgressSummaryCard client={client}/></div>}
-                        <div id="section-insights"><ClientInsightCard client={client}/></div>
-                      </div>
-                      {/* Row 2: Program Roadmap | Program History — forward-looking
+                      {/* Single Overview screen (client+coach "Today" redesign,
+                          item 7) — one shared component/data path for mobile
+                          and desktop now, replacing the old ClientOverviewMobile/
+                          ProgressSummaryCard/DailyHabitsPanel-adherence split. */}
+                      {showProgress && (
+                        <div id="section-progress">
+                          <CoachClientOverview client={client} onAddNote={()=>{ setRailOpen(true); requestAnimationFrame(()=>document.getElementById("section-coach-notes")?.scrollIntoView({behavior:"smooth",block:"start"})); }} />
+                        </div>
+                      )}
+                      <div id="section-insights"><ClientInsightCard client={client}/></div>
+                      {/* Program Roadmap | Program History — forward-looking
                           next to backward-looking, reading left-to-right. */}
                       <div className="overview-row-2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:20, alignItems:"stretch" }}>
                         <div id="section-program-roadmap"><ProgramRoadmapPlanner clientId={trainOwnerId} /></div>
@@ -563,10 +564,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
                         </div>
                       </div>
-                      {/* Row 3: Daily Habits, full width — the "Recent check-ins"
-                          timeline's position. */}
-                      <div id="section-habits"><DailyHabitsPanel clientId={client.id} /></div>
-                      {/* Row 4: V12 Assessment, full width — not its own tab
+                      {/* V12 Assessment, full width — not its own tab
                           (see TABS_FOR), folded in here instead. */}
                       <div id="section-assessment">
                         <OnboardingChecklist clientId={client.id} />
