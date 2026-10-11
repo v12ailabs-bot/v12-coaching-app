@@ -165,7 +165,7 @@ function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlert
   return Object.values(byClient).sort((a, b) => b.severity - a.severity);
 }
 
-function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf, openClient, clientIds }) {
+function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf, openClient, clientIds, onReview }) {
   const [openId, setOpenId] = useState(null);
   const groups = buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf });
   const colorOf = (id) => COLORS[Math.max(0, clientIds.indexOf(id)) % COLORS.length];
@@ -204,6 +204,7 @@ function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAler
                       {r.action && <div style={{ color: S.muted, marginTop: 2 }}>→ {r.action}</div>}
                     </div>
                   ))}
+                  {onReview && needs.some((n) => n.client.id === g.clientId) && <button onClick={() => onReview(g.clientId)} style={{ marginTop: 10, marginRight: 16, background: "none", border: "none", color: S.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>Review →</button>}
                   <button onClick={() => openClient(g.clientId)} style={{ marginTop: 10, background: "none", border: "none", color: S.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}>Open Client →</button>
                 </div>
               )}
@@ -271,7 +272,7 @@ export function CoachHomeMobile({
   checkinCounts, totalCoached, totalCheckinsThisWeek,
   needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages,
   programGroups,
-  nameOf, openClient, setPage, clientIds,
+  nameOf, openClient, setPage, clientIds, onReview,
   programSubscriberRows, monthlyRevenue, revenueTrendPct,
 }) {
   return (
@@ -281,7 +282,7 @@ export function CoachHomeMobile({
       <ClientOverviewRow rows={rows} openClient={openClient} setPage={setPage} />
       <PerformanceOverview checkinSeries={checkinSeries} checkinDeltaPct={checkinDeltaPct} progressSeries={progressSeries} progressDeltaPct={progressDeltaPct} />
       <CheckInOverviewCompact counts={checkinCounts} totalCheckinsThisWeek={totalCheckinsThisWeek} />
-      <AlertsAndMessages needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts} phaseAlerts={phaseAlerts} messages={messages} nameOf={nameOf} openClient={openClient} clientIds={clientIds} />
+      <AlertsAndMessages needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts} phaseAlerts={phaseAlerts} messages={messages} nameOf={nameOf} openClient={openClient} clientIds={clientIds} onReview={onReview} />
       <ProgramDistributionDonut groups={programGroups} />
       <div style={{ marginBottom: 14 }}><RecentActivityFeed nameOf={nameOf} clientIds={clientIds} /></div>
       <div style={{ marginBottom: 14 }}><RecentNotes nameOf={nameOf} openClient={openClient} clientIds={clientIds} /></div>

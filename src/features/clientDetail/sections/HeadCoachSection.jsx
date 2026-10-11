@@ -42,7 +42,7 @@ const STATUS_TONE = {
   CLOSED: "neutral", FAILED: "red", RETRYING: "amber", ESCALATED: "red",
 };
 
-async function callHeadCoach(body) {
+export async function callHeadCoach(body) {
   const { data: { session } } = await supabase.auth.getSession();
   const res = await fetch("/api/goal-insight", {
     method: "POST",

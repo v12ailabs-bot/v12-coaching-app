@@ -7,7 +7,7 @@ import { SectionTitle } from "./SectionTitle.jsx";
 // (assessClientRisk, sorted by severity) and the same click-to-expand detail
 // (flag detail + recommended action), just restyled to a shorter list with
 // a link to the full Clients view instead of every client expanded at once.
-export function AlertsPanel({ needs, openClient, setPage }) {
+export function AlertsPanel({ needs, openClient, setPage, onReview }) {
   const [openId, setOpenId] = useState(null);
   const top = needs.slice(0, 5);
 
@@ -23,7 +23,7 @@ export function AlertsPanel({ needs, openClient, setPage }) {
           const open = openId === a.client.id;
           return (
             <div key={a.client.id} style={{ borderBottom: "1px solid " + S.border }}>
-              <div onClick={() => setOpenId(open ? null : a.client.id)}
+              <div onClick={() => (onReview ? onReview(a.client.id) : setOpenId(open ? null : a.client.id))}
                 style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 0", cursor: "pointer" }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 600, color: S.text }}>{a.client.name || a.client.email}</div>
