@@ -240,14 +240,15 @@ export interface NutritionContext {
 
 export async function getNutritionContext(clientId: string, windowDays = DEFAULT_WINDOW_DAYS): Promise<NutritionContext> {
   const cut = cutoffDate(windowDays);
-  const [{ data: nutPlan }, { data: daily }] = await Promise.all([
+  const [{ data: nutPlan }, { data: daily }, { data: mealLogs }] = await Promise.all([
     supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", clientId).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
     supabaseAdmin.from("daily_checkins").select("date,calories,protein_g,carbs_g,fats_g,workout").eq("client_id", clientId).gte("date", cut),
+    supabaseAdmin.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", clientId).gte("date", cut),
   ]);
   return {
     windowDays,
     plan: nutPlan ? { calories: nutPlan.calories, proteinG: nutPlan.protein_g, carbsG: nutPlan.carbs_g, fatsG: nutPlan.fats_g } : null,
-    adherencePct: nutritionAdherenceFrom(daily || [], nutPlan || null, windowDays).score,
+    adherencePct: nutritionAdherenceFrom(daily || [], nutPlan || null, windowDays, new Date(), mealLogs || []).score,
   };
 }
 

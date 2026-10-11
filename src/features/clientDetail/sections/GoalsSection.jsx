@@ -57,7 +57,7 @@ export function GoalsSection({ client }) {
     setLoading(true);
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 44);
     const cut = cutoff.toISOString().split("T")[0];
-    const [{ data: goals }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: insights }] = await Promise.all([
+    const [{ data: goals }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: insights }, { data: mealLogs }] = await Promise.all([
       supabase.from("client_goals").select("*").eq("client_id", client.id).eq("status", "active").eq("metric_key", DEFAULT_METRIC_KEY).order("created_at", { ascending: false }).limit(1),
       supabase.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g,workout").eq("client_id", client.id).gte("date", cut).order("date"),
       supabase.from("weekly_checkins").select("date,bodyweight,sleep_quality,hydration_quality").eq("client_id", client.id).gte("date", cut).order("date"),
@@ -65,6 +65,7 @@ export function GoalsSection({ client }) {
       supabase.from("habits").select("id").eq("client_id", client.id).eq("active", true),
       supabase.from("habit_logs").select("habit_id,date,done").eq("client_id", client.id).gte("date", cut),
       supabase.from("client_goal_insights").select("*").eq("client_id", client.id).order("created_at", { ascending: false }).limit(1),
+      supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).gte("date", cut),
     ]);
 
     const g = goals?.[0] || null;
@@ -78,7 +79,7 @@ export function GoalsSection({ client }) {
       const series = Object.entries(byDate).map(([date, value]) => ({ date, value })).sort((a, b) => a.date < b.date ? -1 : 1);
       setLatestWeight(series.length ? series[series.length - 1].value : null);
 
-      const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30).score;
+      const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30, new Date(), mealLogs || []).score;
 
       const thirtyCut = (() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toISOString().split("T")[0]; })();
       const recentDaily = (daily || []).filter(d => d.date >= thirtyCut);

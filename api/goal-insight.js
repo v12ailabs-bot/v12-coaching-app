@@ -83,7 +83,7 @@ async function handleGenerateRoadmap(req, res) {
     const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
     const cut = cutoff.toISOString().split("T")[0];
 
-    const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }, { data: weightGoal }, { data: daily }, { data: weekly }, { data: workoutLogs }] = await Promise.all([
+    const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }, { data: weightGoal }, { data: daily }, { data: weekly }, { data: mealLogs }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal,age,sex").eq("id", program.client_id).maybeSingle(),
       supabaseAdmin.from("exercises").select("category,day_of_week,sets,reps").eq("program_id", program_id),
       supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
@@ -93,6 +93,7 @@ async function handleGenerateRoadmap(req, res) {
       supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").eq("metric_key", "bodyweight").order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabaseAdmin.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).gte("date", cut).order("date"),
       supabaseAdmin.from("weekly_checkins").select("date,bodyweight").eq("client_id", program.client_id).gte("date", cut).order("date"),
+      supabaseAdmin.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).gte("date", cut),
       supabaseAdmin.from("workout_logs").select("date,exercise_id,weight,reps").eq("client_id", program.client_id).gte("date", cut),
     ]);
 
@@ -113,7 +114,7 @@ async function handleGenerateRoadmap(req, res) {
     const weightSeries = Object.entries(byDate).map(([date, value]) => ({ date, value })).sort((a, b) => (a.date < b.date ? -1 : 1));
     const latestWeight = weightSeries.length ? weightSeries[weightSeries.length - 1].value : null;
 
-    const nutritionAdherence = nutritionAdherenceFrom(daily || [], nutritionPlan || null, 30).score;
+    const nutritionAdherence = nutritionAdherenceFrom(daily || [], nutritionPlan || null, 30, new Date(), mealLogs || []).score;
 
     const exerciseIds = [...new Set((workoutLogs || []).map((l) => l.exercise_id).filter(Boolean))];
     const { data: exRows } = exerciseIds.length
@@ -367,10 +368,11 @@ export default async function handler(req, res) {
     cutoff.setDate(cutoff.getDate() - 44); // a bit more than 30d so the 30-day windows below have full coverage
     const cut = cutoff.toISOString().split("T")[0];
 
-    const [{ data: profile }, { data: daily }, { data: weekly }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: workoutLogs }] = await Promise.all([
+    const [{ data: profile }, { data: daily }, { data: weekly }, { data: mealLogs }, { data: nutPlan }, { data: habits }, { data: habitLogs }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal").eq("id", goal.client_id).maybeSingle(),
       supabaseAdmin.from("daily_checkins").select("date,weight,calories,protein_g,carbs_g,fats_g,workout").eq("client_id", goal.client_id).gte("date", cut).order("date"),
       supabaseAdmin.from("weekly_checkins").select("date,bodyweight,sleep_quality,hydration_quality").eq("client_id", goal.client_id).gte("date", cut).order("date"),
+      supabaseAdmin.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", goal.client_id).gte("date", cut),
       supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", goal.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabaseAdmin.from("habits").select("id").eq("client_id", goal.client_id).eq("active", true),
       supabaseAdmin.from("habit_logs").select("habit_id,date,done").eq("client_id", goal.client_id).gte("date", cut),
@@ -385,7 +387,7 @@ export default async function handler(req, res) {
     (weekly || []).forEach(w => { if (w.bodyweight != null && byDate[w.date] == null) byDate[w.date] = w.bodyweight; });
     const series = Object.entries(byDate).map(([date, value]) => ({ date, value })).sort((a, b) => a.date < b.date ? -1 : 1);
 
-    const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30).score;
+    const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30, new Date(), mealLogs || []).score;
 
     const recentDaily = (daily || []).filter(d => d.date >= (() => { const c = new Date(); c.setDate(c.getDate() - 29); return c.toISOString().split("T")[0]; })());
     const training = recentDaily.length ? Math.round((recentDaily.filter(d => d.workout === "completed").length / recentDaily.length) * 100) : null;
