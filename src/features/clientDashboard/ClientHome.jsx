@@ -4,7 +4,6 @@ import { S, RADIUS, todayStr, localDateStr, useIsMobile } from "../../theme.jsx"
 import { PageTitle, Btn, StatusBadge } from "../../components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "../../components/ClientBanners.jsx";
 import { assessClientRisk } from "../../lib/scoring.js";
-import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { ClientHero } from "./ClientHero.jsx";
 import { TodayWorkoutPreview } from "./TodayWorkoutPreview.jsx";
 import { HabitSummary } from "./HabitSummary.jsx";
@@ -55,9 +54,10 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
   // Same assessClientRisk the coach's Needs Attention board uses — the client
   // sees the same flags their coach does, phrased as the coach talking to them.
   const risk = assessClientRisk(profile, checkins, weeklyRecent, goal);
-  // Same computeGoalScore GoalsSection/Progress use — one source of truth.
-  const weightSeries = checkins.filter((c) => c.weight != null).map((c) => ({ date: c.date, value: c.weight }));
-  const goalScore = goal ? computeGoalScore(goal, weightSeries, {}) : null;
+  // assessClientRisk already computes the goal score with the nutrition/
+  // training components blended in — the same one the coach sees. Reuse it
+  // instead of recomputing a component-less score that can disagree.
+  const goalScore = goal ? risk.goalScore : null;
 
   const progressBlock = checkins.length > 1 ? (
     <ProgressChart checkins={checkins} goal={goal} />
