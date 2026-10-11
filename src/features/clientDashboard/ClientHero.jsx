@@ -22,10 +22,14 @@ function weekOf(startDate, weeks) {
 // show genuine "Ahead" — something the flag-based risk level alone can't
 // express, since severity only ever measures how far behind, not how far
 // ahead.
-function deriveStatus(risk, goalScore) {
+export function deriveStatus(risk, goalScore) {
   if (!risk?.last) return { label: "Not Enough Data", tone: "neutral" };
   if (goalScore) {
-    if (goalScore.classification === "Gathering Data") return { label: "Not Enough Data", tone: "neutral" };
+    // The goal score is "Gathering Data" when the goal is under a week old or
+    // there's no weigh-in in the trailing 7 days. A client who IS checking in
+    // but hasn't weighed in recently isn't "missing data" — say what's missing
+    // instead of implying they haven't logged anything.
+    if (goalScore.classification === "Gathering Data") return { label: "Needs Weigh-In", tone: "neutral" };
     if (goalScore.progressRatio != null && goalScore.progressRatio >= 1.1) return { label: "Ahead", tone: "positive" };
     if (goalScore.classification === "On Track") return { label: "On Track", tone: "positive" };
     return { label: "Behind", tone: goalScore.classification === "Off Track" ? "negative" : "warning" };
@@ -40,6 +44,7 @@ const STATUS_MESSAGE = {
   Ahead: "You're ahead of pace — great work, keep it up.",
   "On Track": "You're on track. Keep pushing — results are coming.",
   Behind: "Let's get you back on track — check the details below.",
+  "Needs Weigh-In": "Your check-ins are coming through. Log a weigh-in this week so we can score your goal progress.",
   "Not Enough Data": "Log a few check-ins so we can start tracking your progress.",
 };
 
@@ -130,7 +135,7 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
 
   const week = hasPhase ? weekOf(program.start_date, totalWeeks) : null;
   const status = hasPhase ? deriveStatus(risk, goalScore) : null;
-  const ringValue = !status ? 0 : status.label === "Not Enough Data" ? 0 : (goalScore?.overallScore ?? risk?.adh?.score ?? 0);
+  const ringValue = !status ? 0 : status.label === "Not Enough Data" || status.label === "Needs Weigh-In" ? 0 : (goalScore?.overallScore ?? risk?.adh?.score ?? 0);
   const statusText = status && status.label === "Behind" && risk?.flags?.[0]?.clientMessage
     ? risk.flags[0].clientMessage
     : status ? STATUS_MESSAGE[status.label] : null;
@@ -153,7 +158,7 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
           <ProgressRing value={ringValue} size={92} color={statusColor} caption={status.label.toUpperCase()} />
           <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: statusColor, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
-              {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
+              {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : status.label === "Needs Weigh-In" ? "Weigh-In Needed" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
             </div>
             <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6 }}>{statusText}</div>
           </div>
