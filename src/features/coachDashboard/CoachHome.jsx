@@ -8,6 +8,7 @@ import { assessClientRisk, adherenceFrom, nutritionStatusFrom } from "../../lib/
 import { milestoneProgress } from "../../lib/milestones.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
+import { InterventionModal } from "./InterventionModal.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
 import { PhaseAlertsPanel } from "./PhaseAlertsPanel.jsx";
@@ -52,6 +53,7 @@ export function CoachHome({ setPage, openClient }) {
   const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [goalsByClient, setGoalsByClient] = useState({});
   const [nutByClient, setNutByClient] = useState({});
+  const [reviewClientId, setReviewClientId] = useState(null);
   const [programByClient, setProgramByClient] = useState({});
   const [phaseAlerts, setPhaseAlerts] = useState([]);
   const [onboardingAlerts, setOnboardingAlerts] = useState([]);
@@ -404,8 +406,15 @@ export function CoachHome({ setPage, openClient }) {
   const revenueTrendPct = lastMonthRevenue > 0 ? Math.round(((monthlyRevenue - lastMonthRevenue) / lastMonthRevenue) * 100) : null;
   const leadsTrendPct = lastMonthLeads > 0 ? Math.round(((newLeads - lastMonthLeads) / lastMonthLeads) * 100) : null;
 
+  const reviewing = reviewClientId ? needs.find((n) => n.client.id === reviewClientId) : null;
+  const modal = reviewing ? (
+    <InterventionModal assessment={reviewing} daily={byClient[reviewClientId] || []} nutCtx={nutByClient[reviewClientId]} openClient={openClient} onClose={() => setReviewClientId(null)} />
+  ) : null;
+
   if (isMobile) {
     return (
+      <>
+      {modal}
       <CoachHomeMobile
         totalClients={coachedList.length} totalClientsTrendPct={totalClientsTrendPct} activeClients={coachedList.length - inactiveCount}
         atRiskCount={needs.length} offlineCount={inactiveCount}
@@ -420,12 +429,15 @@ export function CoachHome({ setPage, openClient }) {
         clientIds={coachedList.map((c) => c.id)}
         programSubscriberRows={programSubscriberRows}
         monthlyRevenue={monthlyRevenue} revenueTrendPct={revenueTrendPct}
+        onReview={setReviewClientId}
       />
+      </>
     );
   }
 
   return (
     <div>
+      {modal}
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview" />
 
       <CoachStatCards
@@ -447,7 +459,7 @@ export function CoachHome({ setPage, openClient }) {
           <ClientOverviewTable rows={rows} openClient={openClient} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 20, minWidth: 0 }}>
-          <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} />
+          <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} onReview={setReviewClientId} />
           <OnboardingAlertsPanel alerts={onboardingAlerts} nameOf={nameOf} openClient={openClient} />
           <MilestoneAlertsPanel alerts={milestoneAlerts} nameOf={nameOf} openClient={openClient} />
           <PhaseAlertsPanel alerts={phaseAlerts} nameOf={nameOf} openClient={openClient} />
