@@ -4,7 +4,7 @@ import { S, todayStr, localDateStr, avatarFrom, useIsMobile } from "../../theme.
 import { CoachHomeMobile } from "./CoachHomeMobile.jsx";
 import { PageTitle, Card, Btn, CollapsibleSection } from "../../components/ui/index.js";
 import { COACH_EMAIL } from "../../lib/constants.js";
-import { assessClientRisk, adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
+import { assessClientRisk, adherenceFrom, nutritionStatusFrom } from "../../lib/scoring.js";
 import { milestoneProgress } from "../../lib/milestones.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
@@ -51,6 +51,7 @@ export function CoachHome({ setPage, openClient }) {
   const [byClient, setByClient] = useState({});
   const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [goalsByClient, setGoalsByClient] = useState({});
+  const [nutByClient, setNutByClient] = useState({});
   const [programByClient, setProgramByClient] = useState({});
   const [phaseAlerts, setPhaseAlerts] = useState([]);
   const [onboardingAlerts, setOnboardingAlerts] = useState([]);
@@ -94,7 +95,7 @@ export function CoachHome({ setPage, openClient }) {
         // Recent Activity, AND (for coached clients) the raw history the
         // Quick Analytics weekly trend buckets are computed from.
         const { data: ch } = await supabase.from("daily_checkins")
-          .select("client_id,date,weight,workout,diet").in("client_id", allIds).gte("date", cut).order("date");
+          .select("client_id,date,weight,workout,diet,calories,protein_g,carbs_g,fats_g").in("client_id", allIds).gte("date", cut).order("date");
         (ch || []).forEach((r) => { (grouped[r.client_id] = grouped[r.client_id] || []).push(r); });
 
         // Workout logs and progress photos, for EVERY client — previously
@@ -119,6 +120,20 @@ export function CoachHome({ setPage, openClient }) {
       }
       const { data: cg } = coachedIds.length ? await supabase.from("client_goals").select("*").in("client_id", coachedIds).eq("status", "active").eq("metric_key", "bodyweight") : { data: [] };
       const goalsMap = {}; (cg || []).forEach((g) => { goalsMap[g.client_id] = g; });
+
+      // Nutrition plan + food/meal logs per coached client, so the nutrition
+      // score here is the same macro-based one the client's Home and the
+      // goal score use (not the self-rated diet field).
+      const nutMap = {};
+      if (coachedIds.length) {
+        const [{ data: plans }, { data: mls }] = await Promise.all([
+          supabase.from("nutrition_plans").select("client_id,calories,protein_g,carbs_g,fats_g").in("client_id", coachedIds).eq("active", true).order("created_at", { ascending: false }),
+          supabase.from("meal_logs").select("client_id,date,calories,protein_g,carbs_g,fats_g").in("client_id", coachedIds).gte("date", cut),
+        ]);
+        coachedIds.forEach((id) => { nutMap[id] = { plan: null, mealLogs: [] }; });
+        (plans || []).forEach((p) => { if (nutMap[p.client_id] && !nutMap[p.client_id].plan) nutMap[p.client_id].plan = p; });
+        (mls || []).forEach((m) => { nutMap[m.client_id]?.mealLogs.push(m); });
+      }
 
       // Day-0 onboarding gate: surface the client's next coach-owned step
       // (assessment -> coach review -> roadmap confirmed) once it's active
@@ -233,7 +248,7 @@ export function CoachHome({ setPage, openClient }) {
       setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
       setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setNutByClient(nutMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
     })();
   }, []);
 
@@ -258,7 +273,7 @@ export function CoachHome({ setPage, openClient }) {
     const ch = byClient[c.id] || [];
     const wk = weeklyRecent.filter((w) => w.client_id === c.id);
     const goal = goalsByClient[c.id] || null;
-    const risk = assessClientRisk(c, ch, wk, goal);
+    const risk = assessClientRisk(c, ch, wk, goal, undefined, nutByClient[c.id]);
     const since = sinceOf(c.id);
     return { ...risk, client: c, last: lastActivityByClient[c.id] || null, since };
   });
@@ -366,7 +381,7 @@ export function CoachHome({ setPage, openClient }) {
       const goal = goalsByClient[c.id];
       const checkins = byClient[c.id] || [];
       const series = checkins.filter((r) => r.weight != null).map((r) => ({ date: r.date, value: r.weight }));
-      const nut = nutritionScoreFrom(checkins, 30, end);
+      const nut = nutritionStatusFrom(checkins, nutByClient[c.id], 30, end);
       const adh = adherenceFrom(checkins, 30, end);
       return computeGoalScore(goal, series, { nutrition: nut.score, training: adh.trainingRate }, end).overallScore;
     }).filter((v) => v != null);

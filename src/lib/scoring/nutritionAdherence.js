@@ -49,7 +49,7 @@ export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new
   );
   const loggingRate = recent.length ? loggedDays.length / days : 0;
 
-  if (!targets || !loggedDays.length) return { score: null, loggingRate };
+  if (!targets || !loggedDays.length) return { score: null, loggingRate, loggedDays: loggedDays.length };
 
   let weightSum = 0, weighted = 0;
   for (const [key, weight] of Object.entries(MACRO_WEIGHTS)) {
@@ -63,12 +63,12 @@ export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new
     weightSum += weight;
     weighted += weight * avg;
   }
-  if (weightSum === 0) return { score: null, loggingRate };
+  if (weightSum === 0) return { score: null, loggingRate, loggedDays: loggedDays.length };
 
   const macroScore = weighted / weightSum;
   // Silence isn't success: a day with no entry doesn't count toward the
   // macro average above, but it does drag the overall score down via
   // loggingRate so a client who logs 3 perfect days out of 30 doesn't read
   // as "100% on track."
-  return { score: Math.round(macroScore * loggingRate), loggingRate };
+  return { score: Math.round(macroScore * loggingRate), loggingRate, loggedDays: loggedDays.length };
 }

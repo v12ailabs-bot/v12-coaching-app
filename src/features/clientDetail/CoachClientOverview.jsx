@@ -3,7 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, RADIUS, todayStr } from "../../theme.jsx";
 import { Card, CardTitle, StatusBadge, RG, Modal, Btn } from "../../components/ui/index.js";
 import {
-  adherenceFrom, nutritionScoreFrom, workoutAdherenceFrom, avgSleepHoursFrom,
+  adherenceFrom, nutritionStatusFrom, workoutAdherenceFrom, avgSleepHoursFrom,
   weightChangeFrom, programCalendarProgressFrom, habitAdherenceFrom, isHabitSatisfied,
   targetStatus, assessClientRisk,
 } from "../../lib/scoring.js";
@@ -43,6 +43,7 @@ export function CoachClientOverview({ client, onAddNote }) {
   const [habits, setHabits] = useState([]);
   const [habitLogs, setHabitLogs] = useState([]);
   const [planTarget, setPlanTarget] = useState({});
+  const [mealLogs, setMealLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(14);
   const [showEditTargets, setShowEditTargets] = useState(false);
@@ -59,7 +60,9 @@ export function CoachClientOverview({ client, onAddNote }) {
       supabase.from("habits").select("*").eq("client_id", client.id).eq("active", true).order("order_index"),
       supabase.from("habit_logs").select("*").eq("client_id", client.id).gte("date", cut35),
       supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    ]).then(([p, d, w, g, h, hl, plan]) => {
+      supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).gte("date", cut35),
+    ]).then(([p, d, w, g, h, hl, plan, ml]) => {
+      setMealLogs(ml.data || []);
       setProgram(p.data || null);
       setDaily(d.data || []);
       setWeekly(w.data || []);
@@ -88,14 +91,15 @@ export function CoachClientOverview({ client, onAddNote }) {
     return Object.entries(byDate).map(([date, weight]) => ({ date, weight })).sort((a, b) => (a.date < b.date ? -1 : 1));
   })();
 
-  const risk = assessClientRisk(client, daily, weekly, goal);
+  const nutCtx = { plan: planTarget?.calories != null || planTarget?.protein_g != null ? planTarget : null, mealLogs };
+  const risk = assessClientRisk(client, daily, weekly, goal, undefined, nutCtx);
   const topFlag = risk.flags.find((f) => f.tone === "red") || risk.flags[0] || null;
 
   const checkInRate = adherenceFrom(daily, 30).score;
   const workoutAdh = workoutAdherenceFrom(daily, 30);
   const weightChange = weightChangeFrom(weights, 30);
   const avgSleep = avgSleepHoursFrom(daily, 30);
-  const nut = nutritionScoreFrom(daily, 30);
+  const nut = nutritionStatusFrom(daily, nutCtx, 30);
   const progress = programCalendarProgressFrom(program);
 
   const checkinByDate = {};
@@ -220,7 +224,7 @@ export function CoachClientOverview({ client, onAddNote }) {
       <Card style={{ marginBottom: 14 }}>
         <CardTitle>Nutrition Adherence</CardTitle>
         <div style={{ fontSize: 13, color: S.text, marginBottom: 6 }}>Nutrition adherence · <strong>{nut.score != null ? `${nut.score}%` : "No data"}</strong></div>
-        <div style={{ fontSize: 12, color: S.muted }}>{nut.score != null ? `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.` : "Not enough recent check-ins to assess."}</div>
+        <div style={{ fontSize: 12, color: S.muted }}>{nut.score == null ? "Not enough recent check-ins to assess." : nut.source === "macros" ? `Logged intake has averaged ${nut.score}% adherence to the nutrition targets across ${nut.n} logged days in the last 30 days.` : `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`}</div>
       </Card>
 
       <Card style={{ marginBottom: 0 }}>

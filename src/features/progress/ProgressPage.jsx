@@ -5,7 +5,7 @@ import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../components/ui/index.js";
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
-import { adherenceFrom, nutritionScoreFrom } from "../../lib/scoring.js";
+import { adherenceFrom, nutritionStatusFrom } from "../../lib/scoring.js";
 import { rangeStartStr } from "../../lib/dates.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -25,6 +25,7 @@ export function Progress({ profile, coachView }) {
   const [habits, setHabits] = useState([]);
   const [habitLogs, setHabitLogs] = useState([]);
   const [target, setTarget] = useState(null);
+  const [mealLogs, setMealLogs] = useState([]);
   const [goal, setGoal] = useState(null);
   const [insight, setInsight] = useState(null);
   // `heightIn` is just the input's live typing buffer; `savedHeight` is the
@@ -51,6 +52,8 @@ export function Progress({ profile, coachView }) {
     supabase.from("habits").select("*").eq("client_id",profile.id).eq("active",true).order("order_index").then(({data})=>setHabits(data||[]));
     // Active nutrition-plan macro targets, for the calorie/macro reference lines.
     supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).eq("active",true).order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setTarget(data||null));
+    const mcut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
+    supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).gte("date",mcut).then(({data})=>setMealLogs(data||[]));
     // Last 30 days of habit completions, for the coach-visible adherence grid.
     const cut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
     supabase.from("habit_logs").select("*").eq("client_id",profile.id).gte("date",cut).then(({data})=>setHabitLogs(data||[]));
@@ -68,7 +71,7 @@ export function Progress({ profile, coachView }) {
   const emptyWeekly = <Card style={{textAlign:"center",padding:40,color:S.muted}}>No weekly check-ins in this range.</Card>;
   const ts = (id) => ({padding:"10px 20px",fontSize:11,letterSpacing:"1.5px",textTransform:"uppercase",fontWeight:600,cursor:"pointer",color:tab===id?S.accent:S.muted,background:"none",border:"none",borderBottom:tab===id?"2px solid "+S.accent:"2px solid transparent"});
   const adh = adherenceFrom(daily,30);
-  const nut = nutritionScoreFrom(daily,30);
+  const nut = nutritionStatusFrom(daily,{plan:target,mealLogs},30);
   // Bodyweight comes from either the daily check-in (weight) or the weekly
   // check-in (bodyweight); merge both into one series by date so neither source
   // is lost. Daily wins when both exist on the same date.
