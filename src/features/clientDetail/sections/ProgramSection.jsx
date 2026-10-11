@@ -5,6 +5,8 @@ import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
 import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
+import { AddPhaseModal } from "./AddPhaseModal.jsx";
+import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { DAY_ORDER, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
 import { TOP_PHASES, SUB_PHASES, synthesizePhaseLabel } from "../../../lib/progressionModels.js";
 
@@ -314,6 +316,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [program, setProgram] = useState(null);
   const [rows, setRows] = useState([]);
   const [originalIds, setOriginalIds] = useState([]);
+  const [addingPhase, setAddingPhase] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -322,7 +325,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [genInfo, setGenInfo] = useState(null);
 
   const load = useCallback(async () => {
-    const { data: prog } = await supabase.from("programs").select("id,phase,start_date").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
@@ -349,8 +352,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
     return next;
   });
 
+  const review = validateRoadmap(rows, { programWeeks: program?.weeks || null });
+
   const save = async () => {
-    if (!program) return;
+    if (!program || review.errors.some((x) => x.blocking !== false)) return;
+    if (review.errors.length && !window.confirm(`This roadmap has conflicts:\n\n${review.errors.map((x) => "• " + x.message).join("\n")}\n\nSave anyway?`)) return;
     setSaving(true); setMsg(null);
     const clean = rows.filter((r) => r.phase.trim());
     const toPayload = (r, i) => ({
@@ -495,12 +501,25 @@ export function ProgramRoadmapPlanner({ clientId }) {
               </div>
             );
           })}
-          <button onClick={() => setRows((r) => [...r, blankRoadmapRow()])}
+          <button onClick={() => setAddingPhase(true)}
             style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "8px 14px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px", marginTop: 4 }}>
             + Add Phase
           </button>
+          {(review.errors.length > 0 || review.warnings.length > 0) && (
+            <div style={{ marginTop: 14, border: "1px solid " + (review.errors.length ? S.danger : S.warning), borderRadius: 8, padding: "10px 14px" }}>
+              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: review.errors.length ? S.danger : S.warning, marginBottom: 6 }}>
+                {review.errors.some((x) => x.blocking !== false) ? "Fix before saving" : review.errors.length ? "Conflicts to review" : "Review"}
+              </div>
+              {review.errors.map((x, k) => <div key={"e" + k} style={{ fontSize: 12, color: S.danger, padding: "2px 0" }}>• {x.message}</div>)}
+              {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
+            </div>
+          )}
+          {addingPhase && (
+            <AddPhaseModal rows={rows} programWeeks={program.weeks || null} onClose={() => setAddingPhase(false)}
+              onAdd={(idx, draft) => { setRows((r) => [...r.slice(0, idx), draft, ...r.slice(idx)]); setAddingPhase(false); setMsg({ ok: true, text: "Phase added to the draft — click Save Roadmap to publish." }); }} />
+          )}
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
-            <Btn onClick={save} disabled={saving}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
+            <Btn onClick={save} disabled={saving || review.errors.some((x) => x.blocking !== false)}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
             <Btn teal onClick={generateRoadmap} disabled={generating}>{generating ? "Generating..." : "Generate Roadmap"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
