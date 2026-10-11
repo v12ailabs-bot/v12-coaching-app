@@ -5,6 +5,7 @@
     "api/goal-insight.js": { "maxDuration": 180 }
   },
   "crons": [
-    { "path": "/api/checkin-digest", "schedule": "0 12 * * *" }
+    { "path": "/api/checkin-digest", "schedule": "0 12 * * *" },
+    { "path": "/api/checkin-digest?task=food-sync", "schedule": "30 8 * * *" }
   ]
 }

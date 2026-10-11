@@ -27,6 +27,7 @@ import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, CO
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
+import { FoodMealEditor, loadEntries } from "./features/nutrition/FoodMealEditor.jsx";
 import { TodayScreen } from "./features/today/TodayScreen.jsx";
 import { weekStartStr, isWithinWeeklyBackdateWindow } from "./lib/dates.js";
 import { LoginScreen } from "./features/auth/LoginScreen.jsx";
@@ -2625,6 +2626,7 @@ const MEAL_SLOTS_SIMPLE = ["Breakfast", "Lunch", "Dinner"];
 function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
   const [mealLogs, setMealLogs] = useState([]);
   const [todayCheckin, setTodayCheckin] = useState(null);
+  const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -2632,9 +2634,10 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
     Promise.all([
       supabase.from("meal_logs").select("*").eq("client_id", profile.id).eq("date", today),
       supabase.from("daily_checkins").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("date", today).maybeSingle(),
-    ]).then(([{ data: logs }, { data: checkin }]) => {
+    ]).then(async ([{ data: logs }, { data: checkin }]) => {
       setMealLogs(logs || []);
       setTodayCheckin(checkin || null);
+      setEntries(await loadEntries((logs || []).map((l) => l.id)));
       setLoading(false);
     });
   }, [profile.id]);
@@ -2673,7 +2676,12 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
               <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 4px", borderBottom: i < slots.length - 1 ? "1px solid " + S.border : "none" }}>
                 <span style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{label}</span>
                 <MealLogEntry profile={profile} mealLabel={label} existing={existing} simple={simple}
-                  onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row])} />
+                  entries={entries.filter((e) => existing && e.meal_log_id === existing.id)}
+                  onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row])}
+                  onEntriesSaved={(row, fresh) => {
+                    if (row) setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row]);
+                    setEntries((prev) => [...prev.filter((e) => e.meal_log_id !== row?.id), ...fresh]);
+                  }} />
               </div>
             );
           })}
@@ -2688,8 +2696,12 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
 // food-item search/database. Upserts on (client_id, date, meal), so
 // re-logging the same meal the same day updates it instead of double-
 // counting a second row when summed into the day's actuals.
-function MealLogEntry({ profile, mealLabel, existing, onSaved, simple = false }) {
+function MealLogEntry({ profile, mealLabel, existing, onSaved, onEntriesSaved, entries = [], simple = false }) {
   const [open, setOpen] = useState(false);
+  // "foods" = ingredient-level logging; "manual" = the legacy totals form. A
+  // slot that already has ingredient lines is edited only through foods, since
+  // typing manual totals over it would desync from its lines.
+  const [mode, setMode] = useState(entries.length > 0 ? "foods" : "manual");
   const [form, setForm] = useState({ calories: existing?.calories ?? "", protein_g: existing?.protein_g ?? "", carbs_g: existing?.carbs_g ?? "", fats_g: existing?.fats_g ?? "" });
   const [saving, setSaving] = useState(false);
   const num = (v) => (v === "" || v == null ? null : Number(v));
@@ -2709,13 +2721,31 @@ function MealLogEntry({ profile, mealLabel, existing, onSaved, simple = false })
 
   if (!open) {
     return (
-      <Btn sm teal onClick={() => setOpen(true)}>
+      <Btn sm teal onClick={() => { setMode(entries.length > 0 ? "foods" : "manual"); setOpen(true); }}>
         {existing ? `Logged: ${existing.calories ?? "—"} kcal · Edit` : "+ Log"}
       </Btn>
     );
   }
+  const modeTabs = entries.length === 0 && (
+    <div style={{ display: "flex", gap: 6, width: "100%", marginTop: 8 }}>
+      {[["manual", "Quick entry"], ["foods", "Search foods"]].map(([m, label]) => (
+        <button key={m} onClick={() => setMode(m)} style={{ padding: "6px 12px", fontSize: 11, cursor: "pointer", background: mode === m ? S.accent2 : "transparent", color: mode === m ? "#000" : S.muted, border: "1px solid " + (mode === m ? S.accent2 : S.border) }}>{label}</button>
+      ))}
+    </div>
+  );
+  if (mode === "foods") {
+    return (
+      <div style={{ width: "100%" }}>
+        {modeTabs}
+        <FoodMealEditor profile={profile} mealLabel={mealLabel} existing={existing} entries={entries}
+          onCancel={() => setOpen(false)}
+          onSaved={(row, fresh, keepOpen) => { onEntriesSaved(row, fresh); if (!keepOpen) setOpen(false); }} />
+      </div>
+    );
+  }
   return (
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginTop: 8 }}>
+      {modeTabs}
       {fields.map(([k, label]) => (
         <Fld key={k} label={label}>
           <Inp type="number" value={form[k]} onChange={(e) => setForm((p) => ({ ...p, [k]: e.target.value }))} placeholder="0" />
