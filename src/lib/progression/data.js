@@ -7,28 +7,43 @@ import { decideRecommendation } from "./decisions.js";
 // yet (Slice 1). Writes go to progression_recommendations (coach-only RLS) —
 // the client-facing workout_logs path is untouched.
 
-// Evaluates one exercise's most recent session and stores the result as a
-// pending recommendation. Re-running for the same exercise/method/session is a
-// no-op returning the existing row (unique index), never a duplicate.
+// Evaluates one exercise's most recent session. The stored recommendation for
+// an exercise/method/session is the authoritative one (its calculation is
+// frozen), so if one already exists it is returned as-is rather than
+// recalculated. Only actionable results (increase / hold / prescription) are
+// stored; insufficient-data and invalid results are returned but not saved, so
+// an early incomplete session can never block a later, complete one.
 export async function recommendForExercise({ exercise, clientId, currentLoad, oneRepMax, week, techniqueConfirmed }) {
   const methodId = exercise.progression_method;
   if (!methodId) return { error: "This exercise has no progression method assigned." };
   const { data: rows, error } = await supabase.from("workout_logs").select("*").eq("exercise_id", exercise.id).eq("client_id", clientId).order("date");
   if (error) return { error: error.message };
   const session = latestSessionRows(rows || []);
+
+  if (session.date) {
+    const { data: existing } = await supabase.from("progression_recommendations").select("*")
+      .eq("exercise_id", exercise.id).eq("method_id", methodId).eq("session_date", session.date).maybeSingle();
+    if (existing) return { sessionDate: session.date, stored: existing, calcResult: existing.calc_result };
+  }
   const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed });
-  if (!session.date || ["reference_only", "invalid"].includes(calcResult.status)) return { calcResult, stored: null };
+  const actionable = ["increase", "hold", "prescription"].includes(calcResult.status);
+  if (!session.date || !actionable) return { sessionDate: session.date, calcResult, stored: null };
 
   const row = {
     client_id: clientId, exercise_id: exercise.id, method_id: methodId, session_date: session.date,
     calc_input: { currentLoad, oneRepMax: oneRepMax ?? null, week: week ?? null, techniqueConfirmed: techniqueConfirmed ?? null, config: exercise.progression_config || {}, sets: calcResult.calc?.sets ?? null },
     calc_result: calcResult, recommended_load: calcResult.recommendedLoad,
   };
-  const { data, error: insErr } = await supabase.from("progression_recommendations").upsert(row, { onConflict: "exercise_id,method_id,session_date", ignoreDuplicates: true }).select().maybeSingle();
-  if (insErr) return { calcResult, error: insErr.message };
-  if (data) return { calcResult, stored: data };
-  const { data: existing } = await supabase.from("progression_recommendations").select("*").eq("exercise_id", exercise.id).eq("method_id", methodId).eq("session_date", session.date).maybeSingle();
-  return { calcResult, stored: existing };
+  const { data, error: insErr } = await supabase.from("progression_recommendations").insert(row).select().single();
+  if (insErr) return { sessionDate: session.date, calcResult, error: insErr.message };
+  return { sessionDate: session.date, calcResult, stored: data };
+}
+
+// Most recent stored recommendations for an exercise (newest first) — the
+// decision history shown under the panel.
+export async function fetchRecommendations(exerciseId, limit = 5) {
+  const { data } = await supabase.from("progression_recommendations").select("*").eq("exercise_id", exerciseId).order("created_at", { ascending: false }).limit(limit);
+  return data || [];
 }
 
 export async function decide(recommendation, decision, coachId) {
