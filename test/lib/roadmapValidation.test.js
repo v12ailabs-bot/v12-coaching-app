@@ -49,3 +49,20 @@ test("overlap/duplicate are non-blocking conflicts; invalid weeks block", () => 
   assert.equal(validateRoadmap([row("A", 1, 2), row("a", 3, 4)]).errors[0].blocking, false);
   assert.notEqual(validateRoadmap([row("A", 5, 2)]).errors[0].blocking, false);
 });
+
+import { planSnapshot, checkpointWhen } from "../../src/lib/planCheckpoints.js";
+
+test("planSnapshot normalizes blanks so identical content compares equal; checkpointWhen formats days", () => {
+  const a = planSnapshot([{ phase: "A", week_start: "1", week_end: "4", exit_criteria: [] }]);
+  const b = planSnapshot([{ phase: "A", week_start: 1, week_end: 4, exit_criteria: [], checkpoints: [], planned_changes: [], note: "" }]);
+  assert.equal(JSON.stringify(a), JSON.stringify(b));
+  assert.equal(checkpointWhen({ day: 28 }, null), "Day 28");
+  assert.match(checkpointWhen({ day: 28 }, "2026-10-01"), /^Day 28 · /);
+  assert.equal(checkpointWhen({}, null), "");
+});
+
+import { canonicalJson } from "../../src/lib/planCheckpoints.js";
+test("canonicalJson ignores key order (jsonb round-trip) but not values", () => {
+  assert.equal(canonicalJson({ b: 1, a: [{ y: 2, x: 1 }] }), canonicalJson({ a: [{ x: 1, y: 2 }], b: 1 }));
+  assert.notEqual(canonicalJson({ a: 1 }), canonicalJson({ a: 2 }));
+});
