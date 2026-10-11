@@ -312,6 +312,7 @@ const blankExitCriterion = () => ({ label: "", status: "incomplete" });
 export function ProgramRoadmapPlanner({ clientId }) {
   const [program, setProgram] = useState(null);
   const [rows, setRows] = useState([]);
+  const [originalIds, setOriginalIds] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -324,7 +325,9 @@ export function ProgramRoadmapPlanner({ clientId }) {
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
+      setOriginalIds((planned || []).map((p) => p.id));
       setRows((planned || []).map((p) => ({
+        id: p.id,
         phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",
         objective: p.objective || "", training_focus: p.training_focus || "", movement_focus: p.movement_focus || "",
         progression_strategy: p.progression_strategy || "", exit_criteria: p.exit_criteria || [],
@@ -349,23 +352,44 @@ export function ProgramRoadmapPlanner({ clientId }) {
     if (!program) return;
     setSaving(true); setMsg(null);
     const clean = rows.filter((r) => r.phase.trim());
-    const { error: delErr } = await supabase.from("program_phases").delete().eq("program_id", program.id);
-    let error = delErr;
-    if (!error && clean.length) {
-      const payload = clean.map((r, i) => ({
-        program_id: program.id, client_id: clientId, phase: r.phase.trim(), order_index: i,
-        week_start: r.week_start === "" ? null : parseInt(r.week_start), week_end: r.week_end === "" ? null : parseInt(r.week_end),
-        note: r.note.trim() || null,
-        objective: r.objective?.trim() || null, training_focus: r.training_focus?.trim() || null,
-        movement_focus: r.movement_focus?.trim() || null, progression_strategy: r.progression_strategy?.trim() || null,
-        exit_criteria: (r.exit_criteria || []).filter((c) => c.label.trim()),
-      }));
-      const { error: insErr } = await supabase.from("program_phases").insert(payload);
+    const toPayload = (r, i) => ({
+      program_id: program.id, client_id: clientId, phase: r.phase.trim(), order_index: i,
+      week_start: r.week_start === "" ? null : parseInt(r.week_start), week_end: r.week_end === "" ? null : parseInt(r.week_end),
+      note: r.note.trim() || null,
+      objective: r.objective?.trim() || null, training_focus: r.training_focus?.trim() || null,
+      movement_focus: r.movement_focus?.trim() || null, progression_strategy: r.progression_strategy?.trim() || null,
+      exit_criteria: (r.exit_criteria || []).filter((c) => c.label.trim()),
+    });
+    // Update existing rows in place (keeps their ids — other records can point
+    // at a phase), insert genuinely new ones, and only THEN delete rows the
+    // coach removed. The old delete-everything-then-reinsert order meant a
+    // failed insert left the program with no roadmap at all.
+    let error = null;
+    const existing = clean.map((r, i) => ({ r, i })).filter(({ r }) => r.id);
+    const added = clean.map((r, i) => ({ r, i })).filter(({ r }) => !r.id);
+    if (existing.length) {
+      const { error: upErr } = await supabase.from("program_phases").upsert(existing.map(({ r, i }) => ({ id: r.id, ...toPayload(r, i) })));
+      error = upErr;
+    }
+    if (!error && added.length) {
+      const { error: insErr } = await supabase.from("program_phases").insert(added.map(({ r, i }) => toPayload(r, i)));
       error = insErr;
+    }
+    if (!error) {
+      // Delete only rows that existed when the editor loaded and were since
+      // removed — never a blanket delete.
+      const keep = existing.map(({ r }) => r.id);
+      const removedIds = originalIds.filter((id) => !keep.includes(id));
+      if (removedIds.length) {
+        const { error: delErr } = await supabase.from("program_phases").delete().in("id", removedIds);
+        error = delErr;
+      }
     }
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Roadmap saved." });
-    if (!error) setRows(clean);
+    // Reload so freshly inserted rows pick up their ids (the next save must
+    // update them in place, not insert duplicates).
+    if (!error) await load();
   };
 
   // Proposes a full phase sequence from the client's actual program/goal/
