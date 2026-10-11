@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
+import { readJson } from "../../../lib/apiJson.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
 import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
@@ -383,7 +384,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
         body: JSON.stringify({ program_id: program.id }),
       });
-      const json = await res.json();
+      const json = await readJson(res);
       if (!res.ok) throw new Error(json.error || "Could not generate a roadmap.");
       setRows((json.phases || []).map((p) => ({
         phase: p.phase || "", week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",

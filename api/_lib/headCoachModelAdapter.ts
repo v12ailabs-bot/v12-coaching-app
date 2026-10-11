@@ -64,6 +64,12 @@ export interface ModelAdapter {
 // separate decision, out of scope here.
 const DEFAULT_MODEL = "claude-opus-4-8";
 
+// A review can make two calls (one bounded retry) inside Vercel's 60s
+// function cap (unraisable on Hobby; see api/_lib/anthropic.js). Abort each
+// call at 28s so a slow model becomes a clean JSON error from our own catch
+// block instead of Vercel's plain-text 504, which the browser can't parse.
+const CALL_TIMEOUT_MS = 28000;
+
 export class ClaudeAdapter implements ModelAdapter {
   readonly providerName = "anthropic";
   readonly model: string;
@@ -71,7 +77,10 @@ export class ClaudeAdapter implements ModelAdapter {
 
   constructor(model: string = DEFAULT_MODEL) {
     this.model = model;
-    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+    // maxRetries 0: the SDK's own retries would stack on top of the hard
+    // wall-clock cutoff in complete() and could push the request past
+    // Vercel's 60s function cap.
+    this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
   }
 
   async complete(prompt: string, options: ModelCompletionOptions = {}): Promise<ModelCompletionResult> {
@@ -82,7 +91,7 @@ export class ClaudeAdapter implements ModelAdapter {
         max_tokens: options.maxTokens ?? 1000,
         ...(options.system ? { system: options.system } : {}),
         messages: [{ role: "user", content: prompt }],
-      });
+      }, { signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
       const latencyMs = Date.now() - start;
       const textBlock = message.content.find((b): b is Anthropic.TextBlock => b.type === "text");
       return {
@@ -100,7 +109,8 @@ export class ClaudeAdapter implements ModelAdapter {
       };
     } catch (e: any) {
       const latencyMs = Date.now() - start;
-      throw new ModelAdapterError(e?.message ?? String(e), this.model, latencyMs);
+      const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError" || /abort|timed? ?out/i.test(e?.message ?? "");
+      throw new ModelAdapterError(timedOut ? `Claude did not respond within ${CALL_TIMEOUT_MS / 1000}s` : (e?.message ?? String(e)), this.model, latencyMs);
     }
   }
 }
