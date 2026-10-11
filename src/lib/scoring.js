@@ -1,5 +1,6 @@
 import { todayStr, localDateStr } from "./dates.js";
 import { computeGoalScore } from "./scoring/goalScoring.js";
+import { nutritionAdherenceFrom } from "./scoring/nutritionAdherence.js";
 
 // Adherence over a trailing window: % of days with a daily check-in, plus the
 // training-completion rate among those check-ins. Shared by client + coach views.
@@ -38,6 +39,23 @@ export function nutritionScoreFrom(checkins, days = 30, asOf = new Date()) {
   if (!recent.length) return { score: null, n: 0 };
   const total = recent.reduce((s, c) => s + (DIET_SCORE[c.diet] ?? 50), 0);
   return { score: Math.round(total / recent.length), n: recent.length };
+}
+
+// The one nutrition score every screen should show. When the client has an
+// active nutrition plan, it's the macro-based adherence (check-in macros +
+// meal/food logs vs. plan targets, scaled by logging rate) — the same number
+// the goal score, Head Coach and AI insight use. Without a plan, or with no
+// logged macros in the window, it falls back to the self-rated diet score so
+// a client isn't blank just because they haven't logged food. `source` says
+// which one it was so copy can be honest about what the % means.
+// nutCtx = { plan, mealLogs } (both optional).
+export function nutritionStatusFrom(checkins, nutCtx, days = 30, asOf = new Date()) {
+  if (nutCtx?.plan) {
+    const r = nutritionAdherenceFrom(checkins, nutCtx.plan, days, asOf, nutCtx.mealLogs || []);
+    if (r.score != null) return { score: r.score, n: r.loggedDays, source: "macros" };
+  }
+  const self = nutritionScoreFrom(checkins, days, asOf);
+  return { ...self, source: self.score != null ? "self-rated" : null };
 }
 
 // Whether a single day's value satisfies a habit, given its type/target/
@@ -218,14 +236,17 @@ export function loggingAssessment(dailyCheckins, today = todayStr()) {
 // (coach-facing: what the coach should do about it) and `clientMessage`
 // (client-facing: the coach talking directly to the client about it) so the
 // two views can reuse one flag list with different copy.
-export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, today = todayStr()) {
+export function assessClientRisk(client, dailyCheckins, weeklyCheckins, goal, today = todayStr(), nutCtx = null) {
   const daysSinceDate = (d) => Math.round((new Date(today) - new Date(d)) / 86400000);
   const ch = dailyCheckins || [];
   const { adh, last, since, loggingFlags, loggingStatus } = loggingAssessment(ch, today);
 
   const flags = [];
-  const nut = nutritionScoreFrom(ch, 30);
-  if (nut.score != null && nut.n >= 3 && nut.score < 50) flags.push({ label: `Nutrition ${nut.score}%`, tone: "amber", detail: `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`, action: "Revisit the nutrition plan for something more sustainable.", clientMessage: `Your nutrition has averaged ${nut.score}% over your last few check-ins — let's find something more sustainable together.` });
+  const nut = nutritionStatusFrom(ch, nutCtx, 30);
+  const nutDetail = nut.source === "macros"
+    ? `Logged intake has averaged ${nut.score}% adherence to the nutrition targets across ${nut.n} logged days in the last 30 days.`
+    : `Self-rated diet quality has averaged ${nut.score}% across ${nut.n} check-ins in the last 30 days.`;
+  if (nut.score != null && nut.n >= 3 && nut.score < 50) flags.push({ label: `Nutrition ${nut.score}%`, tone: "amber", detail: nutDetail, action: "Revisit the nutrition plan for something more sustainable.", clientMessage: `Your nutrition has averaged ${nut.score}% over your last few check-ins — let's find something more sustainable together.` });
 
   const weights = ch.filter((r) => r.weight != null);
   let goalScore = null;

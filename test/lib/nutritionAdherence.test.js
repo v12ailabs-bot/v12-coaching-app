@@ -48,3 +48,26 @@ test("off-target protein lowers the score proportionally", () => {
   const r = nutritionAdherenceFrom(checkins, targets, 10, today);
   assert.equal(r.score, 80);
 });
+
+test("meal_logs alone count as logged days and are scored against targets", () => {
+  const targets = { calories: 2000, protein_g: 150, carbs_g: 200, fats_g: 60 };
+  const meals = days(10, d => ({ date: d, calories: 2000, protein_g: 150, carbs_g: 200, fats_g: 60 }));
+  const r = nutritionAdherenceFrom([], targets, 10, today, meals);
+  assert.equal(r.loggingRate, 1);
+  assert.equal(r.score, 100);
+});
+
+test("meal_logs on the same day sum across meals and add to check-in macros, never overwrite", () => {
+  const targets = { calories: null, protein_g: 150, carbs_g: null, fats_g: null };
+  const checkins = [{ date: dateAt(1), protein_g: 50 }];
+  const meals = [{ date: dateAt(1), protein_g: 60 }, { date: dateAt(1), protein_g: 40 }];
+  const r = nutritionAdherenceFrom(checkins, targets, 1, new Date("2026-01-01T00:00:00Z"), meals);
+  assert.equal(r.score, 100, "50 + 60 + 40 = 150 = target");
+});
+
+test("a macro nobody reported stays unknown, not 0", () => {
+  const targets = { calories: 2000, protein_g: 150, carbs_g: null, fats_g: null };
+  const meals = [{ date: dateAt(1), protein_g: 150 }];
+  const r = nutritionAdherenceFrom([], targets, 1, new Date("2026-01-01T00:00:00Z"), meals);
+  assert.equal(r.score, 100, "calories unreported is dropped and weights renormalize, not scored as 0 kcal");
+});

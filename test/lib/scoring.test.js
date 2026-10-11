@@ -117,3 +117,28 @@ test("targetStatus: boundary values at exactly 5%/15%", () => {
   assert.equal(targetStatus(null, 120, "at_least"), null);
   assert.equal(targetStatus(100, null, "at_least"), null);
 });
+
+import { nutritionStatusFrom } from "../../src/lib/scoring.js";
+
+test("nutritionStatusFrom: uses macros vs plan when a plan and logs exist, ignoring self-rating", () => {
+  const asOf = new Date("2026-01-10T00:00:00Z");
+  const plan = { calories: null, protein_g: 150, carbs_g: null, fats_g: null };
+  const checkins = [{ date: "2026-01-10", diet: "On track" }];
+  const meals = [{ date: "2026-01-10", protein_g: 75 }];
+  const r = nutritionStatusFrom(checkins, { plan, mealLogs: meals }, 1, asOf);
+  assert.equal(r.source, "macros");
+  assert.equal(r.score, 50, "75g of 150g target, not the 100 the self-rating would give");
+});
+
+test("nutritionStatusFrom: no plan -> falls back to self-rated and says so", () => {
+  const asOf = new Date("2026-01-10T00:00:00Z");
+  const r = nutritionStatusFrom([{ date: "2026-01-10", diet: "On track" }], null, 30, asOf);
+  assert.equal(r.source, "self-rated");
+  assert.equal(r.score, 100);
+});
+
+test("nutritionStatusFrom: nothing at all -> null score, null source", () => {
+  const r = nutritionStatusFrom([], { plan: { protein_g: 150 }, mealLogs: [] }, 30, new Date("2026-01-10T00:00:00Z"));
+  assert.equal(r.score, null);
+  assert.equal(r.source, null);
+});

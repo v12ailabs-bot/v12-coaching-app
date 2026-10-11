@@ -25,6 +25,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
   const [weeklyDone, setWeeklyDone] = useState(true);
   const [weeklyRecent, setWeeklyRecent] = useState([]);
   const [goal, setGoal] = useState(null);
+  const [nutCtx, setNutCtx] = useState(null);
   const [loading, setLoading] = useState(true);
   const [riskOpen, setRiskOpen] = useState(false);
 
@@ -44,6 +45,12 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
       const { data: g } = await supabase.from("client_goals").select("*").eq("client_id", profile.id).eq("status", "active").eq("metric_key", "bodyweight")
         .order("created_at", { ascending: false }).limit(1).maybeSingle();
       setGoal(g || null);
+      const ncut = (() => { const d = new Date(); d.setDate(d.getDate() - 29); return localDateStr(d); })();
+      const [{ data: plan }, { data: ml }] = await Promise.all([
+        supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).gte("date", ncut),
+      ]);
+      setNutCtx({ plan: plan || null, mealLogs: ml || [] });
       setLoading(false);
     })();
   }, [profile.id]);
@@ -53,7 +60,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
   const doneToday = checkins.some((c) => c.date === todayStr());
   // Same assessClientRisk the coach's Needs Attention board uses — the client
   // sees the same flags their coach does, phrased as the coach talking to them.
-  const risk = assessClientRisk(profile, checkins, weeklyRecent, goal);
+  const risk = assessClientRisk(profile, checkins, weeklyRecent, goal, undefined, nutCtx);
   // assessClientRisk already computes the goal score with the nutrition/
   // training components blended in — the same one the coach sees. Reuse it
   // instead of recomputing a component-less score that can disagree.

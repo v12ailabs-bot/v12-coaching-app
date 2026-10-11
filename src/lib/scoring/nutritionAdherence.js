@@ -8,7 +8,7 @@ const DAY_MS = 86400000;
 const MACRO_WEIGHTS = { protein_g: 0.4, calories: 0.3, carbs_g: 0.15, fats_g: 0.15 };
 
 const macroAccuracy = (actual, target) => {
-  if (target == null || target === 0) return null;
+  if (target == null || target === 0 || actual == null) return null;
   return Math.max(0, 100 - (Math.abs(actual - target) / target) * 100);
 };
 
@@ -16,9 +16,30 @@ const macroAccuracy = (actual, target) => {
 // `targets` is the active nutrition_plans row (or null if none). Returns
 // { score, loggingRate } — score is null when there's no target to score
 // against or nothing logged in the window; loggingRate is always 0-1.
-export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new Date()) {
+// `mealLogs` (meal_logs rows: date + macros, incl. ingredient-level food
+// logging) are independent contributions to the same daily total as the
+// check-in's whole-day macros — summed per date, never overwriting (same
+// semantics as NutritionMacroBars / TodaysMealsCard). A null macro stays null
+// unless at least one source reported it: unknown is never silently 0.
+const MACRO_KEYS = ["calories", "protein_g", "carbs_g", "fats_g"];
+export function mergeDailyNutrition(checkins, mealLogs) {
+  const byDate = new Map();
+  const add = (row) => {
+    const cur = byDate.get(row.date) || { date: row.date };
+    for (const k of MACRO_KEYS) {
+      if (row[k] == null) continue;
+      cur[k] = (cur[k] ?? 0) + Number(row[k]);
+    }
+    byDate.set(row.date, cur);
+  };
+  (checkins || []).forEach(add);
+  (mealLogs || []).forEach(add);
+  return [...byDate.values()];
+}
+
+export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new Date(), mealLogs = []) {
   const cutoff = new Date(today.getTime() - (days - 1) * DAY_MS);
-  const recent = (checkins || []).filter(c => {
+  const recent = mergeDailyNutrition(checkins, mealLogs).filter(c => {
     const d = new Date(c.date + "T00:00:00Z");
     return d >= cutoff && d <= today;
   });
@@ -28,7 +49,7 @@ export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new
   );
   const loggingRate = recent.length ? loggedDays.length / days : 0;
 
-  if (!targets || !loggedDays.length) return { score: null, loggingRate };
+  if (!targets || !loggedDays.length) return { score: null, loggingRate, loggedDays: loggedDays.length };
 
   let weightSum = 0, weighted = 0;
   for (const [key, weight] of Object.entries(MACRO_WEIGHTS)) {
@@ -42,12 +63,12 @@ export function nutritionAdherenceFrom(checkins, targets, days = 30, today = new
     weightSum += weight;
     weighted += weight * avg;
   }
-  if (weightSum === 0) return { score: null, loggingRate };
+  if (weightSum === 0) return { score: null, loggingRate, loggedDays: loggedDays.length };
 
   const macroScore = weighted / weightSum;
   // Silence isn't success: a day with no entry doesn't count toward the
   // macro average above, but it does drag the overall score down via
   // loggingRate so a client who logs 3 perfect days out of 30 doesn't read
   // as "100% on track."
-  return { score: Math.round(macroScore * loggingRate), loggingRate };
+  return { score: Math.round(macroScore * loggingRate), loggingRate, loggedDays: loggedDays.length };
 }
