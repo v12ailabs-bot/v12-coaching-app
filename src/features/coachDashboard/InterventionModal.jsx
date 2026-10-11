@@ -4,6 +4,8 @@ import { supabase } from "../../supabaseClient.js";
 import { S, RADIUS } from "../../theme.jsx";
 import { Modal, Btn, Tabs, StatusBadge } from "../../components/ui/index.js";
 import { callHeadCoach } from "../clientDetail/sections/HeadCoachSection.jsx";
+import { StrengthTab } from "../progress/StrengthTab.jsx";
+import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { mergeDailyNutrition } from "../../lib/scoring/nutritionAdherence.js";
 
 // Attention Center pop-up (per the Intervention reference): one modal that
@@ -40,6 +42,9 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
   const [error, setError] = useState(null);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [reviewing, setReviewing] = useState(false);
+  const [reviewNote, setReviewNote] = useState(null);
+  const [body, setBody] = useState(null);
 
   const load = useCallback(async () => {
     const { data: tasks } = await supabase.from("head_coach_tasks").select("*").eq("client_id", client.id).eq("task_type", "REVIEW_CHECK_IN").order("created_at", { ascending: false }).limit(10);
@@ -49,6 +54,34 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
     setLoading(false);
   }, [client.id]);
   useEffect(() => { load(); }, [load]);
+
+  // Body-composition inputs: height/age/sex from the profile row, waist and
+  // tape measurements from weekly check-ins (same sources the client's own
+  // Progress page uses).
+  useEffect(() => {
+    (async () => {
+      const [{ data: prof }, { data: wk }] = await Promise.all([
+        supabase.from("profiles").select("height_in,age,sex").eq("id", client.id).maybeSingle(),
+        supabase.from("weekly_checkins").select("date,waist,chest,hips,arms").eq("client_id", client.id).order("date"),
+      ]);
+      setBody({ prof: prof || {}, weekly: wk || [] });
+    })();
+  }, [client.id]);
+
+  // A "quick review": the existing Head Coach check-in review on the client's
+  // latest daily check-in (rules + one bounded AI call, 28s cap) — same
+  // pipeline and approval path as the Head Coach tab, just started from here.
+  const runReview = async () => {
+    setReviewing(true); setError(null); setReviewNote(null);
+    try {
+      const { data: latest } = await supabase.from("daily_checkins").select("id").eq("client_id", client.id).order("date", { ascending: false }).limit(1).maybeSingle();
+      if (!latest) throw new Error("This client has no daily check-ins to review yet.");
+      const res = await callHeadCoach({ checkin_id: latest.id });
+      await load();
+      if (res.task?.status && res.task.status !== "DECISION_READY") setReviewNote(`Review finished with status ${res.task.status}${res.safetyGate?.reason ? ` — ${res.safetyGate.reason}` : ""}.`);
+    } catch (e) { setError(e.message); }
+    setReviewing(false);
+  };
 
   const pending = recs.find((x) => x.rec.status === "pending" && x.task.status === "DECISION_READY") || null;
   const output = pending?.rec.ai_output;
@@ -83,10 +116,10 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
   const statusLabel = riskLevel === "High" ? "At Risk" : "Needs Attention";
   const statusTone = riskLevel === "High" ? "red" : "amber";
 
-  const tabs = [{ key: "overview", label: "Overview" }, { key: "data", label: "Data" }, { key: "history", label: "History", badge: recs.length || null }];
+  const tabs = [{ key: "overview", label: "Overview" }, { key: "strength", label: "Strength" }, { key: "body", label: "Body" }, { key: "data", label: "Data" }, { key: "history", label: "History", badge: recs.length || null }];
 
   return (
-    <Modal title="Needs Attention" onClose={onClose} width={620}>
+    <Modal title="Needs Attention" onClose={onClose} width={720}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 17, fontWeight: 700 }}>{client.name || client.email}</div>
@@ -141,7 +174,11 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
                   {nextSteps.length ? (
                     <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.6 }}>{nextSteps.map((a, i) => <li key={i}>{a}</li>)}</ul>
                   ) : <div style={{ fontSize: 13 }}>No suggested action from the rules.</div>}
-                  <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>No pending Head Coach recommendation. Run a check-in review from the client page to get an AI recommendation you can approve here.</div>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10, flexWrap: "wrap" }}>
+                    <Btn sm onClick={runReview} disabled={reviewing}>{reviewing ? "Reviewing…" : "Run quick review"}</Btn>
+                    <span style={{ fontSize: 11, color: S.muted }}>Reviews the latest check-in and drafts a recommendation you can approve here.</span>
+                  </div>
+                  {reviewNote && <div style={{ fontSize: 12, color: S.warning, marginTop: 8 }}>{reviewNote}</div>}
                 </>
               )}
             </div>
@@ -158,8 +195,18 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
           </>
         )}
 
-        {tab === "data" && (
-          <>
+        {tab === "strength" && <StrengthTab profile={client} />}
+
+        {tab === "body" && (() => {
+          const prof = body?.prof || {};
+          const wk = body?.weekly || [];
+          const lastWk = (key) => { const r = [...wk].reverse().find((x) => x[key] != null); return r ? r[key] : null; };
+          const firstWk = (key) => { const r = wk.find((x) => x[key] != null); return r ? r[key] : null; };
+          const waist = lastWk("waist");
+          const { pct, method } = estimateBodyComposition({ heightIn: Number(prof.height_in), weightLb: lastW, waistIn: waist, age: prof.age, sex: prof.sex });
+          const cat = bodyFatCategory(pct, prof.age, prof.sex);
+          return (
+            <>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Weight trend</div>
             {weights.length >= 2 ? (
               <div style={{ height: 180 }}>
@@ -173,7 +220,22 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
                 </ResponsiveContainer>
               </div>
             ) : <div style={{ fontSize: 13, color: S.muted }}>Fewer than 2 weigh-ins — no trend yet.</div>}
-            <div style={{ fontSize: 12, fontWeight: 700, margin: "16px 0 6px" }}>Recent check-ins</div>
+              <div style={{ fontSize: 12, fontWeight: 700, margin: "16px 0 6px" }}>Body composition</div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
+                <Glance label="Body fat (est.)" value={pct != null ? pct : "—"} unit={pct != null ? "%" : ""} sub={pct != null ? `${cat || ""}${method === "weight" ? " · from weight" : " · from waist"}` : "Needs weight, height, age and sex"} />
+                {[["waist", "Waist"], ["chest", "Chest"], ["hips", "Hips"], ["arms", "Arms"]].map(([k, label]) => {
+                  const cur = lastWk(k), first = firstWk(k);
+                  return cur != null ? <Glance key={k} label={label} value={cur} unit=" in" sub={first != null && wk.filter((x) => x[k] != null).length > 1 ? `${cur - first > 0 ? "+" : ""}${(cur - first).toFixed(1)} in since first` : null} /> : null;
+                })}
+              </div>
+              {method === "weight" && <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>Estimated from weight — a waist measurement in a weekly check-in gives a more accurate number.</div>}
+            </>
+          );
+        })()}
+
+        {tab === "data" && (
+          <>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Recent check-ins</div>
             {daily.length === 0 ? <div style={{ fontSize: 13, color: S.muted }}>No check-ins in the last 8 weeks.</div> : (
               <div style={{ fontSize: 12 }}>
                 {daily.slice(-7).reverse().map((r) => (
