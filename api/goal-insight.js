@@ -164,6 +164,7 @@ async function handleReviewCheckIn(req, res, user) {
   // successful claim), a later failure would silently fail to record
   // FAILED instead of erroring loudly.
   let task = null;
+  const startedAt = Date.now();
   try {
     const { data: checkin } = await supabaseAdmin.from("daily_checkins").select("id,client_id").eq("id", checkin_id).maybeSingle();
     if (!checkin) return res.status(404).json({ error: "Check-in not found." });
@@ -221,7 +222,10 @@ async function handleReviewCheckIn(req, res, user) {
       let generation = await generateReviewCheckInRecommendation(finalContext, ruleResult.outcomes);
       let validation = validateReviewCheckInOutput(generation, ruleResult.outcomes);
 
-      if (!validation.valid) {
+      // Skip the retry if the first attempt already used most of Vercel's
+      // 60s budget — a second slow call would turn into a plain-text 504.
+      // Falls through to the existing "failed validation -> ESCALATED" path.
+      if (!validation.valid && Date.now() - startedAt < 25000) {
         const retrying = await markRetrying(task.id, checkin.client_id, task, validation.issues, "coach", user.id);
         if (retrying) task = retrying;
         generation = await generateReviewCheckInRecommendation(finalContext, ruleResult.outcomes);

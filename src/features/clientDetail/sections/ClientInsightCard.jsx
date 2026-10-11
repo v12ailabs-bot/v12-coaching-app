@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
+import { readJson } from "../../../lib/apiJson.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, EmptyState } from "../../../components/ui/index.js";
 
@@ -37,7 +38,7 @@ export function ClientInsightCard({ client }) {
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
         body: JSON.stringify({ goal_id: goal.id }),
       });
-      const json = await res.json();
+      const json = await readJson(res);
       if (!res.ok) throw new Error(json.error || "Could not generate an insight.");
       setInsight(json.insight);
     } catch (e) { setErr(e.message); }
