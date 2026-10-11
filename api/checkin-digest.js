@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { sendCheckinDigestEmail } from "./_lib/resend.js";
+import { runSync } from "./_lib/foodSync.js";
 
 // GET /api/checkin-digest — run once daily by Vercel Cron (see vercel.json)
 // to email the coach a summary of the last 24h of check-ins, instead of one
@@ -10,6 +11,25 @@ import { sendCheckinDigestEmail } from "./_lib/resend.js";
 export default async function handler(req, res) {
   if (!process.env.CRON_SECRET || req.headers.authorization !== `Bearer ${process.env.CRON_SECRET}`) {
     return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  // Food-library sync shares this function (Vercel Hobby caps us at 12
+  // functions). `?task=food-sync` runs the Notion -> Supabase sync instead of
+  // the digest; vercel.json schedules it nightly as a full reconcile, and the
+  // same CRON_SECRET-protected URL works as a manual "sync now"
+  // (`&mode=incremental` or `&dry=1` to override).
+  if (req.query?.task === "food-sync") {
+    try {
+      const result = await runSync({
+        db: supabaseAdmin, token: process.env.NOTION_API_KEY, dataSourceId: process.env.NOTION_FOOD_LIBRARY_DATA_SOURCE_ID || undefined,
+        mode: req.query.mode === "incremental" ? "incremental" : "full", dryRun: req.query.dry === "1",
+      });
+      const { plan, ...summary } = result;
+      return res.status(200).json(summary);
+    } catch (err) {
+      console.error("food-sync error:", err);
+      return res.status(500).json({ error: err.message || "Internal error" });
+    }
   }
 
   try {
