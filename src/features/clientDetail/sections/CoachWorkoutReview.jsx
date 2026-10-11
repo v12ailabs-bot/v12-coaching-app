@@ -6,12 +6,13 @@ import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay, Log
 import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
+import { ProgressionPanel } from "./ProgressionPanel.jsx";
 
 // One exercise's own header row + expandable charts/log-entry list — used
 // standalone for a straight-set exercise, and once per member for a
 // superset/circuit block, so each exercise in a group gets its own best-lift,
 // trend, and charts instead of only the block's first member.
-function ExerciseRow({ exercise, logs }) {
+function ExerciseRow({ exercise, logs, clientId }) {
   const [open, setOpen] = useState(false);
   const chartData = topSetPerDay(logs, exercise.is_bodyweight);
   const dataKey = exercise.is_bodyweight ? "reps" : "weight";
@@ -48,6 +49,7 @@ function ExerciseRow({ exercise, logs }) {
             <WeightOverTimeChart chartData={chartData} isBodyweight={exercise.is_bodyweight} />
             <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(exercise.reps)} />
           </div>
+          <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} />
           <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Last {REVIEW_WINDOW_DAYS} Days</div>
           <LogEntryList rows={reviewRows} />
         </div>
@@ -60,28 +62,28 @@ function ExerciseRow({ exercise, logs }) {
 // ExerciseRow; a merged superset/circuit renders a label plus one
 // independent ExerciseRow per member, so lat pulldowns and pull-ups done
 // together each show their own best lift/weight/reps, same as standalone.
-function ReviewItem({ item, logsByExercise }) {
+function ReviewItem({ item, logsByExercise, clientId }) {
   const isGroup = item.members.length > 1;
   if (!isGroup) {
     const exercise = item.members[0];
-    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} />;
+    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} clientId={clientId} />;
   }
   return (
     <div>
       <div style={{ padding: "10px 4px 2px", fontSize: 10, color: S.accent2, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>{BLOCK_TYPE_LABEL[item.blockType]}</div>
-      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} />)}
+      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} clientId={clientId} />)}
     </div>
   );
 }
 
 // One training day — closed by default; opens into its blocks (supersets
 // merged into one entry, per groupIntoBlocks).
-function ReviewDay({ dayGroup, logsByExercise }) {
+function ReviewDay({ dayGroup, logsByExercise, clientId }) {
   const [open, setOpen] = useState(false);
   const items = groupIntoBlocks(dayGroup.exercises);
   return (
     <CollapsibleSection title={dayGroup.label} summary={`${items.length} item${items.length === 1 ? "" : "s"}`} expanded={open} onToggle={setOpen}>
-      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} />)}
+      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} clientId={clientId} />)}
     </CollapsibleSection>
   );
 }
@@ -133,7 +135,7 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
         title="Workout Review"
         summary={`${phase ? `Phase: ${phase}` : "No phase set"} · Adherence ${adh.trainingRate}% · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
         expanded={reviewOpen} onToggle={setReviewOpen}>
-        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} />)}
+        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} />)}
       </CollapsibleSection>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
         <Btn onClick={onGenerateProgram}>Generate/Regenerate Workout</Btn>
