@@ -1252,7 +1252,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const [logs, setLogs] = useState([]);
   const [dayLoggedIds, setDayLoggedIds] = useState(new Set());
   const [selected, setSelected] = useState(null);
-  const blankRow = () => ({weight:"",reps:"",time:""});
+  const blankRow = () => ({weight:"",reps:"",time:"",warmup:false,effort:""});
   const freshSets = (n) => Array.from({length: Math.min(8, Math.max(1, parseInt(n)||4))}, blankRow);
   const [sets, setSets] = useState(freshSets(4));
   // Grouped-block logging (superset/circuit variants): one entry per member
@@ -1300,6 +1300,9 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
 
   const selectedEx = exercises.find(e=>e.id===selected);
   const blockType = selectedEx?.block_type || "straight_set";
+  // Optional RIR/RPE entry appears only when the coach set an effort rule for
+  // this exercise (progression_config.effort); otherwise the row is unchanged.
+  const effortMetric = selectedEx?.progression_config?.effort?.metric === "rir" || selectedEx?.progression_config?.effort?.metric === "rpe" ? selectedEx.progression_config.effort.metric : null;
   const groupMembers = selectedEx
     ? exercises.filter((e) => e.day_of_week === selectedEx.day_of_week && e.group_id === selectedEx.group_id)
     : [];
@@ -1370,12 +1373,27 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     const today = todayStr();
     const entries = sets.map((s,i)=>({...s,setNum:i+1}))
       .filter(s=>!loggedSetNums.has(s.setNum) && (s.reps||s.weight))
-      .map(s=>({
-        client_id:profile.id,exercise_id:selected,date:today,
-        sets:s.setNum,reps:parseInt(s.reps)||null,
-        weight:ex?.is_bodyweight?null:parseFloat(s.weight)||null,
-        time:s.time||null
-      }));
+      .map(s=>{
+        const row = {
+          client_id:profile.id,exercise_id:selected,date:today,
+          sets:s.setNum,reps:parseInt(s.reps)||null,
+          weight:ex?.is_bodyweight?null:parseFloat(s.weight)||null,
+          time:s.time||null
+        };
+        // New optional fields are only sent when used, so a plain log is the
+        // same payload as before. Effort outside the DB's valid range is
+        // dropped rather than failing the whole insert.
+        if (s.warmup) row.set_type = "warmup";
+        const cfg = ex?.progression_config || {};
+        const presc = cfg.targetReps ?? cfg.repMax;
+        if (!s.warmup && Number.isInteger(presc)) row.prescribed_reps = presc;
+        if (effortMetric && s.effort !== "" && !s.warmup) {
+          const v = parseFloat(s.effort);
+          const [lo, hi] = effortMetric === "rir" ? [0, 10] : [1, 10];
+          if (Number.isFinite(v) && v >= lo && v <= hi) row[effortMetric] = v;
+        }
+        return row;
+      });
     if(entries.length>0) await supabase.from("workout_logs").insert(entries);
     setSaving(false);setSaved(true);setSets(sets.map(()=>blankRow()));
     setTimeout(()=>setSaved(false),2000);
@@ -1587,6 +1605,12 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                                 <input type="number" placeholder="reps" value={s.reps} onChange={e=>{const n=[...sets];n[i].reps=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:56,textAlign:"center",outline:"none"}}/>
                                 <button onClick={()=>setStepper(i,"reps",1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>+</button>
                               </div>
+                              {effortMetric && !s.warmup && (
+                                <input type="number" step="0.5" min={effortMetric==="rir"?0:1} max="10" placeholder={effortMetric.toUpperCase()} title={effortMetric.toUpperCase()+" (optional) — how hard this set was"} value={s.effort} onChange={e=>{const n=[...sets];n[i].effort=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:52,textAlign:"center",outline:"none"}}/>
+                              )}
+                              <label style={{display:"flex",alignItems:"center",gap:4,fontSize:11,color:S.muted,cursor:"pointer"}} title="Warm-up sets are saved but don't count toward progression">
+                                <input type="checkbox" checked={!!s.warmup} onChange={e=>{const n=[...sets];n[i].warmup=e.target.checked;setSets(n);}}/>Warm-up
+                              </label>
                               <div style={{width:26,height:26,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginLeft:"auto",
                                 background:isLogged?S.accent2:"transparent",border:isLogged?"none":"1px solid "+S.border,color:isLogged?"#0B0B0D":S.border,fontSize:13,fontWeight:700}}>
                                 {isLogged?"✓":""}
