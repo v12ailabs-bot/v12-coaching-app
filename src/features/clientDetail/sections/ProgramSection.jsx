@@ -1,11 +1,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
-import { readJson } from "../../../lib/apiJson.js";
 import { S } from "../../../theme.jsx";
-import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState, Modal } from "../../../components/ui/index.js";
-import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
+import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
-import { AddPhaseModal } from "./AddPhaseModal.jsx";
 import { RoadmapWizard } from "./RoadmapWizard.jsx";
 import { ClientProgramRoadmap } from "../../../components/ClientProgramRoadmap.jsx";
 import { roadmapStats } from "../../../lib/roadmapStats.js";
@@ -361,22 +358,14 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [program, setProgram] = useState(null);
   const [rows, setRows] = useState([]);
   const [originalIds, setOriginalIds] = useState([]);
-  const [addingPhase, setAddingPhase] = useState(false);
   const [editingDetails, setEditingDetails] = useState(null); // row index
   const [revisions, setRevisions] = useState([]);
-  const [genSource, setGenSource] = useState("manual"); // becomes 'ai_generated' after Generate Roadmap, until saved
-  const [genDetails, setGenDetails] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStart, setWizardStart] = useState(0);
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [savedSnap, setSavedSnap] = useState(null); // canonical snapshot of what is saved, to detect unsaved edits
   const [tracking, setTracking] = useState({ daily: [], nutCtx: null }); // evidence for the plan-vs-actual assessment
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
-  const [generating, setGenerating] = useState(false);
-  const [genErr, setGenErr] = useState(null);
-  const [genInfo, setGenInfo] = useState(null);
 
   const load = useCallback(async () => {
     const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks,name,description,show_roadmap_to_client,progress_tracking_enabled,client_can_edit_checkins").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
@@ -399,7 +388,6 @@ export function ProgramRoadmapPlanner({ clientId }) {
         ]);
         setTracking({ daily: dly || [], nutCtx: { plan: plan || null, mealLogs: ml || [] } });
       }
-      setSavedSnap(canonicalJson(planSnapshot((planned || []).map((p) => ({ ...p, week_start: p.week_start ?? "", week_end: p.week_end ?? "", exit_criteria: p.exit_criteria || [], checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [] })))));
       setRows((planned || []).map((p) => ({
         id: p.id,
         checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [],
@@ -414,25 +402,13 @@ export function ProgramRoadmapPlanner({ clientId }) {
   }, [clientId]);
   useEffect(() => { setLoading(true); load(); }, [load]);
 
-  const updateRow = (i, field, value) => setRows((r) => r.map((row, j) => (j === i ? { ...row, [field]: value } : row)));
-  const move = (i, dir) => setRows((r) => {
-    const j = i + dir;
-    if (j < 0 || j >= r.length) return r;
-    const next = r.slice();
-    [next[i], next[j]] = [next[j], next[i]];
-    return next;
-  });
-
-  const review = validateRoadmap(rows, { programWeeks: program?.weeks || null });
-
-  // opts (optional): { rows, skipConfirm } — the Edit Program wizard passes its own
-  // draft rows (it already confirmed conflicts). Called bare from onClick, `opts`
-  // is the click event, which has neither field, so the planner's own rows are used.
+  // opts: { rows, skipConfirm, source } — the Edit Program wizard (the one roadmap editor) passes its draft
+  // rows (it already confirmed conflicts) and where they came from; the cards' plan-details editor passes
+  // the current rows with one phase's details changed.
   const save = async (opts) => {
     const useRows = Array.isArray(opts?.rows) ? opts.rows : rows;
     const skipConfirm = !!opts?.skipConfirm;
     if (!program || validateRoadmap(useRows, { programWeeks: program?.weeks || null }).errors.some((x) => x.blocking !== false)) return { ok: false, error: "The roadmap has errors that must be fixed first." };
-    if (!skipConfirm && review.errors.length && !window.confirm(`This roadmap has conflicts:\n\n${review.errors.map((x) => "• " + x.message).join("\n")}\n\nSave anyway?`)) return;
     setSaving(true); setMsg(null);
     const clean = useRows.filter((r) => r.phase.trim());
     const toPayload = (r, i) => ({
@@ -489,12 +465,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
       if (!latest || canonicalJson(latest.snapshot) !== canonicalJson(snap)) {
         const { data: { user } } = await supabase.auth.getUser();
         const { error: revErr } = await supabase.from("program_phase_revisions").insert({
-          program_id: program.id, client_id: clientId, version: (latest?.version || 0) + 1, source: genSource, snapshot: snap, created_by: user?.id || null,
+          program_id: program.id, client_id: clientId, version: (latest?.version || 0) + 1, source: opts?.source || "manual", snapshot: snap, created_by: user?.id || null,
         });
         if (revErr) error = revErr;
       }
     }
-    if (!error) setGenSource("manual");
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Roadmap saved." });
     // Reload so freshly inserted rows pick up their ids (the next save must
@@ -506,64 +481,10 @@ export function ProgramRoadmapPlanner({ clientId }) {
   // Edit Program wizard: program details first, then the roadmap through the
   // same save() above (ids kept, history snapshot, plan details). A details
   // failure stops before any phase is touched.
-  const saveFromWizard = async ({ details, rows: wizardRows }) => {
+  const saveFromWizard = async ({ details, rows: wizardRows, source }) => {
     const { error: dErr } = await supabase.from("programs").update({ name: details.name, description: details.description, weeks: details.weeks, show_roadmap_to_client: details.show_roadmap_to_client, progress_tracking_enabled: details.progress_tracking_enabled, client_can_edit_checkins: details.client_can_edit_checkins }).eq("id", program.id);
     if (dErr) return { ok: false, error: dErr.message };
-    return save({ rows: wizardRows, skipConfirm: true });
-  };
-
-  // Proposes a full phase sequence from the client's actual program/goal/
-  // milestone data (works for AI-generated or manually-built programs alike —
-  // the analysis only reads exercises, not how they were created). Purely
-  // advisory: populates the same editable rows the coach already types into,
-  // nothing is saved until they click Save Roadmap.
-  const generateRoadmap = async () => {
-    if (!program) return;
-    if (rows.length && !window.confirm("Replace the current roadmap rows with an AI-generated proposal? Nothing is saved until you click Save Roadmap.")) return;
-    setGenerating(true); setGenErr(null); setGenInfo(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/goal-insight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-        body: JSON.stringify({ program_id: program.id }),
-      });
-      const json = await readJson(res);
-      if (!res.ok) throw new Error(json.error || "Could not generate a roadmap.");
-      setRows((json.phases || []).map((p) => ({
-        phase: p.phase || "", week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",
-        objective: p.objective || "", training_focus: p.training_focus || "", movement_focus: p.movement_focus || "",
-        progression_strategy: p.progression_strategy || "",
-        exit_criteria: (p.exit_criteria || []).map((label) => ({ label, status: "incomplete" })),
-      })));
-      setGenInfo({ confidence: json.confidence, dataUsed: json.data_used || [] });
-      setGenSource("ai_generated");
-    } catch (e) { setGenErr(e.message); }
-    finally { setGenerating(false); }
-  };
-
-  const generatePlanDetails = async () => {
-    const named = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.phase.trim());
-    if (!program || !named.length) return;
-    const hasExisting = named.some(({ r }) => r.plan_rationale || (r.planned_changes || []).length || (r.checkpoints || []).length);
-    if (hasExisting && !window.confirm("Replace the existing rationale, planned changes and checkpoints with an AI proposal? Nothing is saved until you click Save Roadmap.")) return;
-    setGenDetails(true); setGenErr(null);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch("/api/goal-insight", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-        body: JSON.stringify({ plan_details_program_id: program.id, phases: named.map(({ r }) => r) }),
-      });
-      const json = await readJson(res);
-      if (!res.ok) throw new Error(json.error || "Could not generate plan details.");
-      setRows((rs) => rs.map((row, idx) => {
-        const k = named.findIndex(({ i }) => i === idx);
-        return k === -1 || !json.details?.[k] ? row : { ...row, ...json.details[k] };
-      }));
-      setMsg({ ok: true, text: "Plan details proposed — review them (Edit plan details on each phase), then click Save Roadmap." });
-    } catch (e) { setGenErr(e.message); }
-    finally { setGenDetails(false); }
+    return save({ rows: wizardRows, skipConfirm: true, source });
   };
 
   if (loading) return null;
@@ -575,7 +496,6 @@ export function ProgramRoadmapPlanner({ clientId }) {
         {program && (
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn sm teal onClick={() => { setWizardStart(0); setWizardOpen(true); }}>Edit Program</Btn>
-            <Btn sm onClick={() => setEditorOpen(true)}>Edit &amp; Generate Roadmap</Btn>
           </div>
         )}
       </div>
@@ -606,116 +526,14 @@ export function ProgramRoadmapPlanner({ clientId }) {
               </div>
             );
           })()}
-          {savedSnap !== null && canonicalJson(planSnapshot(rows)) !== savedSnap && (
-            <div style={{ border: "1px solid " + S.warning, borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <span style={{ color: S.warning, fontWeight: 700 }}>Unsaved roadmap changes</span>
-              <span style={{ color: S.muted }}>The cards below show your draft, not what is saved or what the client sees.</span>
-              <Btn sm onClick={() => setEditorOpen(true)}>Open editor to save</Btn>
-            </div>
-          )}
           <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails} onPatchPhase={(id, patch) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))} onEditProgram={() => { setWizardStart(1); setWizardOpen(true); }}
             onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {wizardOpen && <RoadmapWizard program={program} initialRows={rows} startAt={wizardStart} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
           {editingDetails != null && rows[editingDetails] && (
             <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
-              onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
+              onSave={(patch) => { const next = rows.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r)); setRows(next); setEditingDetails(null); save({ rows: next, skipConfirm: true }); }} />
           )}
-          {addingPhase && (
-            <AddPhaseModal rows={rows} programWeeks={program.weeks || null} onClose={() => setAddingPhase(false)}
-              onAdd={(idx, draft) => { setRows((r) => [...r.slice(0, idx), draft, ...r.slice(idx)]); setAddingPhase(false); setMsg({ ok: true, text: "Phase added to the draft — click Save Roadmap to publish." }); }} />
-          )}
-          {editorOpen && (
-            <Modal title="Edit & Generate Roadmap" onClose={() => setEditorOpen(false)} width={860}>
-          <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
-            Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
-          </div>
-          {rows.map((r, i) => {
-            const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
-            return (
-              <div key={i} style={{ marginBottom: 12, paddingBottom: 12, borderBottom: i < rows.length - 1 ? "1px solid " + S.border : "none" }}>
-                <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-                  <span style={{ fontSize: 11, color: S.muted, width: 18 }}>{i + 1}</span>
-                  <input value={r.phase} onChange={(e) => updateRow(i, "phase", e.target.value)} placeholder="Phase name"
-                    style={{ flex: "1 1 160px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-                  <input type="number" value={r.week_start} onChange={(e) => updateRow(i, "week_start", e.target.value)} placeholder="Week start"
-                    style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-                  <input type="number" value={r.week_end} onChange={(e) => updateRow(i, "week_end", e.target.value)} placeholder="Week end"
-                    style={{ width: 90, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13, outline: "none" }} />
-                  <button onClick={() => move(i, -1)} disabled={i === 0} title="Move up" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === 0 ? "default" : "pointer", padding: "6px 9px", opacity: i === 0 ? 0.4 : 1 }}>↑</button>
-                  <button onClick={() => move(i, 1)} disabled={i === rows.length - 1} title="Move down" style={{ background: "none", border: "1px solid " + S.border, color: S.text, cursor: i === rows.length - 1 ? "default" : "pointer", padding: "6px 9px", opacity: i === rows.length - 1 ? 0.4 : 1 }}>↓</button>
-                  <button onClick={() => setRows((r2) => r2.filter((_, j) => j !== i))} title="Remove" style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 18, padding: "0 4px" }}>×</button>
-                </div>
-                {range && <div style={{ fontSize: 11, color: S.accent2, marginTop: 4, marginLeft: 26 }}>{range}</div>}
-                <input value={r.note} onChange={(e) => updateRow(i, "note", e.target.value)} placeholder="Note for this phase (shown when the client or coach clicks it on the roadmap)"
-                  style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
-                <textarea value={r.objective} onChange={(e) => updateRow(i, "objective", e.target.value)} rows={2}
-                  placeholder="Objective — what this phase is designed to accomplish (client sees this as &quot;Why We're Here&quot;)"
-                  style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none", resize: "vertical" }} />
-                <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
-                  <input value={r.training_focus} onChange={(e) => updateRow(i, "training_focus", e.target.value)} placeholder="Training focus (e.g. Strength)"
-                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
-                  <input value={r.movement_focus} onChange={(e) => updateRow(i, "movement_focus", e.target.value)} placeholder="Movement focus (e.g. Unilateral stability)"
-                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
-                  <input value={r.progression_strategy} onChange={(e) => updateRow(i, "progression_strategy", e.target.value)} placeholder="Progression strategy (e.g. Double progression)"
-                    style={{ flex: "1 1 140px", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 12, outline: "none" }} />
-                </div>
-                <div style={{ marginTop: 8 }}>
-                  <div style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Phase Exit Criteria</div>
-                  {(r.exit_criteria || []).map((c, ci) => (
-                    <div key={ci} style={{ display: "flex", gap: 6, alignItems: "center", marginBottom: 4 }}>
-                      <button type="button" onClick={() => {
-                        const cycle = { incomplete: "complete", complete: "na", na: "incomplete" };
-                        const next = (r.exit_criteria || []).map((x, xi) => xi === ci ? { ...x, status: cycle[x.status] } : x);
-                        updateRow(i, "exit_criteria", next);
-                      }} title="Cycle status" style={{ width: 26, height: 26, flexShrink: 0, background: "none", cursor: "pointer", fontWeight: 700,
-                        border: "1px solid " + S.border, color: c.status === "complete" ? S.success : S.muted }}>
-                        {c.status === "complete" ? "✓" : c.status === "na" ? "–" : "○"}
-                      </button>
-                      <input value={c.label} onChange={(e) => {
-                        const next = (r.exit_criteria || []).map((x, xi) => xi === ci ? { ...x, label: e.target.value } : x);
-                        updateRow(i, "exit_criteria", next);
-                      }} placeholder="e.g. Bench 205 lb x 5 reps"
-                        style={{ flex: 1, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "6px 10px", fontSize: 12, outline: "none" }} />
-                      <button type="button" onClick={() => updateRow(i, "exit_criteria", (r.exit_criteria || []).filter((_, xi) => xi !== ci))}
-                        style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 16, padding: "0 4px" }}>×</button>
-                    </div>
-                  ))}
-                  <button type="button" onClick={() => updateRow(i, "exit_criteria", [...(r.exit_criteria || []), blankExitCriterion()])}
-                    style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "5px 10px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px" }}>
-                    + Add Criterion
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-          <button onClick={() => setAddingPhase(true)}
-            style={{ background: "none", border: "1px solid " + S.border, color: S.text, padding: "8px 14px", fontSize: 10, fontWeight: 600, cursor: "pointer", textTransform: "uppercase", letterSpacing: "1px", marginTop: 4 }}>
-            + Add Phase
-          </button>
-          {(review.errors.length > 0 || review.warnings.length > 0) && (
-            <div style={{ marginTop: 14, border: "1px solid " + (review.errors.length ? S.danger : S.warning), borderRadius: 8, padding: "10px 14px" }}>
-              <div style={{ fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, color: review.errors.length ? S.danger : S.warning, marginBottom: 6 }}>
-                {review.errors.some((x) => x.blocking !== false) ? "Fix before saving" : review.errors.length ? "Conflicts to review" : "Review"}
-              </div>
-              {review.errors.map((x, k) => <div key={"e" + k} style={{ fontSize: 12, color: S.danger, padding: "2px 0" }}>• {x.message}</div>)}
-              {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
-            </div>
-          )}
-          <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
-            <Btn onClick={save} disabled={saving || review.errors.some((x) => x.blocking !== false)}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
-            <Btn teal onClick={generateRoadmap} disabled={generating}>{generating ? "Generating..." : "Generate Roadmap"}</Btn>
-            <Btn onClick={generatePlanDetails} disabled={genDetails || rows.filter((r) => r.phase.trim()).length === 0}>{genDetails ? "Generating..." : "Generate plan details"}</Btn>
-            {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
-          </div>
-          <Alert variant="error">{genErr}</Alert>
-          {genInfo && (
-            <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>
-              Generated from: {genInfo.dataUsed.join(", ") || "limited client data"}
-              {genInfo.confidence && ` · Confidence: ${genInfo.confidence}`} — review and edit before saving.
-            </div>
-          )}
-            </Modal>
-          )}
+          {msg && <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger, margin: "8px 0" }}>{msg.text}</div>}
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Preview — exactly what the client sees</div>

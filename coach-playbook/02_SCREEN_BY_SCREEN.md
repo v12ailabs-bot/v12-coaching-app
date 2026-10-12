@@ -10,7 +10,7 @@ Where you start. Number cards, **Client Overview** table (click a client to open
 
 ### Clients
 Pick a client from the list. Tabs: **Overview, Goals** (not for program-only), **Nutrition, Program Phase, Head Coach** (not for program-only).
-- **Overview tab:** header with last check-in; **Attention Needed**, **Key Insights**, **Check-In Values**, **Nutrition Adherence**, **Today's Targets**, **Daily Habits**, **Coach Actions**; **Quick Actions** box (Add Note, Send Message, Schedule Call, Adjust Program → opens Program Phase, More Actions → Generate AI Program, Update nutrition plan); **Workout Review** (day → exercise → charts, log, **Progression** box); **Program Roadmap** card (header + progress bar, phase cards, *Edit Program*, *Edit & Generate Roadmap*, Preview, Plan history); **Performance Taper**; Program History / versions; the V12 Assessment and onboarding checklist; coach notes.
+- **Overview tab:** header with last check-in; **Attention Needed**, **Key Insights**, **Check-In Values**, **Nutrition Adherence**, **Today's Targets**, **Daily Habits**, **Coach Actions**; **Quick Actions** box (Add Note, Send Message, Schedule Call, Adjust Program → opens Program Phase, More Actions → Generate AI Program, Update nutrition plan); **Workout Review** (day → exercise → charts, log, **Progression** box); **Program Roadmap** card (header + progress bar, phase cards, *Edit Program*, Preview, Plan history); **Performance Taper**; Program History / versions; the V12 Assessment and onboarding checklist; coach notes.
 - **Goals tab:** weight goal and goal score, AI goal insight, milestones.
 - **Nutrition tab:** the plan, macro calculator, adherence.
 - **Program Phase tab:** program start date, top/sub phase for the AI generator, the phase note, and phase history. The current phase itself changes by activating the next phase on the roadmap; an emergency override (label only, reason required) is tucked away. The AI phase recommendation now lives in the current phase's window on the roadmap.
@@ -18,8 +18,7 @@ Pick a client from the list. Tabs: **Overview, Goals** (not for program-only), *
 - **Client Settings** (from the page header): client type, goal, access window, sync from Notion.
 
 ### Roadmap tools (on a client's Overview)
-- **Edit Program** (4 steps): Details (name, description, duration, and the three switches) → Phases → Exit Criteria → Review → *Save program*.
-- **Edit & Generate Roadmap** (popup): phase rows, *+ Add Phase* (position, start week, length, focus, movement patterns), *Generate Roadmap*, *Generate plan details*, review panel, *Save Roadmap*.
+- **Edit Program** (the one roadmap editor, 4 steps): Details (name, description, duration, and the three switches) → Phases (*Generate Roadmap*, *Generate plan details*, *+ Add Phase*, per-phase *Plan details*, reorder, remove) → Exit Criteria → Review → *Save program*.
 - **Phase card:** click the name for Overview / Activities / Criteria / Notes. Buttons: *Edit criteria*, *Plan details*, *Draft workouts*.
 - **Draft workouts:** *Build draft from plan* → edit → *Save draft* → *Review & activate…* → preview → (reason if criteria unfinished) → *Activate phase*. Afterwards: *Undo this transition*.
 

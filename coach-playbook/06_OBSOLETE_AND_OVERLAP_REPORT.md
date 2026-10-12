@@ -1,6 +1,6 @@
 # Obsolete and overlapping features (scan of 2026-10-12)
 
-> **Update:** the cleanups below marked DONE were completed afterwards (client Dashboard deleted, Templates screen removed, phase-label hazard fixed, AI phase recommendation folded into the phase window, 30-day journey renamed "First 30 Days", unused code removed). Still open: the two roadmap editors (kept on purpose), the AI program notes vs method reference duplication (labelled), and the old single "apre" AI note.
+> **Update:** the cleanups below marked DONE were completed afterwards (client Dashboard deleted, Templates screen removed, phase-label hazard fixed, AI phase recommendation folded into the phase window, 30-day journey renamed "First 30 Days", unused code removed). The two roadmap editors are now ONE (Edit Program, with Generate Roadmap and Generate plan details inside its Phases step). Still open: the AI program notes vs method reference duplication (labelled), and the old single "apre" AI note.
 
 ## Short answer
 Yes, partly. Almost nothing is *dead code* (the scan found only a handful of unused functions), but several things now **overlap**: two or three ways to do the same job, which is why it feels like you keep building more. Nothing below is broken; each is a cleanup candidate that needs your say-so because it changes what you or clients see.

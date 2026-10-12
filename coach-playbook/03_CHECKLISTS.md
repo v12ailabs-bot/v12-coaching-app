@@ -32,7 +32,7 @@
 3. You **Review assessment & goals**.
 4. **Generate AI Program** (More Actions) with the right Notion template; read and edit it.
 5. Set the weight goal and milestones.
-6. Build the roadmap (Edit & Generate Roadmap → Generate Roadmap → Generate plan details → Save Roadmap). Make sure every phase has exit criteria and checkpoints, including the Day 90 review.
+6. Build the roadmap (Edit Program → Phases → Generate Roadmap → Generate plan details → Review → Save program). Make sure every phase has exit criteria and checkpoints, including the Day 90 review.
 7. Choose the three switches in Edit Program step one.
 8. **Confirm roadmap & program**.
 9. Send a welcome message.

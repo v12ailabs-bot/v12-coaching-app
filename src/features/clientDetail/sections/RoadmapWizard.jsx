@@ -4,7 +4,10 @@ import { Modal, Btn } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
+import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
+import { generateRoadmapRows, generatePlanDetailsFor } from "../../../lib/roadmapApi.js";
 
+// The ONE roadmap editor (the old separate "Edit & Generate Roadmap" popup was folded into this).
 // Four-step "Edit Program" flow (Details -> Phases -> Exit Criteria -> Review).
 // Everything is edited on a LOCAL COPY; nothing is written until the final
 // Save on the Review step, so abandoning the wizard (or a half-configured
@@ -32,6 +35,11 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
   });
   const [rows, setRows] = useState(() => initialRows.map((r) => ({ ...r, exit_criteria: (r.exit_criteria || []).map((c) => ({ ...c })) })));
   const [adding, setAdding] = useState(false);
+  const [detailsFor, setDetailsFor] = useState(null); // row index being given plan details
+  const [genBusy, setGenBusy] = useState(null);       // "roadmap" | "details" | null
+  const [genErr, setGenErr] = useState(null);
+  const [genInfo, setGenInfo] = useState(null);
+  const [generated, setGenerated] = useState(false);   // the rows came from Generate Roadmap (recorded in plan history)
   const [moreOpen, setMoreOpen] = useState(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
@@ -53,6 +61,31 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
   const named = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.phase.trim());
   const canNext = step === 0 ? detailErrors.length === 0 : step === 1 ? blocking.length === 0 : true;
 
+  // Generate Roadmap (AI): proposes the whole phase sequence from the client's real data. It REPLACES the
+  // phases in this editor (their ids, exit-criteria progress and plan details are not kept), and nothing is
+  // saved until "Save program".
+  const aiRoadmap = async () => {
+    if (rows.length && !window.confirm("Replace the phases in this editor with an AI-generated proposal?\n\nExisting phases, their exit-criteria progress and plan details are replaced when you save. Nothing is saved until you click Save program.")) return;
+    setGenBusy("roadmap"); setGenErr(null); setGenInfo(null);
+    try {
+      const r = await generateRoadmapRows(program.id);
+      setRows(r.rows); setGenInfo({ confidence: r.confidence, dataUsed: r.dataUsed }); setGenerated(true); setTouched(true);
+    } catch (e) { setGenErr(e.message); }
+    setGenBusy(null);
+  };
+  // Generate plan details (AI): rationale, planned exercise changes and checkpoints for each named phase.
+  const aiDetails = async () => {
+    if (!named.length) return;
+    const has = named.some(({ r }) => r.plan_rationale || (r.planned_changes || []).length || (r.checkpoints || []).length);
+    if (has && !window.confirm("Replace the existing rationale, planned changes and checkpoints with an AI proposal? Nothing is saved until you click Save program.")) return;
+    setGenBusy("details"); setGenErr(null);
+    try {
+      const details = await generatePlanDetailsFor(program.id, named.map(({ r }) => r));
+      change(() => setRows((rs) => rs.map((row, idx) => { const k = named.findIndex(({ i }) => i === idx); return k === -1 || !details[k] ? row : { ...row, ...details[k] }; })));
+    } catch (e) { setGenErr(e.message); }
+    setGenBusy(null);
+  };
+
   const close = () => { if (!touched || window.confirm("Discard your changes to this program?")) onClose(); };
 
   const save = async () => {
@@ -62,7 +95,7 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
     const res = await onSave({ details: {
       name: details.name.trim(), description: details.description.trim() || null, weeks,
       show_roadmap_to_client: !!details.show_roadmap_to_client, progress_tracking_enabled: !!details.progress_tracking_enabled, client_can_edit_checkins: !!details.client_can_edit_checkins,
-    }, rows });
+    }, rows, source: generated ? "ai_generated" : "manual" });
     setSaving(false);
     if (!res.ok) setError(res.error || "Could not save."); else onClose(true);
   };
@@ -118,7 +151,17 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
 
       {step === 1 && (
         <>
-          {rows.length === 0 && <div style={{ fontSize: 13, color: S.muted, marginBottom: 10 }}>No phases yet. Add the first one below.</div>}
+          <div style={{ border: "1px dashed " + S.border, borderRadius: RADIUS.md, padding: "10px 12px", marginBottom: 12 }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>AI helpers — proposals only, nothing is saved until Save program</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+              <Btn sm teal onClick={aiRoadmap} disabled={!!genBusy}>{genBusy === "roadmap" ? "Generating..." : "Generate Roadmap"}</Btn>
+              <Btn sm onClick={aiDetails} disabled={!!genBusy || named.length === 0}>{genBusy === "details" ? "Generating..." : "Generate plan details"}</Btn>
+              <span style={{ fontSize: 11, color: S.muted }}>Roadmap proposes the phases; plan details adds the reason, planned exercise changes and checkpoints to each.</span>
+            </div>
+            {genErr && <div style={{ fontSize: 12, color: S.danger, marginTop: 6 }}>{genErr}</div>}
+            {genInfo && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Generated from: {genInfo.dataUsed.join(", ") || "limited client data"}{genInfo.confidence && ` · Confidence: ${genInfo.confidence}`} — review and edit before saving.</div>}
+          </div>
+          {rows.length === 0 && <div style={{ fontSize: 13, color: S.muted, marginBottom: 10 }}>No phases yet. Add the first one below, or use Generate Roadmap.</div>}
           {rows.map((r, i) => {
             const s = num(r.week_start), e = num(r.week_end);
             const range = dateRangeForWeeks(program.start_date, s, e);
@@ -138,6 +181,10 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
                 </div>
                 <div style={{ fontSize: 11, color: S.accent2, margin: "4px 0 0 32px" }}>{range || ""}{s != null && e != null && e >= s ? ` · ${e - s + 1} wk${e - s === 0 ? "" : "s"}` : ""}</div>
                 {myIssues.map((x, k) => <div key={k} style={{ fontSize: 11, color: x.blocking === false || review.warnings.includes(x) ? S.warning : S.danger, margin: "2px 0 0 32px" }}>{x.message}</div>)}
+                <div style={{ margin: "6px 0 0 32px", display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                  <Btn sm onClick={() => setDetailsFor(i)}>Plan details</Btn>
+                  <span style={{ fontSize: 11, color: S.muted }}>{(r.checkpoints || []).length} checkpoint{(r.checkpoints || []).length === 1 ? "" : "s"}{r.plan_rationale ? " · reason set" : ""}{(r.planned_changes || []).length ? ` · ${(r.planned_changes || []).length} planned change${(r.planned_changes || []).length === 1 ? "" : "s"}` : ""}</span>
+                </div>
                 <button type="button" onClick={() => setMoreOpen(moreOpen === i ? null : i)} style={{ background: "none", border: "none", color: S.muted, fontSize: 11, cursor: "pointer", margin: "6px 0 0 32px", padding: 0 }}>{moreOpen === i ? "▲ Hide focus & notes" : "▼ Focus & notes"}</button>
                 {moreOpen === i && (
                   <div style={{ margin: "8px 0 0 32px", display: "grid", gap: 6 }}>
@@ -152,6 +199,7 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
             );
           })}
           <Btn sm onClick={() => setAdding(true)}>+ Add Phase</Btn>
+          {detailsFor != null && rows[detailsFor] && <PlanDetailsEditor phase={rows[detailsFor]} onClose={() => setDetailsFor(null)} onSave={(patch) => { updRow(detailsFor, patch); setDetailsFor(null); }} />}
           {adding && <AddPhaseModal rows={rows} programWeeks={Number.isInteger(weeks) ? weeks : null} onClose={() => setAdding(false)} onAdd={(idx, draft) => { change(() => setRows((rs) => [...rs.slice(0, idx), draft, ...rs.slice(idx)])); setAdding(false); }} />}
         </>
       )}

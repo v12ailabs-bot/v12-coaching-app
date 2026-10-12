@@ -87,3 +87,12 @@ test("roadmapStats: phase week, training, attendance and protein come from the p
   assert.equal(roadmapStats({ phase: ph, programStart: "2026-01-05", daily, today: new Date(2025, 11, 1) }), null, "before the phase starts");
   assert.equal(roadmapStats({ phase: {}, programStart: null, daily }), null);
 });
+
+import { mapGeneratedPhases } from "../../src/lib/roadmapMap.js";
+test("mapGeneratedPhases: AI phases become editable rows; criteria start incomplete; nothing is assumed", () => {
+  const rows = mapGeneratedPhases([{ phase: "Foundation", week_start: 1, week_end: 4, exit_criteria: ["Attendance ≥ 80%", "Technique"] }, {}]);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(rows[0].exit_criteria, [{ label: "Attendance ≥ 80%", status: "incomplete" }, { label: "Technique", status: "incomplete" }]);
+  assert.deepEqual([rows[1].phase, rows[1].week_start, rows[1].exit_criteria, rows[1].checkpoints], ["", "", [], []]);
+  assert.deepEqual(mapGeneratedPhases(null), []);
+});
