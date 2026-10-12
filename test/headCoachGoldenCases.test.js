@@ -31,15 +31,15 @@
 // SUPABASE_URL/SUPABASE_SERVICE_KEY, so merely importing it throws under
 // plain `npm test` (no .env loaded) regardless of whether any DB call is
 // actually made. "coach override" and "stale recommendation" (the guard
-// clauses in headCoachApproval.ts) are exactly this shape -- verified via
+// clauses in headCoachApproval.js) are exactly this shape -- verified via
 // real, live testing during HC-015 development instead (see HANDOFF.md).
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { evaluateRules } from "../api/_lib/headCoachRuleEngine.ts";
-import { applySafetyGate } from "../api/_lib/headCoachSafetyGate.ts";
-import { validateReviewCheckInOutput } from "../api/_lib/headCoachOutputValidator.ts";
-import { determineAuthority } from "../api/_lib/headCoachAuthorityEngine.ts";
+import { evaluateRules } from "../api/_lib/headCoachRuleEngine.js";
+import { applySafetyGate } from "../api/_lib/headCoachSafetyGate.js";
+import { validateReviewCheckInOutput } from "../api/_lib/headCoachOutputValidator.js";
+import { determineAuthority } from "../api/_lib/headCoachAuthorityEngine.js";
 
 function fakeContext(overrides = {}) {
   return {

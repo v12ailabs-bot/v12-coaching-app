@@ -20,29 +20,29 @@ import { supabaseAdmin } from "./supabaseAdmin.js";
 // expectation being validated is "still pending, nobody decided this
 // already" -- there's no separate version-number scheme in this app.
 
-export type CoachDecision = "approve" | "modify" | "reject" | "defer";
+                                                                      
 
-const DECISION_TO_STATUS: Record<CoachDecision, string> = {
+const DECISION_TO_STATUS                                = {
   approve: "approved",
   modify: "modified",
   reject: "rejected",
   defer: "deferred",
 };
 
-export interface ApplyCoachDecisionInput {
-  recommendationId: string;
-  decision: CoachDecision;
-  decidedBy: string;
-  note?: string | null;
-  modification?: Record<string, unknown> | null;
-}
+                                          
+                           
+                          
+                    
+                       
+                                                
+ 
 
-export interface ApplyCoachDecisionResult {
-  recommendation: Record<string, unknown> | null;
-  alreadyDecided: boolean;
-}
+                                           
+                                                 
+                          
+ 
 
-export async function applyCoachDecision(input: ApplyCoachDecisionInput): Promise<ApplyCoachDecisionResult> {
+export async function applyCoachDecision(input                         )                                    {
   if (input.decision === "modify" && !input.modification) {
     throw new Error("A 'modify' decision requires a modification.");
   }

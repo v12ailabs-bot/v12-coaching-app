@@ -1,5 +1,5 @@
-import type { ReviewCheckInGenerationResult, ReviewCheckInAiOutput } from "./headCoachReviewCheckInPrompt.ts";
-import type { RuleOutcome } from "./headCoachRuleEngine.ts";
+                                                                                                              
+                                                            
 
 // HC-012 Output Validator. Runs the validation order from the spec: JSON ->
 // schema -> enums -> evidence -> rules -> fabrication -> authority -> safety.
@@ -18,45 +18,45 @@ import type { RuleOutcome } from "./headCoachRuleEngine.ts";
 // That gap is real and should be revisited if this ever needs stronger
 // guarantees than "reasonably grounded."
 
-const AUTHORITY_RANK: Record<string, number> = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
+const AUTHORITY_RANK                         = { L0: 0, L1: 1, L2: 2, L3: 3, L4: 4 };
 
-export interface ValidationIssue {
-  stage: "json" | "schema" | "enums" | "evidence" | "rules" | "fabrication" | "authority";
-  message: string;
-}
+                                  
+                                                                                          
+                  
+ 
 
-export interface ValidationResult {
-  valid: boolean;
-  issues: ValidationIssue[];
-  // True whenever the (possibly still-invalid) output's own status is
-  // "escalate" -- per "meaningful uncertainty must escalate rather than
-  // being optimized around," this is checked independently of whether the
-  // rest of the output validated, and callers must act on it regardless.
-  requiresEscalation: boolean;
-}
+                                   
+                 
+                            
+                                                                      
+                                                                        
+                                                                          
+                                                                         
+                              
+ 
 
-function isNonEmptyString(v: unknown): v is string {
+function isNonEmptyString(v         )              {
   return typeof v === "string" && v.trim().length > 0;
 }
 
 export function validateReviewCheckInOutput(
-  generation: ReviewCheckInGenerationResult,
-  ruleOutcomes: RuleOutcome[],
-): ValidationResult {
+  generation                               ,
+  ruleOutcomes               ,
+)                   {
   // 1. JSON
   if (generation.parseError || !generation.output) {
     return { valid: false, issues: [{ stage: "json", message: generation.parseError || "No output returned from the model." }], requiresEscalation: false };
   }
-  const o = generation.output as ReviewCheckInAiOutput;
+  const o = generation.output                         ;
   const requiresEscalation = o.status === "escalate";
 
   // 2. schema
-  const issues: ValidationIssue[] = [];
-  const requiredStrings: (keyof ReviewCheckInAiOutput)[] = [
+  const issues                    = [];
+  const requiredStrings                                  = [
     "status", "observation", "interpretation", "recommendation", "rationale", "authority", "expected_response", "review_condition",
   ];
   for (const field of requiredStrings) {
-    if (!isNonEmptyString(o[field] as unknown)) issues.push({ stage: "schema", message: `Missing or empty required field: ${field}` });
+    if (!isNonEmptyString(o[field]           )) issues.push({ stage: "schema", message: `Missing or empty required field: ${field}` });
   }
   if (!Array.isArray(o.evidence)) issues.push({ stage: "schema", message: "evidence must be an array" });
   if (!Array.isArray(o.competing_hypotheses)) issues.push({ stage: "schema", message: "competing_hypotheses must be an array" });
@@ -65,8 +65,8 @@ export function validateReviewCheckInOutput(
     issues.push({ stage: "schema", message: "confidence must be a number between 0 and 1" });
   }
   if (typeof o.client_communication_needed !== "boolean") issues.push({ stage: "schema", message: "client_communication_needed must be a boolean" });
-  if (o.limiting_factor !== null && !isNonEmptyString(o.limiting_factor as unknown)) issues.push({ stage: "schema", message: "limiting_factor must be a non-empty string or null" });
-  if (o.communication_draft !== null && !isNonEmptyString(o.communication_draft as unknown)) issues.push({ stage: "schema", message: "communication_draft must be a non-empty string or null" });
+  if (o.limiting_factor !== null && !isNonEmptyString(o.limiting_factor           )) issues.push({ stage: "schema", message: "limiting_factor must be a non-empty string or null" });
+  if (o.communication_draft !== null && !isNonEmptyString(o.communication_draft           )) issues.push({ stage: "schema", message: "communication_draft must be a non-empty string or null" });
   if (issues.length) return { valid: false, issues, requiresEscalation };
 
   // 3. enums

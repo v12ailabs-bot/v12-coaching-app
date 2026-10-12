@@ -1,4 +1,4 @@
-import type { RuleEngineResult } from "./headCoachRuleEngine.ts";
+                                                                 
 
 // HC-009 Safety Gate. Per the pipeline in this effort's own spec, safety
 // sits BEFORE the AI reasoning step: "safety must override normal coaching
@@ -16,14 +16,14 @@ import type { RuleEngineResult } from "./headCoachRuleEngine.ts";
 // there is no safety objection and the task is left exactly as HC-008 left
 // it (READY), since there is nothing built yet for it to proceed TO.
 
-export type SafetyGateDecision = "close_no_action" | "escalate" | "proceed_to_reasoning";
+                                                                                         
 
-export interface SafetyGateResult {
-  decision: SafetyGateDecision;
-  reason: string;
-}
+                                   
+                               
+                 
+ 
 
-export function applySafetyGate(ruleResult: RuleEngineResult): SafetyGateResult {
+export function applySafetyGate(ruleResult                  )                   {
   if (ruleResult.verdict === "escalate") {
     return { decision: "escalate", reason: ruleResult.verdictReason };
   }

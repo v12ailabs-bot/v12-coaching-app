@@ -6,16 +6,16 @@ import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
-import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.ts";
-import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.ts";
-import { evaluateRules } from "./_lib/headCoachRuleEngine.ts";
-import { applySafetyGate } from "./_lib/headCoachSafetyGate.ts";
-import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheckInPrompt.ts";
-import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.ts";
-import { determineAuthority } from "./_lib/headCoachAuthorityEngine.ts";
-import { createRecommendation } from "./_lib/headCoachRecommendations.ts";
-import { applyCoachDecision } from "./_lib/headCoachApproval.ts";
-import { recordOutcome, OUTCOME_VALUES } from "./_lib/headCoachOutcomes.ts";
+import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.js";
+import { buildReviewCheckInContext, persistContextSnapshot } from "./_lib/headCoachContextBuilder.js";
+import { evaluateRules } from "./_lib/headCoachRuleEngine.js";
+import { applySafetyGate } from "./_lib/headCoachSafetyGate.js";
+import { generateReviewCheckInRecommendation } from "./_lib/headCoachReviewCheckInPrompt.js";
+import { validateReviewCheckInOutput } from "./_lib/headCoachOutputValidator.js";
+import { determineAuthority } from "./_lib/headCoachAuthorityEngine.js";
+import { createRecommendation } from "./_lib/headCoachRecommendations.js";
+import { applyCoachDecision } from "./_lib/headCoachApproval.js";
+import { recordOutcome, OUTCOME_VALUES } from "./_lib/headCoachOutcomes.js";
 
 // Advisory phase-progression recommendation (Part 25/26 of the roadmap
 // spec) — separate request shape on this same route (not a new API file;

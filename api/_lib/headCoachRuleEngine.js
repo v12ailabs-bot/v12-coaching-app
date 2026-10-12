@@ -1,5 +1,5 @@
-import { RULE_REGISTRY_VERSION, rulesFor, type Rule } from "./headCoachRules.ts";
-import type { HeadCoachContext } from "./headCoachContextBuilder.ts";
+import { RULE_REGISTRY_VERSION, rulesFor,           } from "./headCoachRules.js";
+                                                                     
 
 // HC-008 Rule Engine -- actually evaluates HC-007's registry against a real
 // context. The registry only defines rules; this is the only place they get
@@ -16,40 +16,40 @@ import type { HeadCoachContext } from "./headCoachContextBuilder.ts";
 // e.g. objective, but never technically "missing"). This still matters if
 // Context Builder ever becomes partial/best-effort later.
 
-export type RuleEngineVerdict = "proceed" | "no_action" | "escalate";
+                                                                     
 
-export interface RuleOutcome {
-  ruleId: string;
-  version: number;
-  category: Rule["category"];
-  authority: Rule["authority"];
-  status: "fired" | "not_fired" | "data_missing" | "condition_error";
-  error?: string;
-}
+                              
+                 
+                  
+                             
+                               
+                                                                     
+                 
+ 
 
-export interface RuleEngineResult {
-  ruleRegistryVersion: string;
-  trigger: Rule["trigger"];
-  outcomes: RuleOutcome[]; // every considered active rule, priority order
-  verdict: RuleEngineVerdict;
-  verdictReason: string;
-}
+                                   
+                              
+                           
+                                                                          
+                             
+                        
+ 
 
-function hasRequiredData(context: HeadCoachContext, path: string): boolean {
-  const value = path.split(".").reduce((acc: any, key) => (acc == null ? undefined : acc[key]), context as any);
+function hasRequiredData(context                  , path        )          {
+  const value = path.split(".").reduce((acc     , key) => (acc == null ? undefined : acc[key]), context       );
   return value !== undefined;
 }
 
-const asVerdictActions = (rule: Rule, failureBehavior: boolean): string[] =>
+const asVerdictActions = (rule      , failureBehavior         )           =>
   failureBehavior ? [rule.failureBehavior === "escalate" ? "escalate" : "no_action"] : rule.allowedActions;
 
-export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContext): RuleEngineResult {
+export function evaluateRules(trigger                 , context                  )                   {
   const rules = rulesFor(trigger);
-  const outcomes: RuleOutcome[] = [];
+  const outcomes                = [];
   // Priority-ordered (rules already are); only entries that actually
   // matter for the verdict (fired, or failed with a non-proceed
   // failure_behavior) go here.
-  const verdictCandidates: { rule: Rule; actions: string[] }[] = [];
+  const verdictCandidates                                      = [];
 
   for (const rule of rules) {
     const missing = rule.requiredData.filter((path) => !hasRequiredData(context, path));
@@ -62,10 +62,10 @@ export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContex
       continue;
     }
 
-    let fired: boolean;
+    let fired         ;
     try {
       fired = rule.condition(context);
-    } catch (e: any) {
+    } catch (e     ) {
       outcomes.push({ ruleId: rule.ruleId, version: rule.version, category: rule.category, authority: rule.authority, status: "condition_error", error: e?.message ?? String(e) });
       if (rule.failureBehavior === "task_failure") {
         throw new Error(`Rule ${rule.ruleId}: condition threw (${e?.message ?? e}) and failure_behavior is task_failure.`);
@@ -83,7 +83,7 @@ export function evaluateRules(trigger: Rule["trigger"], context: HeadCoachContex
   }
 
   const top = verdictCandidates[0]; // already priority-sorted, so this is the highest-priority match
-  let verdict: RuleEngineVerdict = "proceed";
+  let verdict                    = "proceed";
   if (top.actions.includes("escalate")) verdict = "escalate";
   else if (top.actions.length === 1 && top.actions[0] === "no_action") verdict = "no_action";
 

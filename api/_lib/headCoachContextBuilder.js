@@ -6,7 +6,7 @@ import {
   getClientCore, getObjectiveAndCurrentState, getActiveMilestones, getActiveProgram,
   getActivePhase, getRecentPerformance, getNutritionContext, getRecentCheckins,
   getAtRiskStatus, getRecentInterventions,
-} from "./headCoachCoreState.ts";
+} from "./headCoachCoreState.js";
 
 // HC-006 Context Builder -- assembles the HC-004 core-state reads into one
 // structured object for a task, and persists it as an immutable snapshot
@@ -31,31 +31,31 @@ import {
 // coach_notes. Left as narrative text for the eventual AI reasoning step
 // (HC-011) to read, not force-fit into a structure that doesn't exist yet.
 
-export interface HeadCoachContext {
-  builtAt: string;
-  methodologyVersion: string | null;
-  client: Awaited<ReturnType<typeof getClientCore>>;
-  objective: Awaited<ReturnType<typeof getObjectiveAndCurrentState>>;
-  milestones: Awaited<ReturnType<typeof getActiveMilestones>>;
-  activeProgram: Awaited<ReturnType<typeof getActiveProgram>>;
-  activePhase: Awaited<ReturnType<typeof getActivePhase>>;
-  recentPerformance: Awaited<ReturnType<typeof getRecentPerformance>>;
-  nutrition: Awaited<ReturnType<typeof getNutritionContext>>;
-  recentCheckins: Awaited<ReturnType<typeof getRecentCheckins>>;
-  constraints: {
-    programDescription: string | null;
-    programGoal: string | null;
-    experienceLevel: string | null;
-    recentCoachNotes: { body: string; pinned: boolean; createdAt: string }[];
-  };
-  openAlerts: unknown[];
-  atRiskLevel: string | null;
-  recentInterventions: Awaited<ReturnType<typeof getRecentInterventions>>;
-  applicableRules: unknown[];
-  authority: null;
-}
+                                   
+                  
+                                    
+                                                    
+                                                                     
+                                                              
+                                                              
+                                                          
+                                                                      
+                                                             
+                                                                
+                
+                                      
+                               
+                                   
+                                                                             
+    
+                        
+                             
+                                                                          
+                             
+                  
+ 
 
-async function getConstraints(clientId: string, program: Awaited<ReturnType<typeof getActiveProgram>>) {
+async function getConstraints(clientId        , program                                              ) {
   const { data: notes } = await supabaseAdmin
     .from("coach_notes")
     .select("body,pinned,created_at")
@@ -67,11 +67,11 @@ async function getConstraints(clientId: string, program: Awaited<ReturnType<type
     programDescription: program?.name ? `${program.name}` : null,
     programGoal: program?.goal ?? null,
     experienceLevel: program?.experienceLevel ?? null,
-    recentCoachNotes: (notes || []).map((n: any) => ({ body: n.body, pinned: n.pinned, createdAt: n.created_at })),
+    recentCoachNotes: (notes || []).map((n     ) => ({ body: n.body, pinned: n.pinned, createdAt: n.created_at })),
   };
 }
 
-export async function buildReviewCheckInContext(clientId: string): Promise<HeadCoachContext> {
+export async function buildReviewCheckInContext(clientId        )                            {
   const [client, objective, milestones, activeProgram, recentPerformance, nutrition, recentCheckins, risk, recentInterventions] = await Promise.all([
     getClientCore(clientId),
     getObjectiveAndCurrentState(clientId),
@@ -115,15 +115,15 @@ export async function buildReviewCheckInContext(clientId: string): Promise<HeadC
 // Callers (HC-008's Rule Engine result) must evaluate rules BEFORE calling
 // this, then pass the outcome in.
 export async function persistContextSnapshot(
-  taskId: string,
-  context: HeadCoachContext,
-  ruleVersions: unknown[] = [],
-): Promise<{ id: string }> {
+  taskId        ,
+  context                  ,
+  ruleVersions            = [],
+)                          {
   const { data, error } = await supabaseAdmin
     .from("head_coach_context_snapshots")
     .insert({
       task_id: taskId,
-      snapshot: context as unknown as Record<string, unknown>,
+      snapshot: context                                      ,
       rule_versions: ruleVersions,
       methodology_version: context.methodologyVersion,
     })

@@ -1,7 +1,7 @@
 import { supabaseAdmin } from "./supabaseAdmin.js";
-import type { ReviewCheckInGenerationResult } from "./headCoachReviewCheckInPrompt.ts";
-import type { ValidationResult } from "./headCoachOutputValidator.ts";
-import type { AuthorityDetermination } from "./headCoachAuthorityEngine.ts";
+                                                                                       
+                                                                      
+                                                                            
 
 // HC-014 Recommendation Manager -- the first place anything actually gets
 // written to head_coach_recommendations (HC-002). Persists ONE row per
@@ -29,7 +29,7 @@ import type { AuthorityDetermination } from "./headCoachAuthorityEngine.ts";
 // not produced by any current code path -- this module always escalates
 // (via the caller) rather than silently falling back to no_action when
 // validation fails, since escalating guarantees a human looks at it.
-function mapValidationStatus(validation: ValidationResult, hasOutput: boolean): string {
+function mapValidationStatus(validation                  , hasOutput         )         {
   if (!hasOutput) return "failed_schema";
   if (validation.valid) return "valid";
   const stages = new Set(validation.issues.map((i) => i.stage));
@@ -38,16 +38,16 @@ function mapValidationStatus(validation: ValidationResult, hasOutput: boolean): 
   return "failed_safety"; // evidence / fabrication
 }
 
-export interface CreateRecommendationInput {
-  taskId: string;
-  clientId: string;
-  contextSnapshotId: string;
-  generation: ReviewCheckInGenerationResult;
-  validation: ValidationResult;
-  authority: AuthorityDetermination;
-}
+                                            
+                 
+                   
+                            
+                                            
+                               
+                                    
+ 
 
-export async function createRecommendation(input: CreateRecommendationInput): Promise<{ id: string; validationStatus: string }> {
+export async function createRecommendation(input                           )                                                    {
   const hasOutput = !!input.generation.output;
   const aiOutput = input.generation.output ?? { raw: input.generation.raw, parseError: input.generation.parseError };
   const validationStatus = mapValidationStatus(input.validation, hasOutput);

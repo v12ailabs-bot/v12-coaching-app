@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabaseAdmin.js";
-import { closeTaskAfterOutcome, type HeadCoachTask } from "./headCoachTasks.ts";
+import { closeTaskAfterOutcome,                    } from "./headCoachTasks.js";
 
 // HC-017 Outcome Tracker. Per the spec: track expected response, actual
 // response, measurement period, outcome, notes -- "use outcomes to evaluate
@@ -19,27 +19,27 @@ import { closeTaskAfterOutcome, type HeadCoachTask } from "./headCoachTasks.ts";
 // notes after more time has passed. This module only implements creation
 // for MVP; update/amend can be added later if that need is real.
 
-export type OutcomeValue = "as_expected" | "better_than_expected" | "worse_than_expected" | "inconclusive";
-export const OUTCOME_VALUES: OutcomeValue[] = ["as_expected", "better_than_expected", "worse_than_expected", "inconclusive"];
+                                                                                                           
+export const OUTCOME_VALUES                 = ["as_expected", "better_than_expected", "worse_than_expected", "inconclusive"];
 
-export interface RecordOutcomeInput {
-  recommendationId: string;
-  actualResponse: string;
-  outcome: OutcomeValue;
-  expectedResponse?: string | null;
-  measurementPeriodStart?: string | null;
-  measurementPeriodEnd?: string | null;
-  notes?: string | null;
-  recordedBy: string;
-}
+                                     
+                           
+                         
+                        
+                                   
+                                         
+                                       
+                        
+                     
+ 
 
-export interface RecordOutcomeResult {
-  outcome: Record<string, unknown>;
-  taskId: string;
-  task: HeadCoachTask | null;
-}
+                                      
+                                   
+                 
+                             
+ 
 
-export async function recordOutcome(input: RecordOutcomeInput): Promise<RecordOutcomeResult> {
+export async function recordOutcome(input                    )                               {
   const { data: rec, error: recErr } = await supabaseAdmin
     .from("head_coach_recommendations")
     .select("id,task_id,client_id,status,ai_output")
@@ -67,7 +67,7 @@ export async function recordOutcome(input: RecordOutcomeInput): Promise<RecordOu
 
   // Default to the AI's own expected_response (captured at reasoning time,
   // HC-011) rather than making the coach retype it -- still overridable.
-  const expectedResponse = input.expectedResponse ?? (rec.ai_output as any)?.expected_response ?? null;
+  const expectedResponse = input.expectedResponse ?? (rec.ai_output       )?.expected_response ?? null;
 
   const { data, error } = await supabaseAdmin
     .from("head_coach_outcomes")
