@@ -75,7 +75,6 @@ export const INJURY_MULTISELECT_OPTIONS = {
 
 export const DAY_ORDER = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 export const EX_TYPES = ["Compound", "Accessory", "Circuit", "Warmup"];
-export const PHASES = ["Onboarding", "Accumulation", "Intensification", "Peak", "Deload", "Maintenance"];
 
 // Session-time block grouping (exercises.block_type / group_id — see
 // db/add_block_type.sql). Shared by the client workout log, the coach's

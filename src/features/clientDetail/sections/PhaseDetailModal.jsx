@@ -4,6 +4,7 @@ import { S, RADIUS } from "../../../theme.jsx";
 import { Modal, Btn, Tabs, StatusBadge } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
+import { AIRecommendationCard } from "./AIRecommendationCard.jsx";
 
 // Phase detail (Overview / Activities / Criteria / Notes), opened from a phase
 // card. Reads the same rows the roadmap already holds; nothing here is a second
@@ -121,6 +122,12 @@ export function PhaseDetailModal({ phase, program, clientId, status, assessment,
                 <div style={{ ...lbl, marginBottom: 2 }}>Plan vs actual · advisory · as of yesterday</div>
                 <div>{assessment.headline}</div>
                 {assessment.reasons.map((r, i) => <div key={i} style={{ color: S.muted }}>• {r}</div>)}
+              </div>
+            )}
+            {status === "current" && (
+              <div style={{ marginBottom: 12 }}>
+                <div style={lbl}>Deeper AI read — advisory, you approve</div>
+                <AIRecommendationCard clientId={clientId} />
               </div>
             )}
             {(phase.checkpoints || []).length > 0 && (<><div style={lbl}>Checkpoints</div>{phase.checkpoints.map((c, i) => (

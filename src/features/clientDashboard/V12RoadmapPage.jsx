@@ -47,7 +47,7 @@ export function V12RoadmapPage({ profile }) {
 
   return (
     <div>
-      <PageTitle title="Your V12 Roadmap" sub="30-Day Client Journey" />
+      <PageTitle title="Your First 30 Days" sub="Your Day 0 to Day 30 journey" />
 
       {journeyOver ? (
         <Card style={{ marginBottom: 20 }}>

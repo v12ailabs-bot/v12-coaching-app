@@ -72,7 +72,9 @@ The **phase cards** underneath show each phase as Complete, Current or Upcoming.
 
 **Moving a client to the next phase** is deliberate. On the next phase's card click **Draft workouts**. The app builds a draft from the client's current exercises plus the changes planned for that phase. It starts as an exact copy, and only changes what the plan says to change, so progress stays comparable. Edit the draft, save it, then click **Review and activate**. You will see exactly what will change: what stays, what is updated in place, what is replaced, what is added, what is retired. If the current phase still has unfinished exit criteria you must type a reason, and it is stored. Activate, and the client's workouts and phase change in one step. Nothing is ever deleted: retired exercises keep their history. If you change your mind, there is an **Undo this transition** button on the same screen.
 
-Above the cards, the **Plan vs actual** box on the current phase gives advice such as On track, Behind, Review or Ready to advance. It only advises.
+Above the cards, the **Plan vs actual** box on the current phase gives advice such as On track, Behind, Review or Ready to advance. It only advises. Inside the current phase's window (click its name, Overview tab) there is also a **Deeper AI read** that you can ask for; you approve or reject it.
+
+The current phase only changes when you activate the next phase. Saving a note or start date on the Program Phase tab never changes it. There is an emergency override that changes the label only, and it needs a written reason.
 
 **Check yourself:** What are the three switches in Edit Program step one, and what must you do before activating a phase whose exit criteria are not finished?
 
@@ -86,7 +88,7 @@ Pick a method and fill in its settings. The methods the app can calculate for yo
 
 Press **Calculate recommendation**. You get one of a small set of answers: Increase, Hold, Decrease, Progress, Regression, or a plain message that data is missing, with the reason. You can **Approve**, **Edit and approve** with your own number, or **Reject**. When you approve a load, the client's workout screen shows a **Coach target** for that exercise, and for APRE exercises it shows all four set loads. Your original calculation is kept untouched beside your decision.
 
-The **Progression** page on the left has four tabs. **Review queue** lists every exercise with a logged session nobody has evaluated yet, plus every recommendation waiting for you: work it like an inbox. **Method reference** explains each method with a worked example calculated live. **Metric definitions** is the written definition of every score. **AI methodology** is the older text the AI reads when it builds a new program.
+The **Progression** page on the left has four tabs. **Review queue** lists every exercise with a logged session nobody has evaluated yet, plus every recommendation waiting for you: work it like an inbox. **Method reference** explains each method with a worked example calculated live. **Metric definitions** is the written definition of every score. **AI program notes** is the older free text the AI reads when it builds a new program; it does not calculate anything.
 
 When you change an exercise's method the app asks why and keeps a **Method history**: what it was, what it became, your reason, and the target in force at the time. Workout history is never rewritten.
 
@@ -148,15 +150,15 @@ If a review ever shows "the server hit an error", try again once and tell your d
 
 **Business + Content** is your daily numbers page: outreach and content metrics you type in, rolled up by week. It is manual, so it is only as good as your daily habit. Two minutes at the end of each day.
 
-**Assessments** lets you pre-assess a prospect and saves it by email before they sign up. **Library** is where you keep guides, recipes and resources clients can browse. **Templates** is an old screen: program generation now reads templates from Notion, so editing a template there does not change generated programs.
+**Assessments** lets you pre-assess a prospect and saves it by email before they sign up. **Library** is where you keep guides, recipes and resources clients can browse. The old **Templates** screen has been removed: program generation reads templates from your Notion library.
 
-**Check yourself:** Which screen is old and does not affect program generation?
+**Check yourself:** Where do program templates now live?
 
 ---
 
 ## 12. What your client sees
 
-Your coaching client's **Home** shows their status, reminders, today's check-in, their roadmap with the current phase and quick stats, milestone bars, and a nutrition card with a calorie ring and macro bars. **Check-In** is where they do daily and weekly. **Workouts** is where they log sets: there is a warm-up tick on every set, an optional RIR or RPE box when you asked for one, a **rest timer** pinned at the bottom of the phone that beeps and vibrates when rest is over (iPhones beep but cannot vibrate), and your **Coach target** where you approved one. **Progress** shows charts. **More** holds Nutrition, Schedule, the Library, their Program, My Roadmap (a 30-day journey) and a Dashboard page, which is a welcome guide about the V12 philosophy.
+Your coaching client's **Home** shows their status, reminders, today's check-in, their roadmap with the current phase and quick stats, milestone bars, and a nutrition card with a calorie ring and macro bars. **Check-In** is where they do daily and weekly. **Workouts** is where they log sets: there is a warm-up tick on every set, an optional RIR or RPE box when you asked for one, a **rest timer** pinned at the bottom of the phone that beeps and vibrates when rest is over (iPhones beep but cannot vibrate), and your **Coach target** where you approved one. **Progress** shows charts. **More** holds Nutrition, Schedule, the Library, their Program, and First 30 Days (the Day 0 to Day 30 journey).
 
 If you turned a switch off in Edit Program, the client simply does not see that thing. They are not told it was hidden.
 

@@ -1,6 +1,6 @@
 # Screen by screen (coach side first, then what the client sees)
 
-Left menu for the coach (top to bottom): **Overview, Clients, Leads / CRM, Business + Content, Assessments, Templates, Progression, Library.**
+Left menu for the coach (top to bottom): **Overview, Clients, Leads / CRM, Business + Content, Assessments, Progression, Library.**
 
 ## COACH
 
@@ -13,7 +13,7 @@ Pick a client from the list. Tabs: **Overview, Goals** (not for program-only), *
 - **Overview tab:** header with last check-in; **Attention Needed**, **Key Insights**, **Check-In Values**, **Nutrition Adherence**, **Today's Targets**, **Daily Habits**, **Coach Actions**; **Quick Actions** box (Add Note, Send Message, Schedule Call, Adjust Program → opens Program Phase, More Actions → Generate AI Program, Update nutrition plan); **Workout Review** (day → exercise → charts, log, **Progression** box); **Program Roadmap** card (header + progress bar, phase cards, *Edit Program*, *Edit & Generate Roadmap*, Preview, Plan history); **Performance Taper**; Program History / versions; the V12 Assessment and onboarding checklist; coach notes.
 - **Goals tab:** weight goal and goal score, AI goal insight, milestones.
 - **Nutrition tab:** the plan, macro calculator, adherence.
-- **Program Phase tab:** set the current phase by hand (see overlap report), phase history, the AI phase recommendation.
+- **Program Phase tab:** program start date, top/sub phase for the AI generator, the phase note, and phase history. The current phase itself changes by activating the next phase on the roadmap; an emergency override (label only, reason required) is tucked away. The AI phase recommendation now lives in the current phase's window on the roadmap.
 - **Head Coach tab:** *Review This Check-In*, then Approve / Modify / Defer / Reject, *Record outcome*, *Send to Client via Coach Messages*.
 - **Client Settings** (from the page header): client type, goal, access window, sync from Notion.
 
@@ -24,7 +24,7 @@ Pick a client from the list. Tabs: **Overview, Goals** (not for program-only), *
 - **Draft workouts:** *Build draft from plan* → edit → *Save draft* → *Review & activate…* → preview → (reason if criteria unfinished) → *Activate phase*. Afterwards: *Undo this transition*.
 
 ### Progression (left menu)
-Tabs: **Review queue**, **Method reference**, **Metric definitions**, **AI methodology**.
+Tabs: **Review queue**, **Method reference**, **Metric definitions**, **AI program notes**.
 
 ### Leads / CRM
 Board of leads by status. Statuses: New, Applied, Accepted, Closed Lost, Follow-up Later, Price Objection, Not Ready.
@@ -34,9 +34,6 @@ Daily outreach and content numbers you type in, rolled up weekly.
 
 ### Assessments
 Pre-assess a prospect before you build a program; saved by email.
-
-### Templates
-Legacy. Program generation reads templates from your Notion library.
 
 ### Library
 Guides, recipes and resources, in folders, that clients can browse.
@@ -49,6 +46,6 @@ Guides, recipes and resources, in folders, that clients can browse.
 | **Check-In** | **Daily** (Today screen) and **Weekly** check-in |
 | **Workouts** | Pick the day and exercise, log sets, warm-up tick, optional RIR/RPE, **rest timer bar**, **Coach target** |
 | **Progress** | Charts: weight, strength, body, habits, notes (hidden if progress tracking is off) |
-| **More** | Dashboard (welcome guide), Nutrition, Schedule, Habits & Assessment (program-only), Library, My Roadmap (30-day journey), Program |
+| **More** | Nutrition, Schedule, Habits & Assessment (program-only), Library, First 30 Days (Day 0 to Day 30), Program |
 
 Program-only clients get: Home, Plan, Workouts, Progress, More (no check-ins). Starter clients get: Home, Workouts, Schedule, Library.

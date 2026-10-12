@@ -21,7 +21,6 @@ import { deriveLifecycleStatus, LIFECYCLE_STATUS } from "./lib/tierLifecycle.js"
 import { ClientWorkoutReview } from "./features/workouts/ClientWorkoutReview.jsx";
 import { ClientHome } from "./features/clientDashboard/ClientHome.jsx";
 import { ProgramOnlyHome } from "./features/clientDashboard/ProgramOnlyHome.jsx";
-import { ClientDashboardPage } from "./features/clientDashboard/ClientDashboardPage.jsx";
 import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { ProgressionHub } from "./features/coachDashboard/ProgressionHub.jsx";
@@ -595,10 +594,6 @@ function TopBar({ profile, isCoach, onLogout, setPage }) {
             page now, not an external Notion link. */}
         {!isCoach && profile?.client_type==="program_only" && (
           <>
-            <button onClick={()=>setPage("clientdashboard")} title="Open your dashboard"
-              style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(139,92,246,.16)",border:"2px solid #8B5CF6",color:"#8B5CF6",fontSize:14,cursor:"pointer"}}>
-              📊
-            </button>
             <a href={COACH_WHATSAPP_URL} target="_blank" rel="noopener noreferrer" title="Message your coach on WhatsApp"
               style={{width:32,height:32,borderRadius:"50%",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,background:"rgba(255,106,0,.16)",border:"2px solid "+S.accent,color:S.accent,fontSize:14,textDecoration:"none"}}>
               💬
@@ -619,7 +614,7 @@ function TopBar({ profile, isCoach, onLogout, setPage }) {
 // decide which nav item highlights when the client is on one of the pages
 // it groups (e.g. still highlight "More" while on the Nutrition page).
 const CHECKIN_GROUP = ["checkin", "daily", "weekly"];
-const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule", "v12roadmap", "clientdashboard"];
+const MORE_GROUP = ["more", "program", "nutrition", "habits", "resources", "schedule", "v12roadmap"];
 
 function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const isMobile = useIsMobile();
@@ -638,7 +633,7 @@ function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
     ? [{id:"proghome",icon:"⚡",label:"Home",short:"Home"},{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
     : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"progression",icon:"🧬",label:"Progression",short:"Progress"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"progression",icon:"🧬",label:"Progression",short:"Progress"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
   const activeId = nav.some((n) => n.id === page) ? page
     : CHECKIN_GROUP.includes(page) ? "checkin"
@@ -1994,193 +1989,6 @@ function MetricsDashboard() {
 }
 
 // ---------------------------------------------------------------------------
-// COACH — TEMPLATE MANAGEMENT (create / edit / delete program templates)
-// ---------------------------------------------------------------------------
-
-const BLANK_TEMPLATE = { name:"", goal:"", category:"General", days_per_week:4, description:"", structure:"" };
-
-function TemplatesPanel() {
-  const [templates, setTemplates] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);   // null | "new" | template id
-  const [form, setForm] = useState(BLANK_TEMPLATE);
-  const [saving, setSaving] = useState(false);
-  const [msg, setMsg] = useState(null);
-  const set = (k,v) => setForm(p=>({...p,[k]:v}));
-
-  const load = async()=>{
-    const {data} = await supabase.from("program_templates").select("*").order("name");
-    setTemplates(data||[]);
-    setLoading(false);
-  };
-  useEffect(()=>{load();},[]);
-
-  const [catFilter, setCatFilter] = useState("All");
-
-  const startNew = ()=>{ setEditing("new"); setForm(BLANK_TEMPLATE); setMsg(null); };
-  const startEdit = (t)=>{
-    setEditing(t.id);
-    setForm({name:t.name||"",goal:t.goal||"",category:t.category||"General",days_per_week:t.days_per_week||4,description:t.description||"",structure:t.structure||""});
-    setMsg(null);
-  };
-  const cancel = ()=>{ setEditing(null); setForm(BLANK_TEMPLATE); };
-
-  const save = async()=>{
-    if(!form.name.trim()){ setMsg({ok:false,text:"Name is required."}); return; }
-    setSaving(true); setMsg(null);
-    const payload = {
-      name:form.name.trim(), goal:form.goal.trim()||null, category:form.category||null,
-      days_per_week:parseInt(form.days_per_week)||null,
-      description:form.description.trim()||null, structure:form.structure.trim()||null,
-    };
-    const { error } = editing==="new"
-      ? await supabase.from("program_templates").insert(payload)
-      : await supabase.from("program_templates").update(payload).eq("id",editing);
-    setSaving(false);
-    if(error){ setMsg({ok:false,text:error.message}); return; }
-    setMsg({ok:true,text:editing==="new"?"Template created.":"Template updated."});
-    setEditing(null); setForm(BLANK_TEMPLATE);
-    await load();
-  };
-
-  // Duplicate a template into a new editable copy (built-ins stay untouched).
-  const duplicate = async(t)=>{
-    setMsg(null);
-    const existing = new Set(templates.map(x=>x.name));
-    let name = `${t.name} (copy)`, i = 2;
-    while(existing.has(name)){ name = `${t.name} (copy ${i++})`; }
-    const { error } = await supabase.from("program_templates").insert({
-      name, goal:t.goal, category:t.category, days_per_week:t.days_per_week,
-      description:t.description, structure:t.structure, is_builtin:false,
-    });
-    if(error){ setMsg({ok:false,text:error.message}); return; }
-    setMsg({ok:true,text:`Duplicated as "${name}".`});
-    await load();
-  };
-
-  const remove = async(t)=>{
-    if(!window.confirm(`Delete template "${t.name}"? This cannot be undone.`)) return;
-    const { error } = await supabase.from("program_templates").delete().eq("id",t.id);
-    if(error){ setMsg({ok:false,text:error.message}); return; }
-    if(editing===t.id) cancel();
-    await load();
-  };
-
-  if(loading) return <div className="spinner" style={{margin:"80px auto"}}/>;
-
-  return (
-    <div>
-      <PageTitle title="Templates" sub="Reusable training blueprints for AI program generation"/>
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:16}}>
-        <Btn teal onClick={startNew}>+ New Template</Btn>
-      </div>
-
-      {msg && (
-        <div style={{marginBottom:16,padding:"10px 16px",fontSize:12,fontWeight:600,
-          background:msg.ok?"rgba(0,201,167,.14)":"rgba(192,57,43,.16)",
-          color:msg.ok?S.accent2:S.danger}}>
-          {msg.text}
-        </div>
-      )}
-
-      {editing && (
-        <Card>
-          <CardTitle>{editing==="new"?"New Template":"Edit Template"}</CardTitle>
-          <div className="g3" style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr",gap:16}}>
-            <Fld label="Name"><Inp type="text" value={form.name} onChange={e=>set("name",e.target.value)} placeholder="e.g. Hypertrophy — Upper/Lower"/></Fld>
-            <Fld label="Goal"><Inp type="text" value={form.goal} onChange={e=>set("goal",e.target.value)} placeholder="e.g. Hypertrophy"/></Fld>
-            <Fld label="Days / Week"><Inp type="number" min={1} max={7} value={form.days_per_week} onChange={e=>set("days_per_week",e.target.value)}/></Fld>
-          </div>
-          <Fld label="Category"><RG options={TEMPLATE_CATEGORIES} value={form.category} onChange={v=>set("category",v)}/></Fld>
-          <Fld label="Short Description"><Inp type="text" value={form.description} onChange={e=>set("description",e.target.value)} placeholder="One-line summary shown to coaches"/></Fld>
-          <Fld label="Structure (the blueprint the AI follows)">
-            <textarea rows={5} value={form.structure} onChange={e=>set("structure",e.target.value)}
-              placeholder="Describe the split, set/rep schemes, progression, and any rules the AI should follow."
-              style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/>
-          </Fld>
-          <div style={{display:"flex",gap:10,marginTop:8}}>
-            <Btn onClick={save} disabled={saving}>{saving?"Saving...":"Save Template"}</Btn>
-            <button onClick={cancel} style={{padding:"10px 20px",fontSize:12,background:"transparent",color:S.text,border:"1px solid "+S.border,cursor:"pointer",fontWeight:600,letterSpacing:"1.5px",textTransform:"uppercase"}}>Cancel</button>
-          </div>
-        </Card>
-      )}
-
-      {templates.length===0 && !editing && (
-        <Card style={{textAlign:"center",padding:40,color:S.muted}}>
-          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:18,color:S.text,marginBottom:6}}>No templates yet</div>
-          <div style={{fontSize:13,marginBottom:16}}>Create your first template to standardize your training blueprints.</div>
-          <Btn teal onClick={startNew}>+ New Template</Btn>
-        </Card>
-      )}
-
-      {templates.length>0 && (
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
-          {["All",...TEMPLATE_CATEGORIES].map(c=>(
-            <button key={c} onClick={()=>setCatFilter(c)}
-              style={{padding:"5px 12px",fontSize:10,fontWeight:600,letterSpacing:"1px",textTransform:"uppercase",cursor:"pointer",border:"1px solid "+(catFilter===c?S.accent:S.border),background:catFilter===c?"rgba(255,106,0,.08)":"transparent",color:catFilter===c?S.accent:S.muted}}>
-              {c}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* Grid instead of a stacked single-column list — the description +
-          structure blueprint text (which can run long) is dropped from the
-          card face; it's still fully editable via Edit, and duplicate/edit/
-          delete no longer eat a whole column of vertical button stack. */}
-      <div className="templates-grid" style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:18}}>
-        {templates.filter(t=>catFilter==="All"||(t.category||"General")===catFilter).map(t=>(
-          <TemplateCard key={t.id} t={t} onDuplicate={duplicate} onEdit={startEdit} onDelete={remove}/>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-const TEMPLATE_CATEGORY_STYLE = {
-  Hybrid: { icon: "⚡", color: "#F59E0B" }, "Fat Loss": { icon: "🔥", color: "#EF4444" },
-  Muscle: { icon: "💪", color: "#8B5CF6" }, Strength: { icon: "🏋", color: "#3B82F6" },
-  Athletic: { icon: "🏆", color: "#00C9A7" }, Beginner: { icon: "👑", color: "#FF6A00" },
-  Home: { icon: "🏠", color: "#22C55E" }, General: { icon: "📋", color: "#A1A1AA" },
-};
-
-function TemplateCard({ t, onDuplicate, onEdit, onDelete }) {
-  const [menuOpen, setMenuOpen] = useState(false);
-  const style = TEMPLATE_CATEGORY_STYLE[t.category] || TEMPLATE_CATEGORY_STYLE.General;
-  return (
-    <Card style={{ display:"flex", flexDirection:"column", height:"100%", position:"relative" }}>
-      <div style={{display:"flex",alignItems:"flex-start",gap:14,marginBottom:12}}>
-        <div style={{width:44,height:44,borderRadius:"50%",flexShrink:0,background:style.color+"26",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20}}>{style.icon}</div>
-        <div style={{flex:1,minWidth:0}}>
-          <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:20,lineHeight:1.2}}>{t.name}</div>
-          <div style={{display:"flex",gap:8,alignItems:"center",fontSize:11,letterSpacing:1,textTransform:"uppercase",color:style.color,marginTop:4,flexWrap:"wrap"}}>
-            <span>{t.category||"General"}</span>
-            {t.days_per_week && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· {t.days_per_week} days/week</span>}
-            {t.is_builtin && <span style={{color:S.muted,textTransform:"none",letterSpacing:0}}>· Built-in</span>}
-          </div>
-        </div>
-        {!t.is_builtin && (
-          <div style={{position:"relative",flexShrink:0}}>
-            <button onClick={()=>setMenuOpen(o=>!o)} title="More actions" aria-label="More actions"
-              style={{width:26,height:26,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",background:"transparent",border:"none",color:S.muted,fontSize:16}}>⋮</button>
-            {menuOpen && (
-              <div style={{position:"absolute",right:0,top:28,zIndex:10,background:S.surface,border:"1px solid "+S.border,borderRadius:8,overflow:"hidden",minWidth:110,boxShadow:"0 8px 20px rgba(0,0,0,.35)"}}>
-                <button onClick={()=>{setMenuOpen(false);onEdit(t);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",fontSize:12,fontWeight:600,background:"transparent",border:"none",color:S.text,cursor:"pointer"}}>Edit</button>
-                <button onClick={()=>{setMenuOpen(false);onDelete(t);}} style={{display:"block",width:"100%",textAlign:"left",padding:"9px 14px",fontSize:12,fontWeight:600,background:"transparent",border:"none",color:S.danger,cursor:"pointer"}}>Delete</button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-      <div style={{fontSize:13.5,color:S.muted,lineHeight:1.6,flex:1,marginBottom:16}}>
-        {t.description || (t.goal ? `Goal: ${t.goal}` : "No description yet.")}
-      </div>
-      <Btn sm teal onClick={()=>onDuplicate(t)}>📄 Duplicate</Btn>
-    </Card>
-  );
-}
-
-// ---------------------------------------------------------------------------
 // COACH — ONBOARDING ASSESSMENTS (pre-assess a client before building a program)
 // ---------------------------------------------------------------------------
 // Coach-only, keyed by email so it can be filled before the client signs up. On
@@ -2987,15 +2795,13 @@ function CheckInHome({ profile, setPage }) {
 function MoreMenu({ programOnly, setPage }) {
   const items = programOnly
     ? [
-        { id: "clientdashboard", icon: "📊", label: "Dashboard", sub: "The V12 philosophy and your roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Your fuel plan" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
         { id: "habits", icon: "✅", label: "Habits & Assessment", sub: "Habit tracker and V12 scores" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
       ]
     : [
-        { id: "clientdashboard", icon: "📊", label: "Dashboard", sub: "The V12 philosophy" },
-        { id: "v12roadmap", icon: "🗺", label: "My Roadmap", sub: "Your first 30 days" },
+        { id: "v12roadmap", icon: "🗺", label: "First 30 Days", sub: "Your Day 0 to Day 30 journey" },
         { id: "program", icon: "📋", label: "Program", sub: "Training plan and roadmap" },
         { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Track meals and macros" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
@@ -3115,7 +2921,6 @@ function ClientDashboard({ profile, logout }) {
       {page === "schedule" && (
         <div><PageTitle title="Schedule" sub="Build your own workout pattern — not locked to a fixed weekly structure" /><WorkoutScheduler clientId={profile.id} trainOwnerId={trainingOwnerId(profile)}/></div>
       )}
-      {page === "clientdashboard" && !isStarter && <ClientDashboardPage profile={profile} setPage={setPage} />}
       {page === "more" && <MoreMenu programOnly={programOnly} setPage={setPage} />}
     </Shell>
   );
@@ -3146,7 +2951,6 @@ function CoachDashboard({ profile, logout }) {
       {page === "crm" && <CRMBoard />}
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
-      {page === "templates" && <TemplatesPanel />}
       {page === "progression" && <ProgressionHub />}
       {page === "library" && <ResourcesPanel />}
     </Shell>
