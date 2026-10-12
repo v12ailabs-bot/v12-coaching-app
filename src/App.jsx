@@ -1272,7 +1272,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const loadEx = useCallback(async()=>{
     // No .order() here — groupByDay owns exercise ordering (by phase, then
     // order_index) once grouped by day.
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile));
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",trainingOwnerId(profile)).is("retired_at", null);
     setExercises(data||[]);
     if(data&&data.length>0&&!selected){
       // Default selection depends on how the client got here:

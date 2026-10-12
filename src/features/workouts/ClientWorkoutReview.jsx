@@ -38,7 +38,7 @@ export function ClientWorkoutReview({ profile }) {
   const [logsByExercise, setLogsByExercise] = useState({});
 
   useEffect(() => {
-    supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile))
+    supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile)).is("retired_at", null)
       .then(({ data }) => setExercises(data || []));
   }, [profile.id, profile.shared_program_owner_id]);
 
