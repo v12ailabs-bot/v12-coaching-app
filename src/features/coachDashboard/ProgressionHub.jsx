@@ -32,7 +32,7 @@ function MetricsTab() {
 
 export function ProgressionHub() {
   const [tab, setTab] = useState("queue");
-  const tabs = [{ key: "queue", label: "Review queue" }, { key: "reference", label: "Method reference" }, { key: "metrics", label: "Metric definitions" }, { key: "models", label: "AI methodology" }];
+  const tabs = [{ key: "queue", label: "Review queue" }, { key: "reference", label: "Method reference" }, { key: "metrics", label: "Metric definitions" }, { key: "models", label: "AI program notes" }];
   return (
     <div>
       <PageTitle title="Progression" sub="Review sessions, understand every method, and see exactly how each score is calculated" />
@@ -41,7 +41,14 @@ export function ProgressionHub() {
         {tab === "queue" && <ProgressionQueue />}
         {tab === "reference" && <ProgressionReference />}
         {tab === "metrics" && <MetricsTab />}
-        {tab === "models" && <ProgressionModelsPanel />}
+        {tab === "models" && (
+          <>
+            <Card><div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6 }}>
+              These are the free-text notes the AI reads <b>when it generates a program</b>. They do not calculate anything. The methods the app actually calculates for you (double, linear, percentage, APRE 3/6/10, density, taper) are in <b>Method reference</b>, and the older single "apre" entry below is the AI's note, not the APRE 3/6/10 calculators.
+            </div></Card>
+            <ProgressionModelsPanel />
+          </>
+        )}
       </div>
     </div>
   );

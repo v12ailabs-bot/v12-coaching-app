@@ -14,7 +14,6 @@ import { AssessmentSection } from "./sections/AssessmentSection.jsx";
 import { OnboardingChecklist } from "./sections/OnboardingChecklist.jsx";
 import { MilestonesCard } from "./sections/MilestonesCard.jsx";
 import { MILESTONE_CATEGORY_LABELS, fetchUnacknowledgedAchievements, acknowledgeAchievements } from "../../lib/milestones.js";
-import { AIRecommendationCard } from "./sections/AIRecommendationCard.jsx";
 import { CoachMessagesSection } from "./sections/CoachMessagesSection.jsx";
 import { ExercisesSection } from "./sections/ExercisesSection.jsx";
 import { CoachWorkoutReview } from "./sections/CoachWorkoutReview.jsx";
@@ -68,7 +67,7 @@ const SECTION_TAB = {
   "insights": "overview", "habits": "overview", "assessment": "overview",
   "goals": "goals", "milestones": "goals", "nutrition": "nutrition",
   "head-coach": "head-coach",
-  "program-phase": "program-phase", "exercises": "program-phase", "phase-review": "program-phase",
+  "program-phase": "program-phase", "exercises": "program-phase", "phase-review": "overview",
 };
 
 // Clients split workspace — persistent directory (left) + a selected
@@ -600,7 +599,6 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           onMessageClient={()=>setShowMessageModal(true)}/>
                       </div>
                       <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>openOverviewSection("program-roadmap")} />
-                      <div id="section-phase-review"><AIRecommendationCard clientId={trainOwnerId} /></div>
                       <div id="exercises-section-anchor">
                         <ExercisesSection isMobile={isMobile} exercises={exercises} showAdd={showAdd} setShowAdd={setShowAdd}
                           newEx={newEx} setNewEx={setNewEx} editEx={editEx} setEditEx={setEditEx} saving={saving}

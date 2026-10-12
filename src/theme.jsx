@@ -34,8 +34,6 @@ export const COLORS = ["#FF6A00", "#00C9A7", "#8B5CF6", "#3B82F6", "#F59E0B", "#
 export const RADIUS = { sm: 12, md: 12, lg: 16 };
 export const SHADOW = { card: "0 1px 3px rgba(0,0,0,.3)" };
 
-// Spacing scale used by new components (existing inline styles are untouched).
-export const SPACING = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 24, xxxl: 32, huge: 40 };
 
 // Focus-visible ring for interactive elements in newly-built components (no
 // equivalent existed before — inputs app-wide set outline:"none" with no

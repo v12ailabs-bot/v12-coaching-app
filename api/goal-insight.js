@@ -4,6 +4,7 @@ import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../src/lib/scoring/nutritionAdherence.js";
+import { workoutAdherenceFrom } from "../src/lib/scoring.js";
 import { strengthTrendsFrom } from "./_lib/strengthTrends.js";
 import { currentMilestoneValues } from "./_lib/milestones.js";
 import { createTask, claimTask, markReady, failTask, closeTaskNoAction, escalateTask, markRetrying, markDecisionReady, markActionPending, closeTaskDecided } from "./_lib/headCoachTasks.js";
@@ -421,7 +422,7 @@ export default async function handler(req, res) {
     const nutrition = nutritionAdherenceFrom(daily || [], nutPlan || null, 30, new Date(), mealLogs || []).score;
 
     const recentDaily = (daily || []).filter(d => d.date >= (() => { const c = new Date(); c.setDate(c.getDate() - 29); return c.toISOString().split("T")[0]; })());
-    const training = recentDaily.length ? Math.round((recentDaily.filter(d => d.workout === "completed").length / recentDaily.length) * 100) : null;
+    const training = workoutAdherenceFrom(recentDaily, 30).score; // completed / (completed + missed), same as every screen
 
     const recentWeekly = (weekly || []).slice(-4).filter(w => w.sleep_quality != null || w.hydration_quality != null);
     const recovery = recentWeekly.length

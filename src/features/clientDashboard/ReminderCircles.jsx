@@ -7,12 +7,11 @@ import { COACH_WHATSAPP_URL } from "../../lib/constants.js";
 // Notion page; now the in-app Dashboard page — see ClientDashboardPage.jsx),
 // and Message Coach (opens a WhatsApp chat with the coach directly). Due/
 // not-due visibility is unchanged from the old banners: Daily/Weekly only
-// show when actually due; Dashboard and Message Coach always show, since
-// neither is a reminder — both are just a quick way to get somewhere.
+// show when actually due; Message Coach always shows, since it is not a
+// reminder — just a quick way to get somewhere.
 const CIRCLES = [
   { key: "daily", icon: "✅", label: "Daily", color: S.accent, title: "Daily check-in is due" },
   { key: "weekly", icon: "📅", label: "Weekly", color: S.accent2, title: "Weekly check-in is due" },
-  { key: "clientdashboard", icon: "📊", label: "Dashboard", color: "#8B5CF6", title: "Open your dashboard" },
   { key: "message-coach", icon: "💬", label: "Message Coach", color: S.accent, external: COACH_WHATSAPP_URL, title: "Message your coach on WhatsApp" },
 ];
 
@@ -20,7 +19,6 @@ export function ReminderCircles({ profile, doneToday, weeklyDone, setPage }) {
   const show = {
     daily: !doneToday,
     weekly: !weeklyDone,
-    clientdashboard: true,
     "message-coach": true,
   };
   const visible = CIRCLES.filter((c) => show[c.key]);

@@ -282,7 +282,3 @@ export async function failTask(task               , errorMessage        , actor 
   return failed;
 }
 
-export async function getTask(taskId        )                                {
-  const { data } = await supabaseAdmin.from("head_coach_tasks").select("*").eq("id", taskId).maybeSingle();
-  return data ? fromRow(data) : null;
-}

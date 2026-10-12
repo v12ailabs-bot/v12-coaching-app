@@ -30,7 +30,7 @@ export function V12RoadmapCard({ profile, setPage }) {
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
-        <CardTitle>Your V12 Roadmap</CardTitle>
+        <CardTitle>Your First 30 Days</CardTitle>
         <span style={{ fontSize: 11, color: S.muted }}>Day {day} of {JOURNEY_LENGTH_DAYS}</span>
       </div>
       <div style={{ height: 4, background: S.border, borderRadius: 2, marginBottom: 16, overflow: "hidden" }}>
@@ -53,7 +53,7 @@ export function V12RoadmapCard({ profile, setPage }) {
           </div>
         );
       })}
-      <div style={{ marginTop: 14 }}><Btn sm onClick={() => setPage("v12roadmap")}>View Full Roadmap</Btn></div>
+      <div style={{ marginTop: 14 }}><Btn sm onClick={() => setPage("v12roadmap")}>View Your First 30 Days</Btn></div>
     </Card>
   );
 }

@@ -180,6 +180,8 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
   // ProgramRoadmap's currentPhase highlight) to track a custom roadmap step
   // instead of the synthesized "Top — Sub" label.
   const [roadmapStepPhase, setRoadmapStepPhase] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [overriding, setOverriding] = useState(false);
   const [note, setNote] = useState("");
   const [startDate, setStartDate] = useState("");
   const [history, setHistory] = useState([]);
@@ -216,21 +218,43 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
     // CoachHome, ClientHero, ProgramRoadmapCard, AIRecommendationCard's
     // roadmap matching, etc.) keeps working unchanged — synthesized from the
     // new fields by default, or the matched roadmap-step label if picked.
-    const displayPhase = roadmapStepPhase || synthesizePhaseLabel(topPhase, subPhase);
-    const { error } = await supabase.from("programs")
-      .update({ top_phase: topPhase, sub_phase: subPhase, phase: displayPhase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart })
-      .eq("id", program.id);
-    if (!error) await logPhaseHistory({ programId: program.id, clientId, phase: displayPhase, phaseNote: trimmedNote, topPhase, subPhase });
+    // When the client has a planned roadmap, the CURRENT PHASE is changed only by
+    // activating the next phase's draft workouts (which moves the label AND the
+    // workouts together). Saving a note / start date / top-sub phase here used to
+    // overwrite the label with a synthesized "Top — Sub" string, silently
+    // un-matching the roadmap. So with a roadmap the label is left exactly as it
+    // is; the legacy label-from-top/sub only applies to clients with no roadmap.
+    const hasRoadmap = plannedPhases.length > 0;
+    const displayPhase = hasRoadmap ? (program.phase || "") : (roadmapStepPhase || synthesizePhaseLabel(topPhase, subPhase));
+    const update = { top_phase: topPhase, sub_phase: subPhase, phase_note: trimmedNote, start_date: trimmedStart };
+    if (!hasRoadmap) { update.phase = displayPhase; update.phase_updated_at = new Date().toISOString(); }
+    const { error } = await supabase.from("programs").update(update).eq("id", program.id);
+    const changedLabel = !hasRoadmap && displayPhase !== (program.phase || "");
+    if (!error && (changedLabel || (trimmedNote || null) !== (program.phase_note || null))) await logPhaseHistory({ programId: program.id, clientId, phase: displayPhase, phaseNote: trimmedNote, topPhase, subPhase });
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase updated." });
     if (!error) {
       // Reflect the save optimistically instead of calling load() — a full
       // refetch here would race any typing the coach does into the Phase
       // Note textarea right after clicking Save and wipe it out.
-      setProgram((p) => (p ? { ...p, top_phase: topPhase, sub_phase: subPhase, phase: displayPhase, phase_note: trimmedNote, phase_updated_at: new Date().toISOString(), start_date: trimmedStart } : p));
+      setProgram((p) => (p ? { ...p, top_phase: topPhase, sub_phase: subPhase, phase: displayPhase, phase_note: trimmedNote, ...(hasRoadmap ? {} : { phase_updated_at: new Date().toISOString() }), start_date: trimmedStart } : p));
       const { data: hist } = await supabase.from("program_phase_history").select("*").eq("client_id", clientId).order("changed_at", { ascending: false }).limit(20);
       setHistory(hist || []);
     }
+  };
+
+  // Emergency override: changes ONLY the phase label. The client's workouts do not
+  // change (use Draft workouts → Activate for that), so a written reason is required
+  // and is stored in the phase history.
+  const overridePhaseLabel = async () => {
+    if (!program || !roadmapStepPhase || !overrideReason.trim()) return;
+    if (!window.confirm(`Set the current phase to "${roadmapStepPhase}"?\n\nThis changes ONLY the label. The client's workouts stay as they are.`)) return;
+    setOverriding(true); setMsg(null);
+    const { error } = await supabase.from("programs").update({ phase: roadmapStepPhase, phase_updated_at: new Date().toISOString() }).eq("id", program.id);
+    if (!error) await logPhaseHistory({ programId: program.id, clientId, phase: roadmapStepPhase, phaseNote: `Manual override (label only): ${overrideReason.trim()}`, topPhase, subPhase });
+    setOverriding(false);
+    setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Phase label overridden. Workouts were not changed." });
+    if (!error) { setProgram((p) => (p ? { ...p, phase: roadmapStepPhase, phase_updated_at: new Date().toISOString() } : p)); setOverrideReason(""); setRoadmapStepPhase(""); load(); }
   };
 
   if (loading) return null;
@@ -255,14 +279,27 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
             Performance phases — both the top-level block and the sub-phase within any block — are typically your shortest: a testing/peak window, not somewhere to live long-term.
           </div>
           {plannedPhases.length > 0 && (
-            <Fld label="Match a planned roadmap step (optional)">
-              <select value={roadmapStepPhase} onChange={(e) => setRoadmapStepPhase(e.target.value)}
-                style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "12px 14px", fontSize: 14, outline: "none" }}>
-                <option value="">{`— None, use "${synthesizePhaseLabel(topPhase, subPhase)}" —`}</option>
-                {plannedPhases.map((p) => <option key={p.id} value={p.phase}>{p.phase}</option>)}
-              </select>
-              <div style={{ fontSize: 11, color: S.muted, marginTop: 6, lineHeight: 1.5 }}>Overrides the displayed phase label to match this roadmap step, so the roadmap and AI recommendations stay in sync with it.</div>
-            </Fld>
+            <div style={{ border: "1px solid " + S.border, borderRadius: 8, padding: "10px 14px", marginBottom: 14 }}>
+              <div style={{ fontSize: 13 }}>Current phase: <strong>{program.phase || "not set"}</strong></div>
+              <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6, marginTop: 4 }}>
+                The phase changes when you activate the next phase's draft workouts on the Program Roadmap — that moves the phase and the client's workouts together. Saving here never changes it.
+              </div>
+              <div style={{ marginTop: 8, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+                <Btn sm teal onClick={onOpenRoadmap}>Open Program Roadmap</Btn>
+              </div>
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: "pointer", fontSize: 11, color: S.muted }}>Emergency override — change the phase label only</summary>
+                <div style={{ fontSize: 11, color: S.warning, margin: "8px 0", lineHeight: 1.5 }}>Use this only to correct a wrong label. The client's workouts will NOT change, so the label and the workouts can disagree.</div>
+                <select value={roadmapStepPhase} onChange={(e) => setRoadmapStepPhase(e.target.value)}
+                  style={{ width: "100%", background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 12px", fontSize: 13, outline: "none" }}>
+                  <option value="">Choose a roadmap phase…</option>
+                  {plannedPhases.map((p) => <option key={p.id} value={p.phase}>{p.phase}</option>)}
+                </select>
+                <input value={overrideReason} onChange={(e) => setOverrideReason(e.target.value)} placeholder="Reason (required)"
+                  style={{ width: "100%", marginTop: 6, background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "10px 12px", fontSize: 13, outline: "none" }} />
+                <div style={{ marginTop: 8 }}><Btn sm onClick={overridePhaseLabel} disabled={overriding || !roadmapStepPhase || !overrideReason.trim()}>{overriding ? "Overriding..." : "Override label"}</Btn></div>
+              </details>
+            </div>
           )}
           <Fld label="Program Start Date (drives Week X of Y on the client dashboard)">
             <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}

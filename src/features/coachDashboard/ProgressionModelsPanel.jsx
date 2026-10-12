@@ -68,7 +68,7 @@ export function ProgressionModelsPanel() {
 
   return (
     <div>
-      <PageTitle title="Progression Models" sub="The named-model toolkit the AI picks from per client and phase" />
+      <PageTitle title="AI program notes" sub="The named-model notes the AI picks from when it generates a program" />
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 16 }}>
         <Btn teal onClick={startNew}>+ New Model</Btn>
       </div>

@@ -1,8 +1,7 @@
 import { supabase } from "../supabaseClient.js";
 
 // Two-level nested phase model, replacing the old flat program.phase picker
-// (Onboarding/Accumulation/Intensification/Peak/Deload/Maintenance — see
-// PHASES in constants.js, left in place but no longer used by the picker).
+// (Onboarding/Accumulation/Intensification/Peak/Deload/Maintenance).
 // Top-level cycle: Foundation -> Accumulation -> Performance. Each top-level
 // block contains its own internal foundation -> accumulation ->
 // intensification -> performance -> deload sub-cycle. Performance is
@@ -27,10 +26,6 @@ export async function fetchProgressionModels() {
   return data || [];
 }
 
-export async function fetchActiveModelsForPhase(topPhase) {
-  const { data } = await supabase.from("progression_models").select("*").eq("top_phase", topPhase).eq("is_active", true).order("created_at");
-  return data || [];
-}
 
 export async function createProgressionModel(row) {
   return supabase.from("progression_models").insert(row).select().single();

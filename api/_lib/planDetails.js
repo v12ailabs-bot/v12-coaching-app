@@ -41,8 +41,3 @@ export function sanitizePlanDetails(raw, phases, programWeeks) {
   return out;
 }
 
-// Merge sanitized details into the coach's current phase rows without touching
-// anything else about them.
-export function mergePlanDetails(rows, details) {
-  return rows.map((r, i) => ({ ...r, ...(details[i] || {}) }));
-}
