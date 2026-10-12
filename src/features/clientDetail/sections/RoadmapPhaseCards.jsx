@@ -5,6 +5,7 @@ import { Modal, Btn, StatusBadge } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
 import { PhaseDraftModal } from "./PhaseDraftModal.jsx";
+import { assessPhase } from "../../../lib/phaseAssessment.js";
 
 // Coach-side phase cards (roadmap board): one card per saved phase with its
 // real status, dates, focus and exit-criteria checklist. Exit criteria are
@@ -69,7 +70,10 @@ function CriteriaEditor({ phase, onClose, onSaved }) {
   );
 }
 
-export function RoadmapPhaseCards({ rows, program, clientId, onCriteriaSaved, onEditDetails }) {
+const ASSESS_TONE = { ready_to_advance: "green", on_track: "green", watch: "amber", behind: "red", hold: "amber", review: "amber", insufficient_data: "neutral", not_started: "neutral", not_assessable: "neutral" };
+const ASSESS_LABEL = { ready_to_advance: "Ready to advance", on_track: "On track", watch: "Watch", behind: "Behind", hold: "Hold / extend", review: "Review", insufficient_data: "Not enough data", not_started: "Not started", not_assessable: "Not assessable" };
+
+export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteriaSaved, onEditDetails }) {
   const [editing, setEditing] = useState(null);
   const [drafting, setDrafting] = useState(null);
   const phases = rows.map((r, idx) => ({ ...r, _idx: idx })).filter((r) => r.phase.trim());
@@ -110,6 +114,22 @@ export function RoadmapPhaseCards({ rows, program, clientId, onCriteriaSaved, on
                   <span style={{ textDecoration: c.status === "na" ? "line-through" : "none" }}>{c.label}</span>
                 </div>
               ))}
+              {status === "current" && (() => {
+                const a = assessPhase({ phase: p, programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null });
+                if (a.status === "not_assessable") return null;
+                const nextName = phases[i + 1]?.phase;
+                return (
+                  <div style={{ border: "1px dashed " + S.border, borderRadius: RADIUS.md, padding: "8px 10px", fontSize: 11, lineHeight: 1.5 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                      <span style={{ textTransform: "uppercase", letterSpacing: 1, color: S.muted, fontSize: 10 }}>Plan vs actual · advisory</span>
+                      <StatusBadge label={ASSESS_LABEL[a.status]} tone={ASSESS_TONE[a.status]} />
+                    </div>
+                    <div style={{ color: S.text }}>{a.headline}</div>
+                    {a.reasons.map((r, k) => <div key={k} style={{ color: S.muted }}>• {r}</div>)}
+                    {a.status === "ready_to_advance" && nextName && <div style={{ color: S.accent2, marginTop: 4 }}>Next step: open Draft workouts on "{nextName}" to review and activate it.</div>}
+                  </div>
+                );
+              })()}
               {(p.checkpoints || []).length > 0 && (
                 <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.5 }}>
                   {(p.checkpoints || []).map((c, k) => <div key={k}>◆ {c.label || CHECKPOINT_LABELS[c.type]} — {checkpointWhen(c, program.start_date)}</div>)}
