@@ -325,6 +325,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [revisions, setRevisions] = useState([]);
   const [genSource, setGenSource] = useState("manual"); // becomes 'ai_generated' after Generate Roadmap, until saved
   const [genDetails, setGenDetails] = useState(false);
+  const [tracking, setTracking] = useState({ daily: [], nutCtx: null }); // evidence for the plan-vs-actual assessment
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -345,6 +346,14 @@ export function ProgramRoadmapPlanner({ clientId }) {
       ]);
       const planBy = Object.fromEntries((plans || []).map((x) => [x.phase_id, x]));
       setRevisions(revs || []);
+      if (prog.start_date) {
+        const [{ data: dly }, { data: plan }, { data: ml }] = await Promise.all([
+          supabase.from("daily_checkins").select("date,workout,diet,calories,protein_g,carbs_g,fats_g").eq("client_id", clientId).gte("date", prog.start_date).order("date"),
+          supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", clientId).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
+          supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", clientId).gte("date", prog.start_date),
+        ]);
+        setTracking({ daily: dly || [], nutCtx: { plan: plan || null, mealLogs: ml || [] } });
+      }
       setRows((planned || []).map((p) => ({
         id: p.id,
         checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [],
@@ -508,7 +517,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} onEditDetails={setEditingDetails}
+          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails}
             onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {rows.map((r, i) => {
             const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
