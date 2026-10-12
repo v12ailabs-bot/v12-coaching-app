@@ -9,6 +9,7 @@ import { milestoneProgress } from "../../lib/milestones.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { InterventionModal } from "./InterventionModal.jsx";
+import { CheckpointAlertsPanel } from "./CheckpointAlertsPanel.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
 import { PhaseAlertsPanel } from "./PhaseAlertsPanel.jsx";
@@ -56,6 +57,7 @@ export function CoachHome({ setPage, openClient }) {
   const [reviewClientId, setReviewClientId] = useState(null);
   const [programByClient, setProgramByClient] = useState({});
   const [phaseAlerts, setPhaseAlerts] = useState([]);
+  const [checkpointAlerts, setCheckpointAlerts] = useState([]);
   const [onboardingAlerts, setOnboardingAlerts] = useState([]);
   const [milestoneAlerts, setMilestoneAlerts] = useState([]);
   // Last real activity per client, from whichever of the four data sources a
@@ -190,6 +192,7 @@ export function CoachHome({ setPage, openClient }) {
 
       const programMap = {};
       const phaseAlertsList = [];
+      const checkpointAlertsList = [];
       if (allIds.length) {
         const { data: progs } = await supabase.from("programs").select("id,client_id,name,phase,start_date").in("client_id", allIds).order("created_at", { ascending: false });
         (progs || []).forEach((p) => { if (!programMap[p.client_id]) programMap[p.client_id] = p; });
@@ -210,6 +213,23 @@ export function CoachHome({ setPage, openClient }) {
           const today = todayStr();
           currentPrograms.forEach((prog) => {
             const phases = phasesByProgram[prog.id] || [];
+            // Plan checkpoints (any phase): due within 7 days, or overdue by up
+            // to 21, and not marked done. Nutrition reviews carry the client's
+            // current nutrition score so the coach sees the evidence at a glance.
+            if (prog.start_date) {
+              phases.forEach((ph) => (ph.checkpoints || []).forEach((cp) => {
+                const day = Number(cp.day);
+                if (cp.done || !Number.isFinite(day)) return;
+                const due = new Date(prog.start_date + "T00:00:00Z");
+                due.setUTCDate(due.getUTCDate() + day);
+                const daysUntil = Math.round((new Date(due.toISOString().slice(0, 10)) - new Date(today)) / 86400000);
+                if (daysUntil > 7 || daysUntil < -21) return;
+                checkpointAlertsList.push({
+                  clientId: prog.client_id, label: cp.label || cp.type, type: cp.type, phase: ph.phase, daysUntil,
+                  nutritionPct: cp.type === "nutrition_review" ? (nutritionStatusFrom(grouped[prog.client_id] || [], nutMap[prog.client_id], 30).score ?? null) : null,
+                });
+              }));
+            }
             const idx = phases.findIndex((ph) => ph.phase === prog.phase);
             if (idx === -1 || !prog.start_date) return;
             const current = phases[idx];
@@ -250,7 +270,7 @@ export function CoachHome({ setPage, openClient }) {
       setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
       setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
-      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setNutByClient(nutMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
+      setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setNutByClient(nutMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setCheckpointAlerts(checkpointAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
     })();
   }, []);
 
@@ -423,7 +443,7 @@ export function CoachHome({ setPage, openClient }) {
         progressSeries={progressSeries} progressDeltaPct={deltaOf(progressSeries)}
         checkinCounts={checkinCounts} totalCoached={coachedList.length} totalCheckinsThisWeek={totalCheckinsThisWeek}
         needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts}
-        phaseAlerts={phaseAlerts} messages={messages}
+        phaseAlerts={phaseAlerts} checkpointAlerts={checkpointAlerts} messages={messages}
         programGroups={programGroups}
         nameOf={nameOf} openClient={openClient} setPage={setPage}
         clientIds={coachedList.map((c) => c.id)}
@@ -463,6 +483,7 @@ export function CoachHome({ setPage, openClient }) {
           <OnboardingAlertsPanel alerts={onboardingAlerts} nameOf={nameOf} openClient={openClient} />
           <MilestoneAlertsPanel alerts={milestoneAlerts} nameOf={nameOf} openClient={openClient} />
           <PhaseAlertsPanel alerts={phaseAlerts} nameOf={nameOf} openClient={openClient} />
+          <CheckpointAlertsPanel alerts={checkpointAlerts} nameOf={nameOf} openClient={openClient} />
           <ClientMessagesPanel messages={messages} nameOf={nameOf} openClient={openClient} />
         </div>
       </div>

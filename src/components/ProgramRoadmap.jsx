@@ -144,7 +144,7 @@ export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = fal
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Checkpoints</div>
               {openPhase.checkpoints.map((c, i) => (
-                <div key={i} style={{ fontSize: 13, color: S.text, padding: "3px 0" }}>◆ {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, startDate)}</span></div>
+                <div key={i} style={{ fontSize: 13, color: S.text, padding: "3px 0" }}>{c.done ? "✓" : "◆"} {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, startDate)}</span></div>
               ))}
             </div>
           )}

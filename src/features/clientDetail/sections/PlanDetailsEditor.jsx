@@ -23,7 +23,7 @@ export function PlanDetailsEditor({ phase, onSave, onClose }) {
   const save = () => onSave({
     plan_rationale: rationale.trim(),
     planned_changes: changes.filter((c) => c.reason?.trim() && (c.from?.trim() || c.to?.trim())).map((c) => ({ action: c.action || "replace", from: (c.from || "").trim(), to: (c.to || "").trim(), reason: c.reason.trim() })),
-    checkpoints: checkpoints.filter((c) => c.label?.trim() && c.day !== "" && c.day != null && Number(c.day) >= 0).map((c) => ({ type: c.type || "reassessment", label: c.label.trim(), day: Math.round(Number(c.day)) })),
+    checkpoints: checkpoints.filter((c) => c.label?.trim() && c.day !== "" && c.day != null && Number(c.day) >= 0).map((c) => ({ type: c.type || "reassessment", label: c.label.trim(), day: Math.round(Number(c.day)), ...(c.done ? { done: true, done_at: c.done_at || null } : {}) })),
   });
 
   return (

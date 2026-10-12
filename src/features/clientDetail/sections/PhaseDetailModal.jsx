@@ -56,6 +56,15 @@ export function PhaseDetailModal({ phase, program, clientId, status, assessment,
     })();
   }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Marks a checkpoint done / not done. Writes only this phase's checkpoints
+  // column (the rest of the roadmap draft is untouched in the database).
+  const toggleCheckpoint = async (idx) => {
+    const next = (phase.checkpoints || []).map((c, i) => (i !== idx ? c : c.done ? { ...c, done: false, done_at: null } : { ...c, done: true, done_at: new Date().toISOString() }));
+    const { error } = await supabase.from("program_phases").update({ checkpoints: next }).eq("id", phase.id);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    onPatch(phase.id, { checkpoints: next });
+  };
+
   const saveNotes = async () => {
     setSaving(true); setMsg(null);
     const cleanNote = note.trim() || null, cleanRat = rationale.trim() || null;
@@ -114,7 +123,13 @@ export function PhaseDetailModal({ phase, program, clientId, status, assessment,
                 {assessment.reasons.map((r, i) => <div key={i} style={{ color: S.muted }}>• {r}</div>)}
               </div>
             )}
-            {(phase.checkpoints || []).length > 0 && (<><div style={lbl}>Checkpoints</div>{phase.checkpoints.map((c, i) => <div key={i} style={{ fontSize: 13 }}>◆ {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, program.start_date)}</span></div>)}</>)}
+            {(phase.checkpoints || []).length > 0 && (<><div style={lbl}>Checkpoints</div>{phase.checkpoints.map((c, i) => (
+              <div key={i} style={{ fontSize: 13, display: "flex", gap: 8, alignItems: "center", padding: "2px 0" }}>
+                <span style={{ color: c.done ? S.success : S.muted }}>{c.done ? "✓" : "◆"}</span>
+                <span style={{ flex: 1, textDecoration: c.done ? "line-through" : "none", color: c.done ? S.muted : S.text }}>{c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, program.start_date)}</span></span>
+                {phase.id && <Btn sm onClick={() => toggleCheckpoint(i)}>{c.done ? "Undo" : "Mark done"}</Btn>}
+              </div>
+            ))}</>)}
             <div style={{ marginTop: 14 }}><Btn sm onClick={onEditProgram}>Edit phase details</Btn></div>
           </>
         )}

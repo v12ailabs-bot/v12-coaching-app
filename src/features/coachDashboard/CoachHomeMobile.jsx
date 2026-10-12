@@ -127,7 +127,7 @@ function CheckInOverviewCompact({ counts, totalCheckinsThisWeek }) {
 // client who'd simply asked their coach a question showed up as "At Risk"
 // with nothing actually wrong. Now every non-risk source caps out at
 // "Monitor" no matter its internal tone.
-function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf }) {
+function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts = [], messages, nameOf }) {
   const byClient = {};
   const ensure = (id, name) => (byClient[id] = byClient[id] || { clientId: id, name, reasons: [], severity: 0, atRisk: false });
 
@@ -136,6 +136,15 @@ function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlert
     n.flags.forEach((f) => g.reasons.push({ source: "Risk Assessment", label: f.label, detail: f.detail, action: f.action, tone: f.tone === "red" ? "red" : "amber" }));
     if (n.riskLevel === "High") g.atRisk = true;
     g.severity = Math.max(g.severity, n.riskLevel === "High" ? 4 : 3);
+  });
+  checkpointAlerts.forEach((a) => {
+    const g = ensure(a.clientId, nameOf(a.clientId));
+    g.reasons.push({
+      source: "Plan Checkpoint", label: a.label,
+      detail: `${a.phase} · ${a.daysUntil < 0 ? `${Math.abs(a.daysUntil)}d overdue` : a.daysUntil === 0 ? "due today" : `due in ${a.daysUntil}d`}${a.nutritionPct != null ? ` · nutrition ${a.nutritionPct}%` : ""}`,
+      action: null, tone: "amber",
+    });
+    g.severity = Math.max(g.severity, 2);
   });
   phaseAlerts.forEach((a) => {
     const g = ensure(a.clientId, nameOf(a.clientId));
@@ -165,9 +174,9 @@ function buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlert
   return Object.values(byClient).sort((a, b) => b.severity - a.severity);
 }
 
-function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf, openClient, clientIds, onReview }) {
+function AlertsAndMessages({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, messages, nameOf, openClient, clientIds, onReview }) {
   const [openId, setOpenId] = useState(null);
-  const groups = buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages, nameOf });
+  const groups = buildAlertGroups({ needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, messages, nameOf });
   const colorOf = (id) => COLORS[Math.max(0, clientIds.indexOf(id)) % COLORS.length];
   const flaggedClients = new Set(needs.map((n) => n.client.id)).size;
   return (
@@ -270,7 +279,7 @@ export function CoachHomeMobile({
   rows,
   checkinSeries, checkinDeltaPct, progressSeries, progressDeltaPct,
   checkinCounts, totalCoached, totalCheckinsThisWeek,
-  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, messages,
+  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, messages,
   programGroups,
   nameOf, openClient, setPage, clientIds, onReview,
   programSubscriberRows, monthlyRevenue, revenueTrendPct,
@@ -282,7 +291,7 @@ export function CoachHomeMobile({
       <ClientOverviewRow rows={rows} openClient={openClient} setPage={setPage} />
       <PerformanceOverview checkinSeries={checkinSeries} checkinDeltaPct={checkinDeltaPct} progressSeries={progressSeries} progressDeltaPct={progressDeltaPct} />
       <CheckInOverviewCompact counts={checkinCounts} totalCheckinsThisWeek={totalCheckinsThisWeek} />
-      <AlertsAndMessages needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts} phaseAlerts={phaseAlerts} messages={messages} nameOf={nameOf} openClient={openClient} clientIds={clientIds} onReview={onReview} />
+      <AlertsAndMessages needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts} phaseAlerts={phaseAlerts} checkpointAlerts={checkpointAlerts} messages={messages} nameOf={nameOf} openClient={openClient} clientIds={clientIds} onReview={onReview} />
       <ProgramDistributionDonut groups={programGroups} />
       <div style={{ marginBottom: 14 }}><RecentActivityFeed nameOf={nameOf} clientIds={clientIds} /></div>
       <div style={{ marginBottom: 14 }}><RecentNotes nameOf={nameOf} openClient={openClient} clientIds={clientIds} /></div>
