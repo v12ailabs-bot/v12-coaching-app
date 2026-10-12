@@ -89,7 +89,7 @@ function gate(methodId, config, currentLoad, rows, { needsRepRange }) {
 // (e.g. progress only if every set was at RIR <= 2). For RPE the "max" is the
 // highest effort allowed (RPE <= 9 means don't progress off grinders), the
 // same field meaning: the set must be <= max.
-function effortCheck(config, sets) {
+export function effortCheck(config, sets) {
   const e = config.effort;
   if (!e || !e.metric) return { ok: true, missing: [], reasons: [] };
   if (e.metric !== "rir" && e.metric !== "rpe") return { ok: false, invalid: true, missing: [], reasons: [`Unknown effort metric "${e.metric}".`] };
