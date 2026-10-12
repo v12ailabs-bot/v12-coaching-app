@@ -9,6 +9,7 @@ import { milestoneProgress } from "../../lib/milestones.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { InterventionModal } from "./InterventionModal.jsx";
+import { yesterdayDate } from "../../lib/dates.js";
 import { CheckpointAlertsPanel } from "./CheckpointAlertsPanel.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
@@ -226,7 +227,7 @@ export function CoachHome({ setPage, openClient }) {
                 if (daysUntil > 7 || daysUntil < -21) return;
                 checkpointAlertsList.push({
                   clientId: prog.client_id, label: cp.label || cp.type, type: cp.type, phase: ph.phase, daysUntil,
-                  nutritionPct: cp.type === "nutrition_review" ? (nutritionStatusFrom(grouped[prog.client_id] || [], nutMap[prog.client_id], 30).score ?? null) : null,
+                  nutritionPct: cp.type === "nutrition_review" ? (nutritionStatusFrom(grouped[prog.client_id] || [], nutMap[prog.client_id], 30, yesterdayDate()).score ?? null) : null, // as of yesterday: coaches read next day
                 });
               }));
             }

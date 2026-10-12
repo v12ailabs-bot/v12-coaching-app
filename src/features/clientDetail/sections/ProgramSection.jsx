@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { readJson } from "../../../lib/apiJson.js";
 import { S } from "../../../theme.jsx";
-import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from "../../../components/ui/index.js";
+import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState, Modal } from "../../../components/ui/index.js";
 import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
@@ -329,6 +329,8 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [genDetails, setGenDetails] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [wizardStart, setWizardStart] = useState(0);
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [savedSnap, setSavedSnap] = useState(null); // canonical snapshot of what is saved, to detect unsaved edits
   const [tracking, setTracking] = useState({ daily: [], nutCtx: null }); // evidence for the plan-vs-actual assessment
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -358,6 +360,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
         ]);
         setTracking({ daily: dly || [], nutCtx: { plan: plan || null, mealLogs: ml || [] } });
       }
+      setSavedSnap(canonicalJson(planSnapshot((planned || []).map((p) => ({ ...p, week_start: p.week_start ?? "", week_end: p.week_end ?? "", exit_criteria: p.exit_criteria || [], checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [] })))));
       setRows((planned || []).map((p) => ({
         id: p.id,
         checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [],
@@ -530,7 +533,12 @@ export function ProgramRoadmapPlanner({ clientId }) {
     <Card style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <CardTitle>Program Roadmap</CardTitle>
-        {program && <Btn sm teal onClick={() => { setWizardStart(0); setWizardOpen(true); }}>Edit Program</Btn>}
+        {program && (
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn sm teal onClick={() => { setWizardStart(0); setWizardOpen(true); }}>Edit Program</Btn>
+            <Btn sm onClick={() => setEditorOpen(true)}>Edit &amp; Generate Roadmap</Btn>
+          </div>
+        )}
       </div>
       {!program ? (
         <div style={{ fontSize: 13, color: S.muted }}>No program yet. Generate or assign a program first, then plan its roadmap here.</div>
@@ -559,11 +567,29 @@ export function ProgramRoadmapPlanner({ clientId }) {
               </div>
             );
           })()}
+          {savedSnap !== null && canonicalJson(planSnapshot(rows)) !== savedSnap && (
+            <div style={{ border: "1px solid " + S.warning, borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+              <span style={{ color: S.warning, fontWeight: 700 }}>Unsaved roadmap changes</span>
+              <span style={{ color: S.muted }}>The cards below show your draft, not what is saved or what the client sees.</span>
+              <Btn sm onClick={() => setEditorOpen(true)}>Open editor to save</Btn>
+            </div>
+          )}
+          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails} onPatchPhase={(id, patch) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))} onEditProgram={() => { setWizardStart(1); setWizardOpen(true); }}
+            onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
+          {wizardOpen && <RoadmapWizard program={program} initialRows={rows} startAt={wizardStart} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
+          {editingDetails != null && rows[editingDetails] && (
+            <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
+              onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
+          )}
+          {addingPhase && (
+            <AddPhaseModal rows={rows} programWeeks={program.weeks || null} onClose={() => setAddingPhase(false)}
+              onAdd={(idx, draft) => { setRows((r) => [...r.slice(0, idx), draft, ...r.slice(idx)]); setAddingPhase(false); setMsg({ ok: true, text: "Phase added to the draft — click Save Roadmap to publish." }); }} />
+          )}
+          {editorOpen && (
+            <Modal title="Edit & Generate Roadmap" onClose={() => setEditorOpen(false)} width={860}>
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails} onPatchPhase={(id, patch) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))} onEditProgram={() => { setWizardStart(1); setWizardOpen(true); }}
-            onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {rows.map((r, i) => {
             const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
             return (
@@ -636,15 +662,6 @@ export function ProgramRoadmapPlanner({ clientId }) {
               {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
             </div>
           )}
-          {wizardOpen && <RoadmapWizard program={program} initialRows={rows} startAt={wizardStart} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
-          {editingDetails != null && rows[editingDetails] && (
-            <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
-              onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
-          )}
-          {addingPhase && (
-            <AddPhaseModal rows={rows} programWeeks={program.weeks || null} onClose={() => setAddingPhase(false)}
-              onAdd={(idx, draft) => { setRows((r) => [...r.slice(0, idx), draft, ...r.slice(idx)]); setAddingPhase(false); setMsg({ ok: true, text: "Phase added to the draft — click Save Roadmap to publish." }); }} />
-          )}
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
             <Btn onClick={save} disabled={saving || review.errors.some((x) => x.blocking !== false)}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
             <Btn teal onClick={generateRoadmap} disabled={generating}>{generating ? "Generating..." : "Generate Roadmap"}</Btn>
@@ -657,6 +674,8 @@ export function ProgramRoadmapPlanner({ clientId }) {
               Generated from: {genInfo.dataUsed.join(", ") || "limited client data"}
               {genInfo.confidence && ` · Confidence: ${genInfo.confidence}`} — review and edit before saving.
             </div>
+          )}
+            </Modal>
           )}
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
