@@ -17,6 +17,56 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
   const [dirty, setDirty] = useState(false);
+  // Activation: `preview` is the dry-run result (computed by the SAME database
+  // function that applies it, then rolled back), shown for confirmation.
+  const [preview, setPreview] = useState(null);
+  const [overrideNote, setOverrideNote] = useState("");
+  const [activating, setActivating] = useState(false);
+  const [transition, setTransition] = useState(null); // latest applied transition for this program
+  const [undoing, setUndoing] = useState(false);
+
+  const loadTransition = async () => {
+    const { data } = await supabase.from("phase_transitions").select("*").eq("program_id", program.id).eq("status", "applied").order("applied_at", { ascending: false }).limit(1).maybeSingle();
+    setTransition(data || null);
+  };
+  useEffect(() => { loadTransition(); }, [phase.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const rpcError = (error) => (error?.message || "").replace(/^EXIT_CRITERIA_INCOMPLETE: /, "");
+  const startActivation = async () => {
+    setMsg(null); setActivating(true);
+    const { data, error } = await supabase.rpc("activate_phase_draft", { p_phase_id: phase.id, p_override_note: null, p_dry_run: true });
+    // An incomplete-exit-criteria refusal still needs the preview, so ask again
+    // with a placeholder just to preview; the real call below requires the note.
+    if (error && /EXIT_CRITERIA_INCOMPLETE/.test(error.message)) {
+      const r2 = await supabase.rpc("activate_phase_draft", { p_phase_id: phase.id, p_override_note: "(preview)", p_dry_run: true });
+      setActivating(false);
+      if (r2.error) { setMsg({ ok: false, text: rpcError(r2.error) }); return; }
+      setPreview(r2.data); return;
+    }
+    setActivating(false);
+    if (error) { setMsg({ ok: false, text: rpcError(error) }); return; }
+    setPreview(data);
+  };
+  const confirmActivation = async () => {
+    setActivating(true); setMsg(null);
+    const { data, error } = await supabase.rpc("activate_phase_draft", { p_phase_id: phase.id, p_override_note: overrideNote.trim() || null, p_dry_run: false });
+    setActivating(false);
+    if (error) { setMsg({ ok: false, text: rpcError(error) }); return; }
+    setPreview(null); setOverrideNote("");
+    setDraft((d) => ({ ...d, status: "approved" }));
+    setMsg({ ok: true, text: `"${data.to_phase}" is now the client's active phase and their workouts have been updated.` });
+    loadTransition();
+  };
+  const undo = async () => {
+    if (!window.confirm("Undo this phase transition? The client's workouts and phase go back to how they were. Any sets already logged on the new exercises stay in their history.")) return;
+    setUndoing(true); setMsg(null);
+    const { error } = await supabase.rpc("undo_phase_transition", { p_transition_id: transition.id, p_note: null });
+    setUndoing(false);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    setDraft((d) => ({ ...d, status: "draft" }));
+    setMsg({ ok: true, text: "Transition undone. The previous workouts and phase are active again." });
+    loadTransition();
+  };
 
   useEffect(() => {
     supabase.from("phase_prescription_drafts").select("*").eq("phase_id", phase.id).maybeSingle().then(({ data }) => {
@@ -98,7 +148,51 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
             <StatusBadge label={approved ? "approved" : "draft"} tone={approved ? "green" : "amber"} />
             {msg && <span style={{ fontSize: 12, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
+
+          {!approved && (
+            <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 14 }}>
+              <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Make this the active phase</div>
+              <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6, marginBottom: 8 }}>Changes the client's real workouts and current phase. You'll see exactly what changes first, and you can undo it afterwards.</div>
+              <Btn teal onClick={startActivation} disabled={activating || dirty || draft.exercises.some((e) => !String(e.name).trim())}>{activating && !preview ? "Checking..." : "Review & activate…"}</Btn>
+              {dirty && <span style={{ fontSize: 11, color: S.warning, marginLeft: 10 }}>Save the draft first.</span>}
+            </div>
+          )}
+          {approved && transition && transition.phase_id === phase.id && (
+            <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 14, fontSize: 12, color: S.muted, lineHeight: 1.6 }}>
+              Activated {new Date(transition.applied_at).toLocaleString()}{transition.exit_criteria_override ? ` · exit criteria overridden: "${transition.override_note}"` : ""}.
+              <div style={{ marginTop: 8 }}><Btn sm danger onClick={undo} disabled={undoing}>{undoing ? "Undoing..." : "Undo this transition"}</Btn></div>
+            </div>
+          )}
         </>
+      )}
+      {preview && (
+        <Modal title={`Activate "${preview.to_phase}"?`} onClose={() => setPreview(null)} width={620}>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 12, lineHeight: 1.6 }}>The client's current phase "{preview.from_phase}" becomes "{preview.to_phase}", and their workouts change as listed. Nothing is deleted — removed and replaced exercises are retired and keep their logged history.</div>
+          {[
+            ["Updated in place (history continues)", (preview.changes.updated || []).map((u) => `${u.name}: ${u.before.sets}×${u.before.reps} ${u.before.day_of_week || "—"} → ${u.after.sets}×${u.after.reps} ${u.after.day_of_week || "—"}`)],
+            ["Replaced", (preview.changes.replaced || []).map((r) => `${r.from} → ${r.to}`)],
+            ["Added", (preview.changes.added || []).map((a) => a.name)],
+            ["Retired (removed)", (preview.changes.retired || []).map((r) => r.name)],
+          ].map(([label, items]) => items.length > 0 && (
+            <div key={label} style={{ marginBottom: 10 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 3 }}>{label} ({items.length})</div>
+              {items.map((t, i) => <div key={i} style={{ fontSize: 13 }}>• {t}</div>)}
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>{preview.changes.kept} exercise{preview.changes.kept === 1 ? "" : "s"} unchanged.</div>
+          {preview.incomplete_exit_criteria > 0 && (
+            <div style={{ border: "1px solid " + S.warning, borderRadius: RADIUS.md, padding: "10px 12px", marginBottom: 12 }}>
+              <div style={{ fontSize: 12, color: S.warning, fontWeight: 700, marginBottom: 6 }}>{preview.incomplete_exit_criteria} exit criteri{preview.incomplete_exit_criteria === 1 ? "on" : "a"} of "{preview.from_phase}" {preview.incomplete_exit_criteria === 1 ? "is" : "are"} not complete</div>
+              <div style={{ fontSize: 12, color: S.text, marginBottom: 6 }}>You can still activate, but a note is required and is saved with the transition.</div>
+              <textarea rows={2} value={overrideNote} onChange={(e) => setOverrideNote(e.target.value)} placeholder="Why are you moving on now?" style={{ ...input, width: "100%", resize: "vertical" }} />
+            </div>
+          )}
+          {msg && !msg.ok && <div style={{ fontSize: 12, color: S.danger, marginBottom: 8 }}>{msg.text}</div>}
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn sm onClick={() => setPreview(null)} disabled={activating}>Cancel</Btn>
+            <Btn onClick={confirmActivation} disabled={activating || (preview.incomplete_exit_criteria > 0 && !overrideNote.trim())}>{activating ? "Activating..." : "Activate phase"}</Btn>
+          </div>
+        </Modal>
       )}
     </Modal>
   );
