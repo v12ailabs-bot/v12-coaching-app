@@ -6,6 +6,7 @@ import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
 import { PhaseDraftModal } from "./PhaseDraftModal.jsx";
 import { assessPhase } from "../../../lib/phaseAssessment.js";
+import { PhaseDetailModal } from "./PhaseDetailModal.jsx";
 
 // Coach-side phase cards (roadmap board): one card per saved phase with its
 // real status, dates, focus and exit-criteria checklist. Exit criteria are
@@ -73,9 +74,10 @@ function CriteriaEditor({ phase, onClose, onSaved }) {
 const ASSESS_TONE = { ready_to_advance: "green", on_track: "green", watch: "amber", behind: "red", hold: "amber", review: "amber", insufficient_data: "neutral", not_started: "neutral", not_assessable: "neutral" };
 const ASSESS_LABEL = { ready_to_advance: "Ready to advance", on_track: "On track", watch: "Watch", behind: "Behind", hold: "Hold / extend", review: "Review", insufficient_data: "Not enough data", not_started: "Not started", not_assessable: "Not assessable" };
 
-export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteriaSaved, onEditDetails }) {
+export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteriaSaved, onEditDetails, onPatchPhase, onEditProgram }) {
   const [editing, setEditing] = useState(null);
   const [drafting, setDrafting] = useState(null);
+  const [detail, setDetail] = useState(null); // { phase, status }
   const phases = rows.map((r, idx) => ({ ...r, _idx: idx })).filter((r) => r.phase.trim());
   if (!phases.length) return null;
   const currentIndex = phases.findIndex((p) => p.phase === program.phase);
@@ -97,7 +99,7 @@ export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteri
                   {status === "complete" ? "✓" : i + 1}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.phase}</div>
+                  <button type="button" onClick={() => setDetail({ idx: p._idx, status })} title="Open phase details" style={{ background: "none", border: "none", padding: 0, cursor: "pointer", color: S.text, fontWeight: 700, fontSize: 14, textAlign: "left", maxWidth: "100%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{p.phase} ›</button>
                   <div style={{ fontSize: 11, color: S.muted }}>{range || (p.week_start !== "" ? `Weeks ${p.week_start}–${p.week_end}` : "No dates yet")}{weeks ? ` · ${weeks} wk${weeks === 1 ? "" : "s"}` : ""}</div>
                 </div>
                 <StatusBadge label={status === "complete" ? "Complete" : status === "current" ? "Current" : "Upcoming"} tone={status === "complete" ? "green" : status === "current" ? "amber" : "neutral"} />
@@ -154,6 +156,14 @@ export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteri
           );
         })}
       </div>
+      {detail && rows[detail.idx] && (
+        <PhaseDetailModal phase={rows[detail.idx]} program={program} clientId={clientId} status={detail.status}
+          assessment={detail.status === "current" ? assessPhase({ phase: rows[detail.idx], programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null }) : null}
+          onClose={() => setDetail(null)} onPatch={onPatchPhase}
+          onEditProgram={() => { setDetail(null); onEditProgram && onEditProgram(); }}
+          onEditCriteria={() => { const ph = rows[detail.idx]; setDetail(null); setEditing(ph); }}
+          onOpenDraft={() => { const ph = rows[detail.idx]; setDetail(null); setDrafting(ph); }} />
+      )}
       {drafting && <PhaseDraftModal phase={drafting} program={program} clientId={clientId} onClose={() => setDrafting(null)} />}
       {editing && <CriteriaEditor phase={editing} onClose={() => setEditing(null)} onSaved={onCriteriaSaved} />}
     </>
