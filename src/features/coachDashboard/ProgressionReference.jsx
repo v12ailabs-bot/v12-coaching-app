@@ -124,6 +124,19 @@ function MethodCard({ m }) {
           {m.eligibility && m.status === "calculated" && (<><div style={lbl}>When it will recommend a change</div><div style={{ fontSize: 12, lineHeight: 1.6 }}>{m.eligibility}</div></>)}
           {m.rules?.length > 0 && (<><div style={lbl}>The rules</div>{m.rules.map((x, i) => <div key={i} style={{ fontSize: 12, padding: "2px 0" }}>{i + 1}. {x}</div>)}</>)}
           {m.adjustmentTable && <AprePicture method={m} />}
+          {m.waves && (
+            <div>
+              <div style={lbl}>Dynamic-effort waves (3 weeks, % of the 1RM)</div>
+              {Object.entries(m.waves).map(([k, w]) => (
+                <div key={k} style={{ fontSize: 12, padding: "4px 0", borderBottom: "1px solid " + S.border }}>
+                  <b>{w.label}</b>: {w.weeks.map((x) => `${x.sets}×${x.reps}${x.total ? " @ " + x.total + "%" : ""}`).join("  →  ")}{w.accommodation ? ` (bar = total − ${w.accommodation}% bands/chains)` : ""}
+                  <div style={{ color: S.muted }}>{w.note}</div>
+                </div>
+              ))}
+              <div style={lbl}>Sources read for this method</div>
+              {m.sources.map((x, i) => <div key={i} style={{ fontSize: 11, color: S.muted }}>• {x}</div>)}
+            </div>
+          )}
           {m.id === "performance_taper" && (
             <div style={{ fontSize: 12, color: S.muted, marginTop: 8 }}>Template defaults (suggestions only, never imposed): {TAPER_TEMPLATE.suggestedDurationDays.join("–")}-day window, {TAPER_TEMPLATE.suggestedReductionPct.join("–")}% volume reduction. Create tapers from a client's Overview page.</div>
           )}

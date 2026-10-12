@@ -4,6 +4,7 @@ import {
 import { evaluateApre, APRE_VARIANTS, APRE_SOURCES } from "./apre.js";
 import { evaluateDensity, DENSITY_MODES, WORK_UNITS } from "./density.js";
 import { planTaper, validateTaperConfig, TAPER_TEMPLATE } from "./taper.js";
+import { evaluateConjugate, DE_WAVES, CONJUGATE_SOURCES } from "./conjugate.js";
 
 // Structured progression-method registry. `status`:
 //   calculated     — the engine computes a recommendation from logged data
@@ -173,13 +174,37 @@ export const METHODS = {
 
   conjugate: {
     id: "conjugate",
-    name: "Conjugate (Max/Dynamic Effort)",
-    status: "not-implemented",
-    purpose: "Rotate max-effort and dynamic-effort days.",
-    requiredInputs: [], prescriptionParameters: [], eligibility: "Not defined.", rules: [], validation: [],
-    missing: ["No structured rules have been defined for this method."],
-    workedExample: null,
-    evaluate: (input) => evaluateReferenceOnly("conjugate", METHODS.conjugate),
+    name: "Conjugate (Max / Dynamic Effort)",
+    status: "calculated",
+    purpose: "Westside-style: a rotating heavy 1-3 rep max-effort exercise, and speed work on a 3-week wave of percentages of the 1RM. Set the role per exercise.",
+    requiredInputs: ["role (max_effort | dynamic_effort)", "Dynamic effort: a current 1RM, a wave, the wave start date, a loadable increment", "Max effort: logged working sets of 1-3 reps; the variation pool, rotation length and start date for scheduling; the 1RM for the fatigue watch"],
+    prescriptionParameters: [
+      { key: "role", type: "max_effort|dynamic_effort", required: true },
+      { key: "lift", type: "text", required: true, note: "Groups the max-effort variations of one lift (e.g. squat) so the fatigue watch sees them together." },
+      { key: "variations / rotationWeeks / rotationStartDate", type: "list, 1-6, date", required: false, note: "Westside's own article rotates every week; other published programs use 1-3. You choose (default 1)." },
+      { key: "repRange", type: "[min,max]", required: false, note: "Default 1-3 reps." },
+      { key: "highIntensityPct / maxWeeksAtHighIntensity", type: "numbers", required: false, note: "Default 90% and 3 weeks (Westside's warning about CNS fatigue)." },
+      { key: "wave / waveStartDate / accommodationPct / customPercents / restSec", type: "dynamic effort", required: "dynamic_effort", note: `Waves: ${Object.keys(DE_WAVES).join(", ")}, or custom. Deadlift percentages are NOT published: you supply customPercents. Rest is not published: optional restSec.` },
+      { key: "accommodatingResistance", type: "true|false", required: "repeated_effort_upper", note: "Westside: reduce percentages by 5 without bands/chains." },
+      { key: "increment / equipment", type: "number|string", required: "dynamic_effort" },
+    ],
+    waves: DE_WAVES,
+    sources: CONJUGATE_SOURCES,
+    eligibility: "Dynamic effort needs a current 1RM, a wave and its start date. Max effort needs at least one logged working set of 1-3 reps.",
+    rules: [
+      "Dynamic effort: load = (total % − accommodating-resistance %) × 1RM, rounded to the increment; the week of the 3-week wave comes from the wave start date and restarts each wave. Lower wave 12x2 / 10x2 / 8x2 at 75 / 80 / 85% total (50 / 55 / 60% bar + 25% bands); upper wave 9x3 at 50 / 55 / 60%; others as listed in the waves table.",
+      "Max effort: this session's top 1-3 rep set is compared with THIS variation's own previous best (new best / matched / below). Below is never a failure or a regression: Westside gives no PR criterion and says lifters away from a meet won't PR every time.",
+      "Rotation: the scheduled variation and the next one are worked out from your pool, rotation length and start date. The app never swaps an exercise for you.",
+      "Fatigue watch: more than your limit of consecutive weeks (default 3) with a top set at 90%+ of the 1RM raises a coach-review flag.",
+      "Not published, so never invented: deadlift weekly percentages, rest periods, a numeric stall rule.",
+    ],
+    validation: ["role required", "1RM > 0 for dynamic effort", "wave start date required", "repRange whole numbers min <= max", "rotationWeeks 1-6", "Percentages above 0 and at most 100"],
+    workedExample: {
+      description: "Dynamic effort, Westside lower wave, week 1: 1RM 400 lb, increment 5, bands ~25%.",
+      input: { config: { role: "dynamic_effort", wave: "westside_lower", waveStartDate: "2026-10-05", increment: 5 }, oneRepMax: 400, today: new Date(2026, 9, 7) },
+      expected: { status: "prescription", recommendedLoad: 200 },
+    },
+    evaluate: (input) => evaluateConjugate({ ...input, rows: input.allRows ?? input.rows ?? input.sets ?? [] }),
   },
 };
 

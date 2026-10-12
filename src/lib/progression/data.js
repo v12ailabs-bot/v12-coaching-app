@@ -3,6 +3,7 @@ import { evaluateProgression } from "./methods.js";
 import { latestSessionRows } from "./engine.js";
 import { decideRecommendation } from "./decisions.js";
 import { planTaper, applyTaperOverride, evaluateTaperWatch } from "./taper.js";
+import { todayStr } from "../dates.js";
 
 // Thin Supabase layer around the pure engine. Nothing here is wired into the UI
 // yet (Slice 1). Writes go to progression_recommendations (coach-only RLS) —
@@ -21,14 +22,10 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
   if (error) return { error: error.message };
   const session = latestSessionRows(rows || []);
 
-  if (session.date) {
-    const { data: existing } = await supabase.from("progression_recommendations").select("*")
-      .eq("exercise_id", exercise.id).eq("method_id", methodId).eq("session_date", session.date).maybeSingle();
-    if (existing) return { sessionDate: session.date, stored: existing, calcResult: existing.calc_result };
-  }
-  // Density compares whole sessions, so it gets every logged row, the statuses of
-  // its earlier recommendations (for the consecutive-regression rule) and, if the
-  // coach configured a readiness rule, that day's check-in values.
+  // Some methods need more than this exercise's latest session.
+  //  * density: every logged row, the statuses of its earlier recommendations (consecutive-regression
+  //    rule) and, if the coach set a readiness rule, that day's check-in values.
+  //  * conjugate max effort: the logs of every max-effort exercise for the same lift (fatigue watch).
   let extra = {};
   if (methodId === "density_progression") {
     const { data: prior } = await supabase.from("progression_recommendations").select("calc_result,session_date").eq("exercise_id", exercise.id).eq("method_id", methodId).lt("session_date", session.date || "9999-12-31").order("session_date", { ascending: false }).limit(10);
@@ -38,19 +35,42 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
       readiness = ck || null;
     }
     extra = { allRows: rows, history: (prior || []).map((p) => p.calc_result?.status), readiness };
+  } else if (methodId === "conjugate") {
+    extra = { allRows: rows, exerciseName: exercise.name, siblingRows: [] };
+    const cfg = exercise.progression_config || {};
+    if (cfg.role === "max_effort" && cfg.lift) {
+      const { data: sibs } = await supabase.from("exercises").select("id,name,progression_config").eq("client_id", clientId).eq("progression_method", "conjugate").is("retired_at", null);
+      const same = (sibs || []).filter((e) => e.progression_config?.role === "max_effort" && String(e.progression_config?.lift || "").trim().toLowerCase() === String(cfg.lift).trim().toLowerCase());
+      const since = new Date(Date.now() - 84 * 86400000).toISOString().slice(0, 10);
+      if (same.length) {
+        const { data: logs } = await supabase.from("workout_logs").select("*").in("exercise_id", same.map((e) => e.id)).eq("client_id", clientId).gte("date", since);
+        const nm = Object.fromEntries(same.map((e) => [e.id, e.name]));
+        extra.siblingRows = (logs || []).map((l) => ({ ...l, exercise: nm[l.exercise_id] }));
+      }
+    }
   }
-  const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed, painReported, ...extra });
+  const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed, painReported, today: new Date(), ...extra });
   const actionable = ["increase", "decrease", "hold", "prescription", "progress", "regression"].includes(calcResult.status);
-  if (!session.date || !actionable) return { sessionDate: session.date, calcResult, stored: null };
+
+  // A PRESCRIPTION (percentage-based, conjugate dynamic effort) is for NOW, not tied to a past
+  // session, and can exist before anything is logged: it is keyed by today's date. Every other result
+  // is keyed by the session it evaluated.
+  const keyDate = calcResult.status === "prescription" ? todayStr() : session.date;
+  if (!keyDate || !actionable) return { sessionDate: session.date, calcResult, stored: null };
+
+  // The stored recommendation for an exercise/method/date is authoritative (its calculation is frozen).
+  const { data: existing } = await supabase.from("progression_recommendations").select("*")
+    .eq("exercise_id", exercise.id).eq("method_id", methodId).eq("session_date", keyDate).maybeSingle();
+  if (existing) return { sessionDate: keyDate, stored: existing, calcResult: existing.calc_result };
 
   const row = {
-    client_id: clientId, exercise_id: exercise.id, method_id: methodId, session_date: session.date,
+    client_id: clientId, exercise_id: exercise.id, method_id: methodId, session_date: keyDate,
     calc_input: { currentLoad, oneRepMax: oneRepMax ?? null, week: week ?? null, techniqueConfirmed: techniqueConfirmed ?? null, config: exercise.progression_config || {}, sets: calcResult.calc?.sets ?? null },
     calc_result: calcResult, recommended_load: calcResult.recommendedLoad,
   };
   const { data, error: insErr } = await supabase.from("progression_recommendations").insert(row).select().single();
-  if (insErr) return { sessionDate: session.date, calcResult, error: insErr.message };
-  return { sessionDate: session.date, calcResult, stored: data };
+  if (insErr) return { sessionDate: keyDate, calcResult, error: insErr.message };
+  return { sessionDate: keyDate, calcResult, stored: data };
 }
 
 // Most recent stored recommendations for an exercise (newest first) — the

@@ -46,7 +46,7 @@
 
 ## Setting a progression rule on an exercise
 1. Client → Workout Review → open exercise → Progression box.
-2. Pick the method, fill in every setting, **Save settings**.
+2. Pick the method, fill in every setting, **Save settings**. (Conjugate: choose the role first. Dynamic effort needs the wave, its Monday start date and a current 1RM. Max effort needs the variation pool and rotation start date.)
 3. After the client's next session: **Calculate recommendation** (or use the Review queue).
 4. Read the reasons; Approve, Edit and approve, or Reject.
 5. Check that the client now sees the Coach target.

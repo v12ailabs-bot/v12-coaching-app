@@ -84,7 +84,7 @@ The current phase only changes when you activate the next phase. Saving a note o
 
 Open a client, scroll to **Workout Review**, open a day, and open an exercise. You will see the charts, the recent log, and a **Progression** box. This is where each exercise gets its own progression rule.
 
-Pick a method and fill in its settings. The methods the app can calculate for you are: **Double progression** (build reps inside a range, then add weight), **Linear progression** (add a fixed amount each time the full prescription is hit), **Percentage-based** (load as a percentage of a verified one-rep max, which you must supply), **APRE 3, 6 and 10** (the reps on a max set decide the next load, using the published adjustment tables), **Density progression** (more work in the same time, the same work faster, or more output per interval), and **Performance taper**, which is planned at the client level, not per exercise. **Conjugate** is not built yet.
+Pick a method and fill in its settings. The methods the app can calculate for you are: **Double progression** (build reps inside a range, then add weight), **Linear progression** (add a fixed amount each time the full prescription is hit), **Percentage-based** (load as a percentage of a verified one-rep max, which you must supply), **APRE 3, 6 and 10** (the reps on a max set decide the next load, using the published adjustment tables), **Density progression** (more work in the same time, the same work faster, or more output per interval), and **Performance taper**, which is planned at the client level, not per exercise. **Conjugate** (Westside style) is built too. Set each exercise's role: **dynamic effort** gives you the week's speed-work load from a three-week wave of percentages of the one-rep max; **max effort** compares today's heavy single, double or triple with that variation's own best, shows which variation is scheduled this week and next, and flags you if the athlete has been at 90 percent or more for more than three weeks in a row.
 
 Press **Calculate recommendation**. You get one of a small set of answers: Increase, Hold, Decrease, Progress, Regression, or a plain message that data is missing, with the reason. You can **Approve**, **Edit and approve** with your own number, or **Reject**. When you approve a load, the client's workout screen shows a **Coach target** for that exercise, and for APRE exercises it shows all four set loads. Your original calculation is kept untouched beside your decision.
 
@@ -94,7 +94,7 @@ When you change an exercise's method the app asks why and keeps a **Method histo
 
 Two rules of discipline. One bad session is a data point, not a decision. And never approve a progression on incomplete data. The app will say so when data is missing: believe it.
 
-**Check yourself:** Which method needs a verified one-rep max from you, and what does the client see after you approve a load?
+**Check yourself:** Which methods need a verified one-rep max from you, and what does the client see after you approve a load?
 
 ---
 
