@@ -342,7 +342,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [genInfo, setGenInfo] = useState(null);
 
   const load = useCallback(async () => {
-    const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks,name,description").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks,name,description,show_roadmap_to_client,progress_tracking_enabled,client_can_edit_checkins").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
@@ -470,7 +470,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   // same save() above (ids kept, history snapshot, plan details). A details
   // failure stops before any phase is touched.
   const saveFromWizard = async ({ details, rows: wizardRows }) => {
-    const { error: dErr } = await supabase.from("programs").update({ name: details.name, description: details.description, weeks: details.weeks }).eq("id", program.id);
+    const { error: dErr } = await supabase.from("programs").update({ name: details.name, description: details.description, weeks: details.weeks, show_roadmap_to_client: details.show_roadmap_to_client, progress_tracking_enabled: details.progress_tracking_enabled, client_can_edit_checkins: details.client_can_edit_checkins }).eq("id", program.id);
     if (dErr) return { ok: false, error: dErr.message };
     return save({ rows: wizardRows, skipConfirm: true });
   };

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   isHabitSatisfied,
   habitAdherenceFrom,
+  adherenceFrom,
   workoutAdherenceFrom,
   avgSleepHoursFrom,
   weightChangeFrom,
@@ -141,4 +142,17 @@ test("nutritionStatusFrom: nothing at all -> null score, null source", () => {
   const r = nutritionStatusFrom([], { plan: { protein_g: 150 }, mealLogs: [] }, 30, new Date("2026-01-10T00:00:00Z"));
   assert.equal(r.score, null);
   assert.equal(r.source, null);
+});
+
+test("training adherence: completed / (completed + missed); rest days are neither; one definition everywhere", () => {
+  const asOf = new Date(2026, 0, 10);
+  const rows = [
+    { date: "2026-01-05", workout: "completed" }, { date: "2026-01-06", workout: "rest" }, { date: "2026-01-07", workout: "completed" },
+    { date: "2026-01-08", workout: "missed" }, { date: "2026-01-09", workout: "rest" },
+  ];
+  const a = adherenceFrom(rows, 30, asOf);
+  assert.equal(a.trainingRate, 67, "2 of 3 scheduled sessions — the 2 rest days don't count against the client");
+  assert.equal(a.trainingRate, workoutAdherenceFrom(rows, 30, asOf).score, "the two functions can no longer disagree");
+  assert.equal(adherenceFrom([{ date: "2026-01-06", workout: "rest" }], 30, asOf).trainingRate, null, "no scheduled session -> null, not 0");
+  assert.equal(adherenceFrom([], 30, asOf).trainingRate, null);
 });

@@ -5,6 +5,7 @@ import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, RG, Btn, MetricCard, StatusBadge, Alert, EmptyState } from "../../../components/ui/index.js";
 import { computeGoalScore } from "../../../lib/scoring/goalScoring.js";
 import { nutritionAdherenceFrom } from "../../../lib/scoring/nutritionAdherence.js";
+import { workoutAdherenceFrom } from "../../../lib/scoring.js";
 import { computeBMI, bmiCategory } from "../../../lib/bmi.js";
 
 const CLASSIFICATION_TONE = { "On Track": "green", "Slightly Behind": "amber", "Off Track": "red", "Gathering Data": "neutral" };
@@ -84,7 +85,7 @@ export function GoalsSection({ client }) {
 
       const thirtyCut = (() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toISOString().split("T")[0]; })();
       const recentDaily = (daily || []).filter(d => d.date >= thirtyCut);
-      const training = recentDaily.length ? Math.round((recentDaily.filter(d => d.workout === "completed").length / recentDaily.length) * 100) : null;
+      const training = workoutAdherenceFrom(recentDaily, 30).score;
 
       const recentWeekly = (weekly || []).slice(-4).filter(w => w.sleep_quality != null || w.hydration_quality != null);
       const recovery = recentWeekly.length

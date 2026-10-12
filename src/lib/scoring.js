@@ -16,6 +16,11 @@ export function adherenceFrom(checkins, days = 30, asOf = new Date()) {
   const recent = all.filter((c) => c.date >= cut && c.date <= asOfStr);
   const checkinDays = new Set(recent.map((c) => c.date)).size;
   const completed = recent.filter((c) => c.workout === "completed").length;
+  // Training adherence = completed sessions / (completed + missed): a logged REST day is
+  // neither a success nor a failure. (It used to divide by every check-in, which scored
+  // rest days as misses and disagreed with workoutAdherenceFrom, the Coach Overview and
+  // plan-vs-actual.) null when no session was scheduled in the window.
+  const missed = recent.filter((c) => c.workout === "missed").length;
   const firstEver = all.length ? all.reduce((m, c) => (c.date < m ? c.date : m), asOfStr) : asOfStr;
   const elapsed = Math.floor((new Date(asOfStr) - new Date(firstEver)) / 86400000) + 1;
   const denom = Math.max(1, Math.min(days, elapsed));
@@ -23,7 +28,7 @@ export function adherenceFrom(checkins, days = 30, asOf = new Date()) {
     score: Math.min(100, Math.round((checkinDays / denom) * 100)),
     checkinDays,
     days: denom,
-    trainingRate: recent.length ? Math.round((completed / recent.length) * 100) : 0,
+    trainingRate: completed + missed ? Math.round((completed / (completed + missed)) * 100) : null,
   };
 }
 

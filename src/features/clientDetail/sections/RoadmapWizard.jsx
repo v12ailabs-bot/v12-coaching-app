@@ -24,7 +24,12 @@ const num = (v) => (v === "" || v == null ? null : parseInt(v));
 
 export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClose }) {
   const [step, setStep] = useState(startAt);
-  const [details, setDetails] = useState({ name: program.name || "", description: program.description || "", weeks: program.weeks ?? 12 });
+  const [details, setDetails] = useState({
+    name: program.name || "", description: program.description || "", weeks: program.weeks ?? 12,
+    show_roadmap_to_client: program.show_roadmap_to_client ?? true,
+    progress_tracking_enabled: program.progress_tracking_enabled ?? true,
+    client_can_edit_checkins: program.client_can_edit_checkins ?? true,
+  });
   const [rows, setRows] = useState(() => initialRows.map((r) => ({ ...r, exit_criteria: (r.exit_criteria || []).map((c) => ({ ...c })) })));
   const [adding, setAdding] = useState(false);
   const [moreOpen, setMoreOpen] = useState(null);
@@ -54,7 +59,10 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
     if (blocking.length || detailErrors.length) return;
     if (review.errors.length && !window.confirm(`This roadmap has conflicts:\n\n${review.errors.map((x) => "• " + x.message).join("\n")}\n\nSave anyway?`)) return;
     setSaving(true); setError(null);
-    const res = await onSave({ details: { name: details.name.trim(), description: details.description.trim() || null, weeks }, rows });
+    const res = await onSave({ details: {
+      name: details.name.trim(), description: details.description.trim() || null, weeks,
+      show_roadmap_to_client: !!details.show_roadmap_to_client, progress_tracking_enabled: !!details.progress_tracking_enabled, client_can_edit_checkins: !!details.client_can_edit_checkins,
+    }, rows });
     setSaving(false);
     if (!res.ok) setError(res.error || "Could not save."); else onClose(true);
   };
@@ -93,6 +101,17 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
           <div style={{ fontSize: 12, color: S.muted, marginTop: 10, lineHeight: 1.6 }}>
             Program start: {program.start_date || "not set"} (change it in the phase section). Nothing here reaches the client until you save on the last step.
           </div>
+          <label style={lbl}>Program settings</label>
+          {[
+            ["show_roadmap_to_client", "Show roadmap to client", "Off: the client can't see this program's roadmap anywhere (enforced in the database)."],
+            ["progress_tracking_enabled", "Enable progress tracking", "Off: the client's Progress page, goal status ring and milestone bars are hidden. Data is still collected and you still see it."],
+            ["client_can_edit_checkins", "Allow client to edit past check-ins", "Off: the client can only fill in today's daily check-in and this week's weekly check-in — no backdating or editing earlier entries (enforced in the database)."],
+          ].map(([key, title, help]) => (
+            <label key={key} style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: "10px 0", borderTop: "1px solid " + S.border, cursor: "pointer" }}>
+              <input type="checkbox" checked={!!details[key]} onChange={(e) => setD(key, e.target.checked)} style={{ marginTop: 3, width: 18, height: 18, accentColor: S.accent }} />
+              <span><span style={{ display: "block", fontSize: 13, fontWeight: 600 }}>{title}</span><span style={{ display: "block", fontSize: 11, color: S.muted, lineHeight: 1.5 }}>{help}</span></span>
+            </label>
+          ))}
           {detailErrors.map((e, i) => <div key={i} style={{ fontSize: 12, color: S.danger, marginTop: 8 }}>{e}</div>)}
         </>
       )}
@@ -163,7 +182,8 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
           <ReviewBlock title="Program details" onEdit={() => setStep(0)}>
             <div style={{ fontSize: 13 }}><b>{details.name || "—"}</b> · {weeks || "?"} weeks</div>
             <div style={{ fontSize: 12, color: S.muted, marginTop: 2 }}>{details.description || "No description."}</div>
-            {(details.name.trim() !== (program.name || "") || String(weeks) !== String(program.weeks ?? "") || details.description.trim() !== (program.description || "")) && <div style={{ fontSize: 11, color: S.accent, marginTop: 4 }}>Changed — saved when you click Save.</div>}
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Client sees roadmap: <b>{details.show_roadmap_to_client ? "yes" : "no"}</b> · Progress tracking: <b>{details.progress_tracking_enabled ? "on" : "off"}</b> · Edit past check-ins: <b>{details.client_can_edit_checkins ? "allowed" : "locked"}</b></div>
+            {(details.name.trim() !== (program.name || "") || String(weeks) !== String(program.weeks ?? "") || details.description.trim() !== (program.description || "") || ["show_roadmap_to_client", "progress_tracking_enabled", "client_can_edit_checkins"].some((k) => !!details[k] !== (program[k] ?? true))) && <div style={{ fontSize: 11, color: S.accent, marginTop: 4 }}>Changed — saved when you click Save.</div>}
           </ReviewBlock>
           <ReviewBlock title={`Phases (${named.length})`} onEdit={() => setStep(1)}>
             {named.map(({ r, i }) => {

@@ -197,7 +197,7 @@ export function InterventionModal({ assessment, daily: dailyAll = [], nutCtx: nu
               <Glance label="Weight" value={fmt(lastW, 1)} unit={lastW != null ? " lb" : ""} sub={wDelta != null ? `${wDelta > 0 ? "+" : ""}${wDelta.toFixed(1)} lb / 30d` : null} />
               <Glance label="Protein (avg)" value={fmt(avgProtein)} unit={avgProtein != null ? " g" : ""} sub={plan?.protein_g ? `Target ${plan.protein_g} g` : null} />
               <Glance label="Calories (avg)" value={fmt(avgCal)} sub={plan?.calories ? `Target ${plan.calories}` : null} />
-              <Glance label="Training" value={adh ? adh.trainingRate : "—"} unit={adh ? "%" : ""} sub="check-ins with workout done" />
+              <Glance label="Training" value={adh?.trainingRate ?? "—"} unit={adh?.trainingRate != null ? "%" : ""} sub="completed ÷ (completed + missed)" />
               <Glance label="Check-ins" value={adh ? adh.score : "—"} unit={adh ? "%" : ""} sub="days logged, 30d" />
               {goalScore?.overallScore != null && <Glance label="Goal score" value={goalScore.overallScore} unit="/100" sub={goalScore.classification} />}
             </div>

@@ -1,3 +1,5 @@
+import { useProgramSettings } from "../../lib/useProgramSettings.js";
+import { ProgressOffNotice } from "../../components/ui/index.js";
 import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
@@ -17,7 +19,7 @@ import { ClientSummaries } from "./AISummarySection.jsx";
 // wellness, measurements, strength, habits, check-in notes (coach only),
 // photos, and the manual goals-progress tab (self-rated, not yet computed —
 // out of scope for this pass, left exactly as-is).
-export function Progress({ profile, coachView }) {
+function ProgressInner({ profile, coachView }) {
   const [tab, setTab] = useState("weight");
   const [range, setRange] = useState("All");
   const [daily, setDaily] = useState([]);
@@ -140,7 +142,7 @@ export function Progress({ profile, coachView }) {
       <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
         <Stat label="Adherence (30d)" value={adh.score} unit="%"/>
         <Stat label="Nutrition (30d)" value={nut.score??"—"} unit={nut.score!=null?"%":""}/>
-        <Stat label="Training Completion" value={adh.trainingRate} unit="%"/>
+        <Stat label="Training Completion" value={adh.trainingRate ?? "—"} unit={adh.trainingRate!=null?"%":""}/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
         {goal && <Stat label="Goal Progress" value={goalScore?.overallScore??"—"} unit={goalScore?.overallScore!=null?"%":""}/>}
         {goal && <Stat label="Days Remaining" value={Math.max(0,daysRemaining)} unit="days"/>}
@@ -409,4 +411,12 @@ export function Progress({ profile, coachView }) {
       )}
     </div>
   );
+}
+
+// Wrapper: the client's own progress screens are hidden when the coach has
+// turned progress tracking off (the coach's view of a client is never hidden).
+export function Progress({ profile, coachView }) {
+  const settings = useProgramSettings(profile);
+  if (!coachView && settings.loaded && !settings.progressTracking) return <ProgressOffNotice />;
+  return <ProgressInner profile={profile} coachView={coachView} />;
 }

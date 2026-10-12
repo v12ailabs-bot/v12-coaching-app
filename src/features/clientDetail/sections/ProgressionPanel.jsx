@@ -139,6 +139,15 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
 
   const method = methodId ? METHODS[methodId] : null;
   const dirty = methodId !== savedAs.methodId || JSON.stringify(config) !== JSON.stringify(savedAs.config);
+  const methodChanging = methodId !== savedAs.methodId;
+  const [reason, setReason] = useState("");
+  const [history, setHistory] = useState([]);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const loadHistory = useCallback(async () => {
+    const { data } = await supabase.from("progression_method_history").select("*").eq("exercise_id", exercise.id).order("changed_at", { ascending: false }).limit(20);
+    setHistory(data || []);
+  }, [exercise.id]);
+  useEffect(() => { loadHistory(); }, [loadHistory]);
 
   // Default the current load to the heaviest working load of the latest session.
   useEffect(() => {
@@ -152,9 +161,12 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
 
   const save = async () => {
     setSaving(true); setMsg(null);
-    const { error } = await supabase.from("exercises").update({ progression_method: methodId || null, progression_config: config }).eq("id", exercise.id);
+    // One transaction: records what it was / what it becomes / why, and applies it.
+    // Logged workouts are never touched or re-interpreted by a method change.
+    const { error } = await supabase.rpc("assign_progression_method", { p_exercise_id: exercise.id, p_method: methodId || null, p_config: config, p_reason: reason.trim() || null });
     setSaving(false);
     if (error) { setMsg({ ok: false, text: error.message }); return; }
+    setReason(""); loadHistory();
     setSavedAs({ methodId, config });
     exercise.progression_method = methodId || null; exercise.progression_config = config; // keep the shared row current
     setMsg({ ok: true, text: "Progression settings saved." });
@@ -201,11 +213,28 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
             <ul style={{ margin: "4px 0 0", paddingLeft: 18 }}>{method.missing.map((m, i) => <li key={i}>{m}</li>)}</ul>
           </div>
         )}
+        {methodChanging && (
+          <div><label style={lbl}>Why are you changing the method? (required)</label>
+            <input style={input} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Stalled for 3 weeks on double progression" />
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>The previous method, its settings and the client's current target are kept in this exercise's method history. Logged workouts are not changed.</div></div>
+        )}
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <Btn sm onClick={save} disabled={saving || !dirty}>{saving ? "Saving..." : "Save settings"}</Btn>
+          <Btn sm onClick={save} disabled={saving || !dirty || (methodChanging && !reason.trim())}>{saving ? "Saving..." : "Save settings"}</Btn>
           {msg && <span style={{ fontSize: 12, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
         </div>
 
+        {history.length > 0 && (
+          <div>
+            <button type="button" onClick={() => setHistoryOpen((o) => !o)} style={{ background: "none", border: "none", color: S.muted, fontSize: 11, cursor: "pointer", padding: 0 }}>{historyOpen ? "▲" : "▼"} Method history ({history.length})</button>
+            {historyOpen && history.map((h) => (
+              <div key={h.id} style={{ fontSize: 12, padding: "5px 0", borderTop: "1px solid " + S.border }}>
+                <span style={{ color: S.muted }}>{new Date(h.changed_at).toLocaleDateString()}</span> · {h.method_changed ? <><b>{METHODS[h.from_method]?.name || h.from_method || "none"}</b> → <b>{METHODS[h.to_method]?.name || h.to_method || "none"}</b></> : <>settings changed ({METHODS[h.to_method]?.name || h.to_method})</>}
+                {h.reason && <span style={{ color: S.muted }}> — “{h.reason}”</span>}
+                {h.previous_state?.prescribed_weight != null && <span style={{ color: S.muted }}> · target then: {h.previous_state.prescribed_weight} lb</span>}
+              </div>
+            ))}
+          </div>
+        )}
         {target && (
           <div style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
             <span>Client's current target: <b>{target.weight} lb</b>{target.at ? <span style={{ color: S.muted }}> · set {new Date(target.at).toLocaleDateString()}</span> : null}</span>
