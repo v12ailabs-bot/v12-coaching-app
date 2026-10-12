@@ -66,3 +66,24 @@ test("canonicalJson ignores key order (jsonb round-trip) but not values", () => 
   assert.equal(canonicalJson({ b: 1, a: [{ y: 2, x: 1 }] }), canonicalJson({ a: [{ x: 1, y: 2 }], b: 1 }));
   assert.notEqual(canonicalJson({ a: 1 }), canonicalJson({ a: 2 }));
 });
+
+import { roadmapStats } from "../../src/lib/roadmapStats.js";
+test("roadmapStats: phase week, training, attendance and protein come from the phase window only; no data -> nulls", () => {
+  const ph = { week_start: 1, week_end: 4 };
+  const daily = [
+    { date: "2026-01-05", workout: "completed", protein_g: 100 }, { date: "2026-01-06", workout: "missed", protein_g: 140 },
+    { date: "2026-01-07", workout: "completed" }, { date: "2025-12-01", workout: "completed", protein_g: 999 },
+  ];
+  const r = roadmapStats({ phase: ph, programStart: "2026-01-05", daily, today: new Date(2026, 0, 12) });
+  assert.equal(r.phaseWeek, 2);
+  assert.equal(r.phaseWeeks, 4);
+  assert.equal(r.completed, 2);
+  assert.equal(r.scheduled, 3);
+  assert.equal(r.attendancePct, 67);
+  assert.equal(r.proteinAvg, 120, "average of the two logged days, the out-of-window 999 ignored");
+  const empty = roadmapStats({ phase: ph, programStart: "2026-01-05", daily: [], today: new Date(2026, 0, 12) });
+  assert.equal(empty.completed, null);
+  assert.equal(empty.proteinAvg, null);
+  assert.equal(roadmapStats({ phase: ph, programStart: "2026-01-05", daily, today: new Date(2025, 11, 1) }), null, "before the phase starts");
+  assert.equal(roadmapStats({ phase: {}, programStart: null, daily }), null);
+});

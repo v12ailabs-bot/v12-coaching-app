@@ -45,8 +45,12 @@ const EXIT_CRITERIA_COLOR = { complete: S.success, incomplete: S.muted, na: S.mu
 // detail, not something a client needs to parse. Objective/training/movement
 // focus are safe for both: they're the "why am I here" / "what are we
 // working on" language the client-facing roadmap is built around.
-export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = false }) {
-  const [openIndex, setOpenIndex] = useState(null);
+export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = false, openIndex: openControlled, onOpenChange }) {
+  // Normally self-contained; a parent (the client roadmap view's "View Phase"
+  // button) can control which phase popup is open instead.
+  const [openLocal, setOpenLocal] = useState(null);
+  const openIndex = openControlled !== undefined ? openControlled : openLocal;
+  const setOpenIndex = (v) => { if (onOpenChange) onOpenChange(v); if (openControlled === undefined) setOpenLocal(v); };
   if (!phases || phases.length === 0) return null;
 
   const currentIndex = phases.findIndex((p) => p.phase === currentPhase);

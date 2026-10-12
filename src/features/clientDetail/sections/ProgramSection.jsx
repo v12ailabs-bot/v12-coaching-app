@@ -7,6 +7,8 @@ import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRo
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
 import { RoadmapWizard } from "./RoadmapWizard.jsx";
+import { ClientProgramRoadmap } from "../../../components/ClientProgramRoadmap.jsx";
+import { roadmapStats } from "../../../lib/roadmapStats.js";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
 import { PlanHistory } from "./PlanHistory.jsx";
@@ -679,12 +681,18 @@ export function ProgramRoadmapPlanner({ clientId }) {
           )}
           {rows.length > 0 && (
             <div style={{ marginTop: 22, borderTop: "1px solid " + S.border, paddingTop: 16 }}>
-              <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 10 }}>Preview</div>
-              <ProgramRoadmap forCoach phases={rows.filter((r) => r.phase.trim()).map((r) => ({
-                phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end,
-                note: r.note, objective: r.objective, training_focus: r.training_focus, movement_focus: r.movement_focus,
-                progression_strategy: r.progression_strategy, exit_criteria: r.exit_criteria, checkpoints: r.checkpoints,
-              }))} currentPhase={program.phase} startDate={program.start_date} />
+              <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>Preview — exactly what the client sees</div>
+              <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>Uses your current draft and this client's real numbers.</div>
+              {(() => {
+                const pv = rows.filter((r) => r.phase.trim()).map((r) => ({
+                  phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end,
+                  note: r.note, objective: r.objective, training_focus: r.training_focus, movement_focus: r.movement_focus,
+                  progression_strategy: r.progression_strategy, exit_criteria: r.exit_criteria, checkpoints: r.checkpoints,
+                }));
+                const cur = pv.find((p) => p.phase === program.phase);
+                const stats = cur ? roadmapStats({ phase: cur, programStart: program.start_date, daily: tracking.daily, mealLogs: tracking.nutCtx?.mealLogs || [] }) : null;
+                return <ClientProgramRoadmap phases={pv} currentPhase={program.phase} startDate={program.start_date} stats={stats} />;
+              })()}
             </div>
           )}
           <PlanHistory revisions={revisions} />
