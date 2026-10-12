@@ -1,3 +1,4 @@
+import { useProgramSettings } from "../../lib/useProgramSettings.js";
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
@@ -67,8 +68,9 @@ const EMPTY_FORM = { weight: "", calories: "", protein_g: "", carbs_g: "", fats_
 // rating, and a single Complete Today action. See db/add_habit_types.sql
 // for the habit `type` system this renders against.
 export function TodayScreen({ profile, onDone }) {
+  const settings = useProgramSettings(profile);
   const [logDate, setLogDate] = useState(todayStr());
-  const date = logDate;
+  const date = settings.clientCanEditCheckins ? logDate : todayStr();
   const minBackdate = (() => { const d = new Date(); d.setDate(d.getDate() - BACKDATE_DAYS); return localDateStr(d); })();
   const [habits, setHabits] = useState([]);
   const [planTarget, setPlanTarget] = useState({});
@@ -155,7 +157,7 @@ export function TodayScreen({ profile, onDone }) {
     <div>
       <PageTitle title="Today" sub={date} />
       <Card style={{ marginBottom: 20 }}>
-        <BackdateField value={logDate} min={minBackdate} onChange={setLogDate} label="Logging for" />
+        {settings.clientCanEditCheckins && <BackdateField value={logDate} min={minBackdate} onChange={setLogDate} label="Logging for" />}
       </Card>
       <div style={{ marginBottom: 20 }}>
         <div style={{ fontSize: 12, color: S.muted, marginBottom: 6 }}>Daily check-in · {completion.done} of {completion.total} complete · {completion.pct}% complete</div>

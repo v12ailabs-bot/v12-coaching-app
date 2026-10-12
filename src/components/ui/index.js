@@ -20,3 +20,4 @@ export { SectionHeader } from "./SectionHeader.jsx";
 export { V12Logo } from "./V12Logo.jsx";
 export { LaunchScreen } from "./LaunchScreen.jsx";
 export { BackdateField } from "./BackdateField.jsx";
+export { ProgressOffNotice } from "./ProgressOffNotice.jsx";

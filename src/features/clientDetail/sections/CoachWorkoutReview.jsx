@@ -133,7 +133,7 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
     <Card>
       <CollapsibleSection
         title="Workout Review"
-        summary={`${phase ? `Phase: ${phase}` : "No phase set"} · Adherence ${adh.trainingRate}% · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
+        summary={`${phase ? `Phase: ${phase}` : "No phase set"} · Adherence ${adh.trainingRate != null ? adh.trainingRate + "%" : "—"} · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
         expanded={reviewOpen} onToggle={setReviewOpen}>
         {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} />)}
       </CollapsibleSection>

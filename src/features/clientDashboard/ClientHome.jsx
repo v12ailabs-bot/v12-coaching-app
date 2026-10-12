@@ -4,6 +4,7 @@ import { S, RADIUS, todayStr, localDateStr, useIsMobile } from "../../theme.jsx"
 import { PageTitle, Btn, StatusBadge } from "../../components/ui/index.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "../../components/ClientBanners.jsx";
 import { assessClientRisk } from "../../lib/scoring.js";
+import { useProgramSettings } from "../../lib/useProgramSettings.js";
 import { ClientHero } from "./ClientHero.jsx";
 import { TodayWorkoutPreview } from "./TodayWorkoutPreview.jsx";
 import { HabitSummary } from "./HabitSummary.jsx";
@@ -21,6 +22,7 @@ import { ReminderCircles } from "./ReminderCircles.jsx";
 // needed for risk assessment/goal scoring, which several sections share.
 export function ClientHome({ profile, setPage, goToWorkouts }) {
   const isMobile = useIsMobile();
+  const settings = useProgramSettings(profile);
   const [checkins, setCheckins] = useState([]);
   const [weeklyDone, setWeeklyDone] = useState(true);
   const [weeklyRecent, setWeeklyRecent] = useState([]);
@@ -87,7 +89,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
 
       <ReminderCircles profile={profile} doneToday={doneToday} weeklyDone={weeklyDone} setPage={setPage} />
 
-      <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} checkins={checkins} setPage={setPage} /></div>
+      <div style={{ marginBottom: 14 }}><ClientHero profile={profile} risk={risk} goalScore={goalScore} checkins={checkins} setPage={setPage} hideProgress={!settings.progressTracking} /></div>
 
       {risk.flags.length > 0 && (
         <div style={{ background: S.surface, border: "1px solid " + S.border, borderLeft: "3px solid " + (risk.severity >= 2 ? S.danger : S.warning), borderRadius: RADIUS.md, marginBottom: 14, overflow: "hidden" }}>
@@ -120,7 +122,7 @@ export function ClientHome({ profile, setPage, goToWorkouts }) {
 
       <div style={{ marginBottom: 14 }}><V12RoadmapCard profile={profile} setPage={setPage} /></div>
 
-      <div style={{ marginBottom: 14 }}><CurrentMilestoneCard profile={profile} /></div>
+      {settings.progressTracking && <div style={{ marginBottom: 14 }}><CurrentMilestoneCard profile={profile} /></div>}
 
       <div style={{ marginBottom: 14 }}><ProgramRoadmapCard profile={profile} setPage={setPage} /></div>
 

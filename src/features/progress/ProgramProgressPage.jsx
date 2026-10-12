@@ -1,3 +1,5 @@
+import { useProgramSettings } from "../../lib/useProgramSettings.js";
+import { ProgressOffNotice } from "../../components/ui/index.js";
 import { useState, useEffect } from "react";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
@@ -15,7 +17,7 @@ const DIFF_LABEL = { decrease: "Total Lost", increase: "Total Gained", maintain:
 // Progress page for program-only (no-coach) clients: body/strength/habits/photos
 // tabs driven purely by their own daily-check-in self-tracking, no weekly
 // check-ins or coach-set assessments involved.
-export function ProgramProgress({ profile }) {
+function ProgramProgressInner({ profile }) {
   const [tab, setTab] = useState("body");
   const [daily, setDaily] = useState([]);
   const [workoutDates, setWorkoutDates] = useState([]);
@@ -220,4 +222,12 @@ export function ProgramProgress({ profile }) {
       {tab === "photos" && <ProgressPhotos profile={profile} />}
     </div>
   );
+}
+
+// Wrapper: the client's own progress screens are hidden when the coach has
+// turned progress tracking off (the coach's view of a client is never hidden).
+export function ProgramProgress({ profile, coachView }) {
+  const settings = useProgramSettings(profile);
+  if (!coachView && settings.loaded && !settings.progressTracking) return <ProgressOffNotice />;
+  return <ProgramProgressInner profile={profile} />;
 }

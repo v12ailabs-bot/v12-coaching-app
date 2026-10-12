@@ -56,7 +56,7 @@ const TONE_COLOR = { positive: S.success, warning: S.warning, negative: S.danger
 // "View Progress" destination, so they now share one button instead of two.
 // Neither section requires the other: a client with no phase set yet still
 // sees their weight snapshot, and vice versa.
-export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
+export function ClientHero({ profile, risk, goalScore, checkins, setPage, hideProgress = false }) {
   const [program, setProgram] = useState(null);
   const [totalWeeks, setTotalWeeks] = useState(null);
   const [photo, setPhoto] = useState(null);
@@ -155,13 +155,13 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
             )}
             {program.phase_note && <div style={{ fontSize: 12, color: S.muted, marginTop: 8, lineHeight: 1.6 }}>{program.phase_note}</div>}
           </div>
-          <ProgressRing value={ringValue} size={92} color={statusColor} caption={status.label.toUpperCase()} />
-          <div style={{ flex: 1, minWidth: 160 }}>
+          {!hideProgress && <ProgressRing value={ringValue} size={92} color={statusColor} caption={status.label.toUpperCase()} />}
+          {!hideProgress && <div style={{ flex: 1, minWidth: 160 }}>
             <div style={{ fontSize: 12, fontWeight: 700, color: statusColor, marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>
               {status.label === "On Track" ? "You're On Track" : status.label === "Ahead" ? "You're Ahead" : status.label === "Not Enough Data" ? "Not Enough Data Yet" : status.label === "Needs Weigh-In" ? "Weigh-In Needed" : (risk?.riskLevel ? risk.riskLevel + " Risk" : "Behind")}
             </div>
             <div style={{ fontSize: 13, color: S.text, lineHeight: 1.6 }}>{statusText}</div>
-          </div>
+          </div>}
         </div>
       )}
 
@@ -191,7 +191,7 @@ export function ClientHero({ profile, risk, goalScore, checkins, setPage }) {
         </div>
       )}
 
-      <div style={{ marginTop: 16 }}><Btn sm onClick={() => setPage("progress")}>View Progress</Btn></div>
+      {!hideProgress && <div style={{ marginTop: 16 }}><Btn sm onClick={() => setPage("progress")}>View Progress</Btn></div>}
     </Card>
   );
 }

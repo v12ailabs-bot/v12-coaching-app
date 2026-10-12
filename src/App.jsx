@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 import { apreSetPlan } from "./lib/progression/apre.js";
 import { ClientRoadmapLive } from "./features/clientDashboard/ClientRoadmapLive.jsx";
+import { useProgramSettings } from "./lib/useProgramSettings.js";
 
 
 
@@ -23,7 +24,7 @@ import { ProgramOnlyHome } from "./features/clientDashboard/ProgramOnlyHome.jsx"
 import { ClientDashboardPage } from "./features/clientDashboard/ClientDashboardPage.jsx";
 import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
-import { ProgressionModelsPanel } from "./features/coachDashboard/ProgressionModelsPanel.jsx";
+import { ProgressionHub } from "./features/coachDashboard/ProgressionHub.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
 import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL, COACH_WHATSAPP_URL } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
@@ -815,9 +816,12 @@ function ClientWelcome({ profile, onEnter }) {
 }
 
 function WeeklyCheckin({ profile, onDone }) {
+  const settings = useProgramSettings(profile);
   const currentWeekStart = weekStartStr();
   const priorWeekStart = (()=>{const d=new Date(currentWeekStart+"T00:00:00");d.setDate(d.getDate()-7);return localDateStr(d);})();
   const [weekStart, setWeekStart] = useState(currentWeekStart);
+  // When the coach has turned off editing past check-ins, this screen only does the current week.
+  useEffect(() => { if (settings.loaded && !settings.clientCanEditCheckins && weekStart !== currentWeekStart) setWeekStart(currentWeekStart); }, [settings.loaded, settings.clientCanEditCheckins]); // eslint-disable-line react-hooks/exhaustive-deps
   const [form, setForm] = useState({
     bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
@@ -891,13 +895,13 @@ function WeeklyCheckin({ profile, onDone }) {
   return (
     <div>
       <PageTitle title="Weekly Check-In" sub={"Week of "+weekStart}/>
-      <Card>
+      {settings.clientCanEditCheckins && <Card>
         <Fld label="Which week is this for?">
           <RG options={["This week","Last week"]} value={weekStart===currentWeekStart?"This week":"Last week"}
             onChange={(v)=>setWeekStart(v==="This week"?currentWeekStart:priorWeekStart)}/>
         </Fld>
         {weekStart!==currentWeekStart && <div style={{fontSize:11,color:S.warning}}>Logging for a past week — this will be flagged as backdated.</div>}
-      </Card>
+      </Card>}
       <Card style={{borderLeft:"3px solid "+S.accent2,paddingTop:16,paddingBottom:16}}>
         <div style={{fontSize:13,color:S.text,lineHeight:1.6}}>Only the ratings are required — everything else is optional. Your measurements are pre-filled from last week, so just update what changed.</div>
       </Card>
@@ -3143,7 +3147,7 @@ function CoachDashboard({ profile, logout }) {
       {page === "metrics" && <MetricsDashboard />}
       {page === "assess" && <AssessmentsPanel />}
       {page === "templates" && <TemplatesPanel />}
-      {page === "progression" && <ProgressionModelsPanel />}
+      {page === "progression" && <ProgressionHub />}
       {page === "library" && <ResourcesPanel />}
     </Shell>
   );
