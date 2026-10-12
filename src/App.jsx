@@ -26,7 +26,7 @@ import { V12RoadmapPage } from "./features/clientDashboard/V12RoadmapPage.jsx";
 import { CoachHome } from "./features/coachDashboard/CoachHome.jsx";
 import { ProgressionHub } from "./features/coachDashboard/ProgressionHub.jsx";
 import { CRMBoard } from "./features/crm/CRMBoard.jsx";
-import { DAY_ORDER, EX_TYPES, PHASES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL, COACH_WHATSAPP_URL } from "./lib/constants.js";
+import { DAY_ORDER, EX_TYPES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAIL, INTAKE_FIELDS, BLOCK_TYPE_LABEL, BLOCK_TYPE_SHORT, groupIntoBlocks, V12_CALENDLY_URL, COACH_WHATSAPP_URL } from "./lib/constants.js";
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
@@ -638,7 +638,7 @@ function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
     ? [{id:"proghome",icon:"⚡",label:"Home",short:"Home"},{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
     : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
-    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"progression",icon:"🧬",label:"Progression Models",short:"Models"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
+    ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"templates",icon:"📋",label:"Templates",short:"Plans"},{id:"progression",icon:"🧬",label:"Progression",short:"Progress"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
     : clientNav;
   const activeId = nav.some((n) => n.id === page) ? page
     : CHECKIN_GROUP.includes(page) ? "checkin"
