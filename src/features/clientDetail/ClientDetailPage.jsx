@@ -145,7 +145,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const loadEx = async(id)=>{
     // No .order() here — groupByDay (src/lib/constants.js) owns exercise
     // ordering (by phase, then order_index) once grouped by day.
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",id);
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",id).is("retired_at", null);
     setExercises(data||[]);
   };
 
@@ -460,7 +460,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   // the coach after the fact.
   const generateProgram = async(client, scope="full")=>{
     if(scope==="full"){
-      const {data:aiEx} = await supabase.from("exercises").select("id,name,day_of_week").eq("client_id",trainOwnerId).eq("source","ai");
+      const {data:aiEx} = await supabase.from("exercises").select("id,name,day_of_week").eq("client_id",trainOwnerId).eq("source","ai").is("retired_at", null);
       const aiIds = (aiEx||[]).map(e=>e.id);
       if(aiIds.length){
         const {data:logged} = await supabase.from("workout_logs").select("exercise_id").in("exercise_id",aiIds);

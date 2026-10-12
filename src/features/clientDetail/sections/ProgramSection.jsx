@@ -28,7 +28,7 @@ async function logPhaseHistory({ programId, clientId, phase, phaseNote, changedB
 export async function createProgramVersion(clientId, label) {
   const { data: program } = await supabase.from("programs").select("*")
     .eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
-  const { data: exs } = await supabase.from("exercises").select("*").eq("client_id", clientId);
+  const { data: exs } = await supabase.from("exercises").select("*").eq("client_id", clientId).is("retired_at", null);
   const { data: last } = await supabase.from("program_versions").select("version")
     .eq("client_id", clientId).order("version", { ascending: false }).limit(1).maybeSingle();
   const version = (last?.version || 0) + 1;
@@ -52,7 +52,7 @@ export async function createProgramVersion(clientId, label) {
 // dropped from the snapshot are removed. Records the rollback as a new version.
 export async function restoreProgramVersion(clientId, v) {
   const target = v.snapshot?.exercises || [];
-  const { data: current } = await supabase.from("exercises").select("*").eq("client_id", clientId);
+  const { data: current } = await supabase.from("exercises").select("*").eq("client_id", clientId).is("retired_at", null);
   const key = (e) => `${(e.name || "").trim().toLowerCase()}|${e.day_of_week || ""}`;
   const curMap = new Map();
   (current || []).forEach((e) => { if (!curMap.has(key(e))) curMap.set(key(e), e); });

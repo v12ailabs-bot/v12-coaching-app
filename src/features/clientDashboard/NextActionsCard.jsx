@@ -58,7 +58,7 @@ export function NextActionsCard({ profile, doneToday, weeklyDone, setPage, goToW
       const ownerId = trainingOwnerId(profile);
       const tomorrowStr = localDateStr(new Date(Date.now() + 86400000));
       const [{ data: exercises }, todayDow, tomorrowDow] = await Promise.all([
-        supabase.from("exercises").select("day_of_week,category").eq("client_id", ownerId),
+        supabase.from("exercises").select("day_of_week,category").eq("client_id", ownerId).is("retired_at", null),
         resolveDayOfWeekFor(profile.id, todayStr()),
         resolveDayOfWeekFor(profile.id, tomorrowStr),
       ]);

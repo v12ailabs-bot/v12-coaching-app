@@ -12,7 +12,7 @@ export function UpcomingCard({ profile, doneToday, weeklyDone, setPage, goToWork
   const [days, setDays] = useState(new Set());
 
   useEffect(() => {
-    supabase.from("exercises").select("day_of_week").eq("client_id", trainingOwnerId(profile))
+    supabase.from("exercises").select("day_of_week").eq("client_id", trainingOwnerId(profile)).is("retired_at", null)
       .then(({ data }) => setDays(new Set((data || []).map((e) => e.day_of_week).filter(Boolean))));
   }, [profile.id, profile.shared_program_owner_id]);
 

@@ -17,7 +17,7 @@ export function TodayWorkoutPreview({ profile, onViewFull }) {
 
   useEffect(() => {
     Promise.all([
-      supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile)),
+      supabase.from("exercises").select("*").eq("client_id", trainingOwnerId(profile)).is("retired_at", null),
       resolveTodayDayOfWeek(profile.id),
     ]).then(([{ data }, resolved]) => {
       setExercises(data || []);

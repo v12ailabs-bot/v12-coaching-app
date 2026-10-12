@@ -153,7 +153,7 @@ export default async function handler(req, res) {
     let progressionCandidates = [];
     if (!nutritionOnly) {
       const [{ data: aiExercises }, { data: previousProgram }] = await Promise.all([
-        supabaseAdmin.from("exercises").select("id, name, day_of_week, sets, reps").eq("client_id", trainingOwnerId).eq("source", "ai"),
+        supabaseAdmin.from("exercises").select("id, name, day_of_week, sets, reps").eq("client_id", trainingOwnerId).eq("source", "ai").is("retired_at", null),
         supabaseAdmin.from("programs").select("top_phase, sub_phase, phase, phase_note, start_date")
           .eq("client_id", trainingOwnerId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       ]);

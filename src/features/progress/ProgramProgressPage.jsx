@@ -33,7 +33,7 @@ export function ProgramProgress({ profile }) {
       const { data: logs } = await supabase.from("workout_logs")
         .select("date").eq("client_id", profile.id);
       const { data: exs } = await supabase.from("exercises")
-        .select("day_of_week").eq("client_id", profile.id);
+        .select("day_of_week").eq("client_id", profile.id).is("retired_at", null);
       // The client's single active bodyweight goal — same client_goals row
       // GoalsSection/ProgressPage read, computed here without AI so it never
       // costs a generation credit just to view it.

@@ -86,7 +86,7 @@ async function handleGenerateRoadmap(req, res) {
 
     const [{ data: profile }, { data: exercises }, { data: nutritionPlan }, { data: milestones }, { data: weightGoal }, { data: daily }, { data: weekly }, { data: mealLogs }, { data: workoutLogs }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal,age,sex").eq("id", program.client_id).maybeSingle(),
-      supabaseAdmin.from("exercises").select("category,day_of_week,sets,reps").eq("program_id", program_id),
+      supabaseAdmin.from("exercises").select("category,day_of_week,sets,reps").eq("program_id", program_id).is("retired_at", null),
       supabaseAdmin.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", program.client_id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabaseAdmin.from("client_goals").select("*").eq("client_id", program.client_id).eq("status", "active").not("category", "is", null),
       // Primary bodyweight goal, same metric_key convention as GoalsSection —
@@ -347,7 +347,7 @@ async function handlePlanDetails(req, res) {
     if (!program) return res.status(404).json({ error: "Program not found." });
     const [{ data: profile }, { data: exRows }] = await Promise.all([
       supabaseAdmin.from("profiles").select("name,goal").eq("id", program.client_id).maybeSingle(),
-      supabaseAdmin.from("exercises").select("name").eq("program_id", program.id).limit(60),
+      supabaseAdmin.from("exercises").select("name").eq("program_id", program.id).is("retired_at", null).limit(60),
     ]);
     const clean = phases.map((p) => ({
       phase: String(p.phase || "").slice(0, 80), week_start: Number(p.week_start) || null, week_end: Number(p.week_end) || null,
