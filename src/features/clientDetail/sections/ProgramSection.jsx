@@ -6,6 +6,7 @@ import { Card, CardTitle, Btn, Fld, RG, SectionHeader, Alert, EmptyState } from 
 import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
+import { RoadmapWizard } from "./RoadmapWizard.jsx";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
 import { PlanHistory } from "./PlanHistory.jsx";
@@ -325,6 +326,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [revisions, setRevisions] = useState([]);
   const [genSource, setGenSource] = useState("manual"); // becomes 'ai_generated' after Generate Roadmap, until saved
   const [genDetails, setGenDetails] = useState(false);
+  const [wizardOpen, setWizardOpen] = useState(false);
   const [tracking, setTracking] = useState({ daily: [], nutCtx: null }); // evidence for the plan-vs-actual assessment
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -334,7 +336,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [genInfo, setGenInfo] = useState(null);
 
   const load = useCallback(async () => {
-    const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const { data: prog } = await supabase.from("programs").select("id,phase,start_date,weeks,name,description").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle();
     setProgram(prog || null);
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
@@ -379,11 +381,16 @@ export function ProgramRoadmapPlanner({ clientId }) {
 
   const review = validateRoadmap(rows, { programWeeks: program?.weeks || null });
 
-  const save = async () => {
-    if (!program || review.errors.some((x) => x.blocking !== false)) return;
-    if (review.errors.length && !window.confirm(`This roadmap has conflicts:\n\n${review.errors.map((x) => "• " + x.message).join("\n")}\n\nSave anyway?`)) return;
+  // opts (optional): { rows, skipConfirm } — the Edit Program wizard passes its own
+  // draft rows (it already confirmed conflicts). Called bare from onClick, `opts`
+  // is the click event, which has neither field, so the planner's own rows are used.
+  const save = async (opts) => {
+    const useRows = Array.isArray(opts?.rows) ? opts.rows : rows;
+    const skipConfirm = !!opts?.skipConfirm;
+    if (!program || validateRoadmap(useRows, { programWeeks: program?.weeks || null }).errors.some((x) => x.blocking !== false)) return { ok: false, error: "The roadmap has errors that must be fixed first." };
+    if (!skipConfirm && review.errors.length && !window.confirm(`This roadmap has conflicts:\n\n${review.errors.map((x) => "• " + x.message).join("\n")}\n\nSave anyway?`)) return;
     setSaving(true); setMsg(null);
-    const clean = rows.filter((r) => r.phase.trim());
+    const clean = useRows.filter((r) => r.phase.trim());
     const toPayload = (r, i) => ({
       program_id: program.id, client_id: clientId, phase: r.phase.trim(), order_index: i,
       week_start: r.week_start === "" ? null : parseInt(r.week_start), week_end: r.week_end === "" ? null : parseInt(r.week_end),
@@ -449,6 +456,16 @@ export function ProgramRoadmapPlanner({ clientId }) {
     // Reload so freshly inserted rows pick up their ids (the next save must
     // update them in place, not insert duplicates).
     if (!error) await load();
+    return { ok: !error, error: error?.message };
+  };
+
+  // Edit Program wizard: program details first, then the roadmap through the
+  // same save() above (ids kept, history snapshot, plan details). A details
+  // failure stops before any phase is touched.
+  const saveFromWizard = async ({ details, rows: wizardRows }) => {
+    const { error: dErr } = await supabase.from("programs").update({ name: details.name, description: details.description, weeks: details.weeks }).eq("id", program.id);
+    if (dErr) return { ok: false, error: dErr.message };
+    return save({ rows: wizardRows, skipConfirm: true });
   };
 
   // Proposes a full phase sequence from the client's actual program/goal/
@@ -509,7 +526,10 @@ export function ProgramRoadmapPlanner({ clientId }) {
 
   return (
     <Card style={{ marginBottom: 20 }}>
-      <CardTitle>Program Roadmap</CardTitle>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+        <CardTitle>Program Roadmap</CardTitle>
+        {program && <Btn sm teal onClick={() => setWizardOpen(true)}>Edit Program</Btn>}
+      </div>
       {!program ? (
         <div style={{ fontSize: 13, color: S.muted }}>No program yet. Generate or assign a program first, then plan its roadmap here.</div>
       ) : (
@@ -591,6 +611,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
               {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
             </div>
           )}
+          {wizardOpen && <RoadmapWizard program={program} initialRows={rows} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
           {editingDetails != null && rows[editingDetails] && (
             <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
               onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
