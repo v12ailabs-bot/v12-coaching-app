@@ -28,6 +28,7 @@ function ConfigForm({ methodId, config, onChange }) {
   );
   const isApre = methodId.startsWith("apre_");
   const isDensity = methodId === "density_progression";
+  const isConj = methodId === "conjugate";
   const effort = config.effort || { metric: "", required: false, max: null };
   const setEffort = (patch) => {
     const next = { ...effort, ...patch };
@@ -38,7 +39,7 @@ function ConfigForm({ methodId, config, onChange }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
         {methodId === "double_progression" && <>{field("repMin", "Rep min")}{field("repMax", "Rep max")}</>}
         {methodId === "linear_progression" && field("targetReps", "Target reps")}
-        {!isApre && !isDensity && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {!isApre && !isDensity && !isConj && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
         {isApre && (
           <div>
             <label style={lbl}>Change within published range</label>
@@ -48,14 +49,56 @@ function ConfigForm({ methodId, config, onChange }) {
           </div>
         )}
         {methodId === "percentage_based" && field("percent", "% of 1RM")}
-        {!isDensity && field("increment", "Increment (lb)")}
-        {!isDensity && <div>
+        {!isDensity && (!isConj || config.role === "dynamic_effort") && field("increment", "Increment (lb)")}
+        {!isDensity && (!isConj || config.role === "dynamic_effort") && <div>
           <label style={lbl}>Equipment (default increment)</label>
           <select style={input} value={config.equipment || ""} onChange={(e) => set("equipment", e.target.value || undefined)}>
             <option value="">—</option>{["barbell", "dumbbell", "machine", "cable", "kettlebell", "other"].map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </div>}
       </div>
+      {isConj && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: 8 }}>
+            <div><label style={lbl}>Role</label>
+              <select style={input} value={config.role || ""} onChange={(e) => set("role", e.target.value || undefined)}>
+                <option value="">Choose…</option><option value="max_effort">Max effort (heavy 1–3)</option><option value="dynamic_effort">Dynamic effort (speed wave)</option>
+              </select></div>
+            <div><label style={lbl}>Lift (groups the variations)</label><input style={input} value={config.lift || ""} placeholder="e.g. squat" onChange={(e) => set("lift", e.target.value || undefined)} /></div>
+          </div>
+          {config.role === "max_effort" && (
+            <>
+              <div><label style={lbl}>Variation pool (one per line)</label>
+                <textarea rows={3} style={{ ...input, resize: "vertical" }} value={(config.variations || []).join("\n")} onChange={(e) => set("variations", e.target.value.split("\n").map((x) => x.trim()).filter(Boolean))} placeholder={"Box squat\nSafety bar squat\nGiant cambered bar squat"} /></div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+                {field("rotationWeeks", "Rotate every (weeks, 1–6)")}
+                <div><label style={lbl}>Rotation start (Monday)</label><input style={input} type="date" value={config.rotationStartDate || ""} onChange={(e) => set("rotationStartDate", e.target.value || undefined)} /></div>
+                <div><label style={lbl}>Rep range (min–max)</label>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    <input style={input} type="number" value={config.repRange?.[0] ?? ""} placeholder="1" onChange={(e) => set("repRange", [numOrNull(e.target.value) ?? 1, config.repRange?.[1] ?? 3])} />
+                    <input style={input} type="number" value={config.repRange?.[1] ?? ""} placeholder="3" onChange={(e) => set("repRange", [config.repRange?.[0] ?? 1, numOrNull(e.target.value) ?? 3])} />
+                  </div></div>
+                {field("highIntensityPct", "High-intensity line (% of 1RM)", { placeholder: "90" })}
+                {field("maxWeeksAtHighIntensity", "Flag after (weeks at that line)", { placeholder: "3" })}
+              </div>
+            </>
+          )}
+          {config.role === "dynamic_effort" && (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+              <div><label style={lbl}>Wave</label>
+                <select style={input} value={config.wave || ""} onChange={(e) => set("wave", e.target.value || undefined)}>
+                  <option value="">Choose…</option><option value="westside_lower">Westside lower — 12/10/8×2 @ 75/80/85%</option><option value="westside_upper_miniband">Westside upper — 9×3 @ 50/55/60%</option>
+                  <option value="repeated_effort_upper">Repeated-effort upper — 5×5 @ 75/80/85%</option><option value="volume_squat">Volume squat — 5×5, 5×5, 10×2</option><option value="deadlift">Deadlift 6/5/4×2 (you set the %)</option>
+                </select></div>
+              <div><label style={lbl}>Wave start (Monday of week 1)</label><input style={input} type="date" value={config.waveStartDate || ""} onChange={(e) => set("waveStartDate", e.target.value || undefined)} /></div>
+              {field("accommodationPct", "Bands/chains (% of 1RM)", { placeholder: "wave default" })}
+              {field("restSec", "Rest (sec, optional)")}
+              {config.wave === "deadlift" && <div><label style={lbl}>Weekly % (3 numbers, comma)</label><input style={input} value={(config.customPercents || []).join(", ")} placeholder="70, 75, 80" onChange={(e) => set("customPercents", e.target.value.split(",").map((x) => Number(x.trim())).filter((x) => Number.isFinite(x) && e.target.value.trim() !== ""))} /></div>}
+              {config.wave === "repeated_effort_upper" && <div><label style={lbl}>Using bands/chains?</label><select style={input} value={config.accommodatingResistance === undefined ? "" : String(config.accommodatingResistance)} onChange={(e) => set("accommodatingResistance", e.target.value === "" ? undefined : e.target.value === "true")}><option value="">Choose…</option><option value="true">Yes</option><option value="false">No (−5%)</option></select></div>}
+            </div>
+          )}
+        </div>
+      )}
       {isDensity && (
         <div style={{ display: "grid", gap: 8 }}>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
@@ -92,7 +135,7 @@ function ConfigForm({ methodId, config, onChange }) {
           </div>
         </div>
       )}
-      {methodId !== "percentage_based" && !isApre && (
+      {methodId !== "percentage_based" && !isApre && !isConj && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
           <div>
             <label style={lbl}>Effort rule</label>
@@ -245,11 +288,14 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           <div style={{ borderTop: "1px solid " + S.border, paddingTop: 10, display: "grid", gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>Latest session</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
-              {savedAs.methodId !== "percentage_based" && savedAs.methodId !== "density_progression" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
+              {savedAs.methodId !== "percentage_based" && savedAs.methodId !== "density_progression" && savedAs.methodId !== "conjugate" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
               {savedAs.methodId === "percentage_based" && <>
                 <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
                 {savedAs.config.weeklyPercents && <div><label style={lbl}>Week</label><input style={input} type="number" value={week} onChange={(e) => setWeek(e.target.value)} /></div>}
               </>}
+              {savedAs.methodId === "conjugate" && (savedAs.config.role === "dynamic_effort" || savedAs.config.role === "max_effort") && (
+                <div><label style={lbl}>{savedAs.config.role === "dynamic_effort" ? "Current 1RM (lb)" : "1RM for the fatigue watch (lb)"}</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
+              )}
               {savedAs.methodId === "density_progression" && (
                 <div><label style={lbl}>Pain today?</label>
                   <select style={input} value={painAns} onChange={(e) => setPainAns(e.target.value)}><option value="">Not asked</option><option value="no">No pain</option><option value="yes">Pain reported</option></select></div>

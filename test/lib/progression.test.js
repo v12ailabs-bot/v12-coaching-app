@@ -149,18 +149,9 @@ test("percentage-based: rounds to the increment; needs a verified 1RM; validates
   assert.equal(evaluateProgression("percentage_based", { config: { percent: 70 }, oneRepMax: 200 }).status, "invalid", "no increment configured");
 });
 
-// ---- reference-only: never a number -------------------------------------------------
-test("conjugate is not calculated and says what is missing", () => {
-  for (const id of ["conjugate"]) {
-    const r = evaluateProgression(id, { config: cfg, currentLoad: 100, sets: three(12) });
-    assert.equal(r.status, "reference_only", id);
-    assert.equal(r.recommendedLoad, null, id + " must not produce a load");
-    assert.ok(r.missing.length > 0, id);
-  }
-});
-
+// ---- (every method is now calculated; the reference-only path is covered by evaluateReferenceOnly in engine) -------------------------------------------------
 test("calculated methods: double, linear, percentage, APRE 3/6/10, density, taper", () => {
-  assert.deepEqual(calculatedMethodIds().sort(), ["apre_10", "apre_3", "apre_6", "density_progression", "double_progression", "linear_progression", "percentage_based", "performance_taper"]);
+  assert.deepEqual(calculatedMethodIds().sort(), ["apre_10", "apre_3", "apre_6", "conjugate", "density_progression", "double_progression", "linear_progression", "percentage_based", "performance_taper"]);
 });
 
 test("unknown method id is invalid, not a silent success", () => {
