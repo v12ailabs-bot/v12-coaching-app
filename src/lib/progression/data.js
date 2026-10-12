@@ -78,7 +78,7 @@ export async function decide(recommendation, decision) {
 // Baseline volume comes from the client's logged working sets over the coach's
 // reference period. The calculated plan, the in-force plan and every override are
 // stored separately (taper_plans: the original is immutable, the log is append-only).
-async function loadTaperLogs(clientId, referencePeriod) {
+export async function loadTaperLogs(clientId, referencePeriod) {
   const from = referencePeriod?.start, to = referencePeriod?.end;
   const { data: ex } = await supabase.from("exercises").select("id,name").eq("client_id", clientId);
   const ids = (ex || []).map((e) => e.id);
