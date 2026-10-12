@@ -6,6 +6,7 @@ import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
 import { PhaseDraftModal } from "./PhaseDraftModal.jsx";
 import { assessPhase } from "../../../lib/phaseAssessment.js";
+import { yesterdayDate } from "../../../lib/dates.js";
 import { PhaseDetailModal } from "./PhaseDetailModal.jsx";
 
 // Coach-side phase cards (roadmap board): one card per saved phase with its
@@ -117,13 +118,13 @@ export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteri
                 </div>
               ))}
               {status === "current" && (() => {
-                const a = assessPhase({ phase: p, programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null });
+                const a = assessPhase({ phase: p, today: yesterdayDate(), programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null });
                 if (a.status === "not_assessable") return null;
                 const nextName = phases[i + 1]?.phase;
                 return (
                   <div style={{ border: "1px dashed " + S.border, borderRadius: RADIUS.md, padding: "8px 10px", fontSize: 11, lineHeight: 1.5 }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
-                      <span style={{ textTransform: "uppercase", letterSpacing: 1, color: S.muted, fontSize: 10 }}>Plan vs actual · advisory</span>
+                      <span style={{ textTransform: "uppercase", letterSpacing: 1, color: S.muted, fontSize: 10 }}>Plan vs actual · advisory · as of yesterday</span>
                       <StatusBadge label={ASSESS_LABEL[a.status]} tone={ASSESS_TONE[a.status]} />
                     </div>
                     <div style={{ color: S.text }}>{a.headline}</div>
@@ -158,7 +159,7 @@ export function RoadmapPhaseCards({ rows, program, clientId, tracking, onCriteri
       </div>
       {detail && rows[detail.idx] && (
         <PhaseDetailModal phase={rows[detail.idx]} program={program} clientId={clientId} status={detail.status}
-          assessment={detail.status === "current" ? assessPhase({ phase: rows[detail.idx], programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null }) : null}
+          assessment={detail.status === "current" ? assessPhase({ phase: rows[detail.idx], today: yesterdayDate(), programStart: program.start_date, daily: tracking?.daily || [], nutCtx: tracking?.nutCtx || null }) : null}
           onClose={() => setDetail(null)} onPatch={onPatchPhase}
           onEditProgram={() => { setDetail(null); onEditProgram && onEditProgram(); }}
           onEditCriteria={() => { const ph = rows[detail.idx]; setDetail(null); setEditing(ph); }}

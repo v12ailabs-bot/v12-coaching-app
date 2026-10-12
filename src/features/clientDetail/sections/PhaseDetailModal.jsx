@@ -118,7 +118,7 @@ export function PhaseDetailModal({ phase, program, clientId, status, assessment,
             )}
             {assessment && assessment.status !== "not_assessable" && (
               <div style={{ border: "1px dashed " + S.border, borderRadius: RADIUS.md, padding: "8px 10px", fontSize: 12, marginBottom: 12 }}>
-                <div style={{ ...lbl, marginBottom: 2 }}>Plan vs actual · advisory</div>
+                <div style={{ ...lbl, marginBottom: 2 }}>Plan vs actual · advisory · as of yesterday</div>
                 <div>{assessment.headline}</div>
                 {assessment.reasons.map((r, i) => <div key={i} style={{ color: S.muted }}>• {r}</div>)}
               </div>

@@ -7,6 +7,8 @@ import { callHeadCoach } from "../clientDetail/sections/HeadCoachSection.jsx";
 import { StrengthTab } from "../progress/StrengthTab.jsx";
 import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { mergeDailyNutrition } from "../../lib/scoring/nutritionAdherence.js";
+import { adherenceFrom } from "../../lib/scoring.js";
+import { yesterdayDate, yesterdayStr } from "../../lib/dates.js";
 
 // Attention Center pop-up (per the Intervention reference): one modal that
 // answers "why is this client flagged, what does the evidence say, and what
@@ -33,8 +35,15 @@ function Glance({ label, value, unit, sub, tone }) {
   );
 }
 
-export function InterventionModal({ assessment, daily = [], nutCtx, openClient, onClose }) {
-  const { client, flags = [], loggingFlags = [], riskLevel, adh, goalScore } = assessment;
+export function InterventionModal({ assessment, daily: dailyAll = [], nutCtx: nutAll, openClient, onClose }) {
+  const { client, flags = [], loggingFlags = [], riskLevel, goalScore } = assessment;
+  // Clients usually check in at the end of the day and the coach reads it the
+  // next day, so every number here is "as of yesterday": today's (partial or
+  // empty) day is left out instead of dragging the averages down.
+  const asOf = yesterdayDate(), asOfStr = yesterdayStr();
+  const daily = dailyAll.filter((r) => r.date <= asOfStr);
+  const nutCtx = nutAll ? { ...nutAll, mealLogs: (nutAll.mealLogs || []).filter((m) => m.date <= asOfStr) } : nutAll;
+  const adh = adherenceFrom(daily, 30, asOf);
   const [tab, setTab] = useState("overview");
   const [recs, setRecs] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,7 +112,7 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
   const nextSteps = [...new Set(evidence.map((f) => f.action).filter(Boolean))];
 
   // Key data at a glance — only from real rows; "—" when there isn't any.
-  const since30 = (() => { const d = new Date(); d.setDate(d.getDate() - 29); return d.toISOString().split("T")[0]; })();
+  const since30 = (() => { const d = new Date(asOf); d.setDate(d.getDate() - 29); return d.toISOString().split("T")[0]; })();
   const weights = daily.filter((r) => r.weight != null);
   const lastW = weights.length ? weights[weights.length - 1].weight : null;
   const recentW = weights.filter((r) => r.date >= since30);
@@ -183,7 +192,7 @@ export function InterventionModal({ assessment, daily = [], nutCtx, openClient, 
               )}
             </div>
 
-            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Key data at a glance</div>
+            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 6 }}>Key data at a glance <span style={{ fontWeight: 400, color: S.muted }}>· as of yesterday ({asOfStr})</span></div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))", gap: 8 }}>
               <Glance label="Weight" value={fmt(lastW, 1)} unit={lastW != null ? " lb" : ""} sub={wDelta != null ? `${wDelta > 0 ? "+" : ""}${wDelta.toFixed(1)} lb / 30d` : null} />
               <Glance label="Protein (avg)" value={fmt(avgProtein)} unit={avgProtein != null ? " g" : ""} sub={plan?.protein_g ? `Target ${plan.protein_g} g` : null} />

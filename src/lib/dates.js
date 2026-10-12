@@ -54,3 +54,13 @@ export function rangeStartStr(range, today = todayStr()) {
   d.setDate(d.getDate() - RANGE_DAYS[range]);
   return localDateStr(d);
 }
+
+// Coach views read client check-ins the NEXT day (clients usually log at the
+// end of the day), so "today" is treated as not-yet-complete and the most
+// recent day shown is yesterday.
+export function yesterdayDate(now = new Date()) {
+  const d = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  d.setDate(d.getDate() - 1);
+  return d;
+}
+export const yesterdayStr = (now = new Date()) => localDateStr(yesterdayDate(now));
