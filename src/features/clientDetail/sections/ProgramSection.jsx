@@ -508,7 +508,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          <RoadmapPhaseCards rows={rows} program={program} onEditDetails={setEditingDetails}
+          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} onEditDetails={setEditingDetails}
             onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {rows.map((r, i) => {
             const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
