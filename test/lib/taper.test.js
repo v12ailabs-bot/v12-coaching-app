@@ -217,3 +217,20 @@ test("an exercise done on only some training days doesn't break the caps (real-d
   assert.ok(p.exercises.Squat.plannedVolume > p.exercises.Bench.plannedVolume, "the mix keeps Squat the bigger share");
   assert.equal(p.sessions.reduce((a, s) => a + s.total, 0), p.plannedVolume);
 });
+
+import { buildTaperConfig, defaultReferencePeriod } from "../../src/lib/progression/taperForm.js";
+test("taper form -> config: blanks are left out (never silently filled), numbers are parsed, roles/intensity/readiness only when entered", () => {
+  const f = { eventDate: "2026-10-10", durationDays: "10", reductionPct: "40", volumeUnit: "sets", refStart: "2026-09-01", refEnd: "2026-09-14", sessionWeekdays: ["Mon", "Wed"], distribution: "", roundTo: "", maxSessionVolumePct: "", lastSessionDaysBeforeEvent: "", exercises: [{ name: "Squat", role: "event_specific" }, { name: "Row", role: "" }], eventSpecificReductionPct: "20", generalReductionPct: "", intensityType: "", intensityMin: "", intensityMax: "", readinessField: "", performanceDropPct: "" };
+  const c = buildTaperConfig(f);
+  assert.deepEqual(c, { eventDate: "2026-10-10", durationDays: 10, reductionPct: 40, volumeUnit: "sets", referencePeriod: { start: "2026-09-01", end: "2026-09-14" }, sessionWeekdays: ["Mon", "Wed"], exercises: [{ name: "Squat", role: "event_specific" }], reductionPctByRole: { event_specific: 20 } });
+  assert.equal("roundTo" in c, false); assert.equal("intensity" in c, false); assert.equal("readiness" in c, false);
+  const full = buildTaperConfig({ ...f, intensityType: "pct1rm", intensityMin: "80", intensityMax: "92.5", readinessField: "energy", readinessMin: "5", readinessDays: "2", performanceDropPct: "5", roundTo: "2", distribution: "linear_decrease" });
+  assert.deepEqual(full.intensity, { default: { type: "pct1rm", min: 80, max: 92.5 } });
+  assert.deepEqual(full.readiness, { field: "energy", min: 5, consecutiveDays: 2 });
+  assert.equal(full.performanceDropPct, 5); assert.equal(full.roundTo, 2);
+  assert.equal(planTaper({ config: buildTaperConfig({ ...f, reductionPct: "" }), logs: [] }).status, "invalid", "a blank required value reaches the engine as invalid");
+});
+test("defaultReferencePeriod: the 14 days before the taper starts", () => {
+  assert.deepEqual(defaultReferencePeriod("2026-10-10", 10), { start: "2026-09-16", end: "2026-09-29" });
+  assert.equal(defaultReferencePeriod("", 10), null); assert.equal(defaultReferencePeriod("2026-10-10", 0), null);
+});

@@ -25,6 +25,7 @@ import { CoachConversations } from "./sections/ConversationLogSection.jsx";
 import { CheckinNotesPanel } from "./sections/CheckinNotesPanel.jsx";
 import { GoalsSection } from "./sections/GoalsSection.jsx";
 import { HeadCoachSection } from "./sections/HeadCoachSection.jsx";
+import { TaperPlanner } from "./sections/TaperPlanner.jsx";
 import { Progress } from "../progress/ProgressPage.jsx";
 import { WorkoutScheduler } from "../scheduling/WorkoutScheduler.jsx";
 import { COACH_EMAIL } from "../../lib/constants.js";
@@ -564,6 +565,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           <ProgramVersions clientId={trainOwnerId} refreshKey={progTick} onRestored={()=>loadEx(trainOwnerId)} />
                         </div>
                       </div>
+                      <div id="section-taper"><TaperPlanner clientId={trainOwnerId} /></div>
                       {/* V12 Assessment, full width — not its own tab
                           (see TABS_FOR), folded in here instead. */}
                       <div id="section-assessment">
