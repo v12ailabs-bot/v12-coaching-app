@@ -3,6 +3,7 @@ import { supabase } from "../../../supabaseClient.js";
 import { S, RADIUS } from "../../../theme.jsx";
 import { Modal, Btn, StatusBadge } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
+import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
 
 // Coach-side phase cards (roadmap board): one card per saved phase with its
 // real status, dates, focus and exit-criteria checklist. Exit criteria are
@@ -67,9 +68,9 @@ function CriteriaEditor({ phase, onClose, onSaved }) {
   );
 }
 
-export function RoadmapPhaseCards({ rows, program, onCriteriaSaved }) {
+export function RoadmapPhaseCards({ rows, program, onCriteriaSaved, onEditDetails }) {
   const [editing, setEditing] = useState(null);
-  const phases = rows.filter((r) => r.phase.trim());
+  const phases = rows.map((r, idx) => ({ ...r, _idx: idx })).filter((r) => r.phase.trim());
   if (!phases.length) return null;
   const currentIndex = phases.findIndex((p) => p.phase === program.phase);
 
@@ -107,12 +108,24 @@ export function RoadmapPhaseCards({ rows, program, onCriteriaSaved }) {
                   <span style={{ textDecoration: c.status === "na" ? "line-through" : "none" }}>{c.label}</span>
                 </div>
               ))}
-              <div style={{ marginTop: "auto", paddingTop: 4 }}>
+              {(p.checkpoints || []).length > 0 && (
+                <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.5 }}>
+                  {(p.checkpoints || []).map((c, k) => <div key={k}>◆ {c.label || CHECKPOINT_LABELS[c.type]} — {checkpointWhen(c, program.start_date)}</div>)}
+                </div>
+              )}
+              {p.plan_rationale && <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.5, fontStyle: "italic" }}>Plan: {p.plan_rationale}</div>}
+              {(p.planned_changes || []).length > 0 && (
+                <div style={{ fontSize: 11, color: S.muted, lineHeight: 1.5 }}>
+                  {(p.planned_changes || []).map((c, k) => <div key={k}>↪ {c.action}: {c.from && c.to ? `${c.from} → ${c.to}` : c.to || c.from} <span style={{ opacity: 0.8 }}>({c.reason})</span></div>)}
+                </div>
+              )}
+              <div style={{ marginTop: "auto", paddingTop: 4, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 {p.id ? (
                   <Btn sm teal onClick={() => setEditing(p)}>Edit criteria</Btn>
                 ) : (
                   <div style={{ fontSize: 11, color: S.muted }}>Save the roadmap to edit this phase's criteria here.</div>
                 )}
+                {onEditDetails && <Btn sm onClick={() => onEditDetails(p._idx)}>Plan details</Btn>}
               </div>
             </div>
           );

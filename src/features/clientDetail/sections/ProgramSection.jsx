@@ -7,6 +7,9 @@ import { ProgramRoadmap, dateRangeForWeeks } from "../../../components/ProgramRo
 import { RoadmapPhaseCards } from "./RoadmapPhaseCards.jsx";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
+import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
+import { PlanHistory } from "./PlanHistory.jsx";
+import { planSnapshot, canonicalJson } from "../../../lib/planCheckpoints.js";
 import { DAY_ORDER, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
 import { TOP_PHASES, SUB_PHASES, synthesizePhaseLabel } from "../../../lib/progressionModels.js";
 
@@ -304,6 +307,7 @@ export function ProgramPhase({ clientId, onOpenRoadmap }) {
 const blankRoadmapRow = () => ({
   phase: "", week_start: "", week_end: "", note: "",
   objective: "", training_focus: "", movement_focus: "", progression_strategy: "", exit_criteria: [],
+  checkpoints: [], plan_rationale: "", planned_changes: [],
 });
 const blankExitCriterion = () => ({ label: "", status: "incomplete" });
 
@@ -317,6 +321,10 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [rows, setRows] = useState([]);
   const [originalIds, setOriginalIds] = useState([]);
   const [addingPhase, setAddingPhase] = useState(false);
+  const [editingDetails, setEditingDetails] = useState(null); // row index
+  const [revisions, setRevisions] = useState([]);
+  const [genSource, setGenSource] = useState("manual"); // becomes 'ai_generated' after Generate Roadmap, until saved
+  const [genDetails, setGenDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState(null);
@@ -330,8 +338,16 @@ export function ProgramRoadmapPlanner({ clientId }) {
     if (prog) {
       const { data: planned } = await supabase.from("program_phases").select("*").eq("program_id", prog.id).order("order_index");
       setOriginalIds((planned || []).map((p) => p.id));
+      const planIds = (planned || []).map((p) => p.id);
+      const [{ data: plans }, { data: revs }] = await Promise.all([
+        planIds.length ? supabase.from("program_phase_plans").select("*").in("phase_id", planIds) : Promise.resolve({ data: [] }),
+        supabase.from("program_phase_revisions").select("*").eq("program_id", prog.id).order("version", { ascending: false }),
+      ]);
+      const planBy = Object.fromEntries((plans || []).map((x) => [x.phase_id, x]));
+      setRevisions(revs || []);
       setRows((planned || []).map((p) => ({
         id: p.id,
+        checkpoints: p.checkpoints || [], plan_rationale: planBy[p.id]?.rationale || "", planned_changes: planBy[p.id]?.planned_changes || [],
         phase: p.phase, week_start: p.week_start ?? "", week_end: p.week_end ?? "", note: p.note || "",
         objective: p.objective || "", training_focus: p.training_focus || "", movement_focus: p.movement_focus || "",
         progression_strategy: p.progression_strategy || "", exit_criteria: p.exit_criteria || [],
@@ -366,6 +382,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
       objective: r.objective?.trim() || null, training_focus: r.training_focus?.trim() || null,
       movement_focus: r.movement_focus?.trim() || null, progression_strategy: r.progression_strategy?.trim() || null,
       exit_criteria: (r.exit_criteria || []).filter((c) => c.label.trim()),
+      checkpoints: r.checkpoints || [],
     });
     // Update existing rows in place (keeps their ids — other records can point
     // at a phase), insert genuinely new ones, and only THEN delete rows the
@@ -379,8 +396,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
       error = upErr;
     }
     if (!error && added.length) {
-      const { error: insErr } = await supabase.from("program_phases").insert(added.map(({ r, i }) => toPayload(r, i)));
+      const { data: inserted, error: insErr } = await supabase.from("program_phases").insert(added.map(({ r, i }) => toPayload(r, i))).select("id");
       error = insErr;
+      // PostgREST returns rows in insertion order — give each new row its id so
+      // its plan detail can be saved below.
+      if (!insErr && inserted) added.forEach((a, k) => { a.r = { ...a.r, id: inserted[k]?.id }; });
     }
     if (!error) {
       // Delete only rows that existed when the editor loaded and were since
@@ -392,6 +412,29 @@ export function ProgramRoadmapPlanner({ clientId }) {
         error = delErr;
       }
     }
+    // Coach-only plan detail (rationale + planned changes) and the append-only
+    // history snapshot. Failures here are reported, not swallowed.
+    if (!error) {
+      const withIds = [...existing, ...added].filter(({ r }) => r.id);
+      if (withIds.length) {
+        const { error: planErr } = await supabase.from("program_phase_plans").upsert(withIds.map(({ r }) => ({
+          phase_id: r.id, client_id: clientId, rationale: (r.plan_rationale || "").trim() || null, planned_changes: r.planned_changes || [], updated_at: new Date().toISOString(),
+        })));
+        if (planErr) error = planErr;
+      }
+    }
+    if (!error) {
+      const snap = planSnapshot(clean);
+      const latest = revisions[0];
+      if (!latest || canonicalJson(latest.snapshot) !== canonicalJson(snap)) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const { error: revErr } = await supabase.from("program_phase_revisions").insert({
+          program_id: program.id, client_id: clientId, version: (latest?.version || 0) + 1, source: genSource, snapshot: snap, created_by: user?.id || null,
+        });
+        if (revErr) error = revErr;
+      }
+    }
+    if (!error) setGenSource("manual");
     setSaving(false);
     setMsg(error ? { ok: false, text: error.message } : { ok: true, text: "Roadmap saved." });
     // Reload so freshly inserted rows pick up their ids (the next save must
@@ -424,8 +467,33 @@ export function ProgramRoadmapPlanner({ clientId }) {
         exit_criteria: (p.exit_criteria || []).map((label) => ({ label, status: "incomplete" })),
       })));
       setGenInfo({ confidence: json.confidence, dataUsed: json.data_used || [] });
+      setGenSource("ai_generated");
     } catch (e) { setGenErr(e.message); }
     finally { setGenerating(false); }
+  };
+
+  const generatePlanDetails = async () => {
+    const named = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.phase.trim());
+    if (!program || !named.length) return;
+    const hasExisting = named.some(({ r }) => r.plan_rationale || (r.planned_changes || []).length || (r.checkpoints || []).length);
+    if (hasExisting && !window.confirm("Replace the existing rationale, planned changes and checkpoints with an AI proposal? Nothing is saved until you click Save Roadmap.")) return;
+    setGenDetails(true); setGenErr(null);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch("/api/goal-insight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+        body: JSON.stringify({ plan_details_program_id: program.id, phases: named.map(({ r }) => r) }),
+      });
+      const json = await readJson(res);
+      if (!res.ok) throw new Error(json.error || "Could not generate plan details.");
+      setRows((rs) => rs.map((row, idx) => {
+        const k = named.findIndex(({ i }) => i === idx);
+        return k === -1 || !json.details?.[k] ? row : { ...row, ...json.details[k] };
+      }));
+      setMsg({ ok: true, text: "Plan details proposed — review them (Edit plan details on each phase), then click Save Roadmap." });
+    } catch (e) { setGenErr(e.message); }
+    finally { setGenDetails(false); }
   };
 
   if (loading) return null;
@@ -440,7 +508,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          <RoadmapPhaseCards rows={rows} program={program}
+          <RoadmapPhaseCards rows={rows} program={program} onEditDetails={setEditingDetails}
             onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {rows.map((r, i) => {
             const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
@@ -514,6 +582,10 @@ export function ProgramRoadmapPlanner({ clientId }) {
               {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
             </div>
           )}
+          {editingDetails != null && rows[editingDetails] && (
+            <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
+              onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
+          )}
           {addingPhase && (
             <AddPhaseModal rows={rows} programWeeks={program.weeks || null} onClose={() => setAddingPhase(false)}
               onAdd={(idx, draft) => { setRows((r) => [...r.slice(0, idx), draft, ...r.slice(idx)]); setAddingPhase(false); setMsg({ ok: true, text: "Phase added to the draft — click Save Roadmap to publish." }); }} />
@@ -521,6 +593,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ display: "flex", alignItems: "center", gap: 14, marginTop: 16, flexWrap: "wrap" }}>
             <Btn onClick={save} disabled={saving || review.errors.some((x) => x.blocking !== false)}>{saving ? "Saving..." : "Save Roadmap"}</Btn>
             <Btn teal onClick={generateRoadmap} disabled={generating}>{generating ? "Generating..." : "Generate Roadmap"}</Btn>
+            <Btn onClick={generatePlanDetails} disabled={genDetails || rows.filter((r) => r.phase.trim()).length === 0}>{genDetails ? "Generating..." : "Generate plan details"}</Btn>
             {msg && <span style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
           <Alert variant="error">{genErr}</Alert>
@@ -536,10 +609,11 @@ export function ProgramRoadmapPlanner({ clientId }) {
               <ProgramRoadmap forCoach phases={rows.filter((r) => r.phase.trim()).map((r) => ({
                 phase: r.phase, week_start: r.week_start === "" ? null : r.week_start, week_end: r.week_end === "" ? null : r.week_end,
                 note: r.note, objective: r.objective, training_focus: r.training_focus, movement_focus: r.movement_focus,
-                progression_strategy: r.progression_strategy, exit_criteria: r.exit_criteria,
+                progression_strategy: r.progression_strategy, exit_criteria: r.exit_criteria, checkpoints: r.checkpoints,
               }))} currentPhase={program.phase} startDate={program.start_date} />
             </div>
           )}
+          <PlanHistory revisions={revisions} />
         </>
       )}
     </Card>

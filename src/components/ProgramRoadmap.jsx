@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { S } from "../theme.jsx";
 import { Modal } from "./ui/Modal.jsx";
+import { checkpointWhen, CHECKPOINT_LABELS } from "../lib/planCheckpoints.js";
 
 // The program's real total length, derived from the coach's own roadmap
 // (the highest week_end across all planned phases) rather than a separate
@@ -136,6 +137,14 @@ export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = fal
                   <span style={{ color: EXIT_CRITERIA_COLOR[c.status], fontWeight: 700 }}>{EXIT_CRITERIA_LABEL[c.status] || "○"}</span>
                   {c.label}
                 </div>
+              ))}
+            </div>
+          )}
+          {openPhase.checkpoints?.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Checkpoints</div>
+              {openPhase.checkpoints.map((c, i) => (
+                <div key={i} style={{ fontSize: 13, color: S.text, padding: "3px 0" }}>◆ {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, startDate)}</span></div>
               ))}
             </div>
           )}

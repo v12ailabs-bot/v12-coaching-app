@@ -788,3 +788,50 @@ This is a proposal only — the coach reviews and edits every field before savin
   try { return JSON.parse(raw); }
   catch { return { phases: [], confidence: "low", data_used: [], error: "Could not parse AI response." }; }
 }
+
+
+// Plan details for an existing roadmap draft: per-phase rationale, planned
+// exercise changes (with reasons) and checkpoints. A separate, compact call
+// from generateRoadmap so the existing roadmap generation is untouched and
+// each call stays well inside Vercel's 60s cap. Returns the raw proposal; the
+// caller runs it through sanitizePlanDetails — nothing here is trusted.
+export async function generatePlanDetails({ profile = {}, program = {}, phases = [], exerciseNames = [] }) {
+  const data = {
+    client_goal: profile.goal || program.goal,
+    experience_level: program.experience_level,
+    program_weeks: program.weeks,
+    // Real exercises currently in the program: a "replace"/"remove" may only
+    // name one of these as `from`.
+    current_exercises: exerciseNames,
+    phases: phases.map((p, index) => ({
+      index, phase: p.phase, week_start: p.week_start, week_end: p.week_end,
+      objective: p.objective, training_focus: p.training_focus, progression_strategy: p.progression_strategy,
+    })),
+  };
+  const message = await withTimeout("generatePlanDetails", (signal) =>
+    anthropic.messages.create(
+      {
+        model: MODEL,
+        max_tokens: 2200,
+        messages: [{
+          role: "user",
+          content: `You are an experienced strength coach filling in the plan details for a phased roadmap for ${profile.name || "the client"}. Use ONLY the data below. Be brief.
+
+DATA: ${JSON.stringify(data)}
+
+For EACH phase (by "index") return:
+- plan_rationale: one sentence on why this phase follows the previous one.
+- planned_changes: 0-4 expected exercise/programming changes going INTO or DURING this phase, each { action: "replace"|"add"|"remove"|"progress", from, to, reason }. For "replace"/"remove", "from" must be one of current_exercises. Only propose a change when there is a real training reason (skill, load readiness, a new emphasis) — never change exercises just to look different. Empty is fine.
+- checkpoints: 1-2 per phase, each { type: "reassessment"|"nutrition_review"|"goal_review", label, day } where day is a whole number of days from program start (Day 0) that falls inside that phase's weeks (day = (week-1)*7). Do not include a Day 90 review; it is added separately.
+
+Respond with ONLY valid JSON (no markdown fences):
+{ "phases": [ { "index": 0, "plan_rationale": "", "planned_changes": [], "checkpoints": [] } ] }
+This is a proposal only; the coach reviews and edits everything.`,
+        }],
+      },
+      { signal },
+    )
+  );
+  const raw = message.content[0].text.trim().replace(/^```json?\s*/i, "").replace(/```$/, "");
+  try { return JSON.parse(raw); } catch { return { phases: [] }; }
+}

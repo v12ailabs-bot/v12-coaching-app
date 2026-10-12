@@ -1,4 +1,5 @@
-import { generateGoalInsight, generatePhaseRecommendation, generateRoadmap } from "./_lib/anthropic.js";
+import { generateGoalInsight, generatePhaseRecommendation, generateRoadmap, generatePlanDetails } from "./_lib/anthropic.js";
+import { sanitizePlanDetails } from "./_lib/planDetails.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { computeGoalScore } from "../src/lib/scoring/goalScoring.js";
@@ -335,7 +336,32 @@ async function handleRecordOutcome(req, res, user) {
   }
 }
 
-// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { checkin_id } | { recommendation_id } | { record_outcome_for }
+// Plan details for the coach's current roadmap draft (rationale, planned
+// changes, checkpoints). Coach-only (requireCoach in the dispatcher). The AI
+// output is sanitized server-side; the Day 90 review is added deterministically.
+async function handlePlanDetails(req, res) {
+  const { plan_details_program_id, phases } = req.body || {};
+  if (!Array.isArray(phases) || phases.length === 0 || phases.length > 12) return res.status(400).json({ error: "phases must be a non-empty array of up to 12 phases." });
+  try {
+    const { data: program } = await supabaseAdmin.from("programs").select("id,client_id,weeks,description,experience_level,goal").eq("id", plan_details_program_id).maybeSingle();
+    if (!program) return res.status(404).json({ error: "Program not found." });
+    const [{ data: profile }, { data: exRows }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("name,goal").eq("id", program.client_id).maybeSingle(),
+      supabaseAdmin.from("exercises").select("name").eq("program_id", program.id).limit(60),
+    ]);
+    const clean = phases.map((p) => ({
+      phase: String(p.phase || "").slice(0, 80), week_start: Number(p.week_start) || null, week_end: Number(p.week_end) || null,
+      objective: String(p.objective || "").slice(0, 300), training_focus: String(p.training_focus || "").slice(0, 120), progression_strategy: String(p.progression_strategy || "").slice(0, 120),
+    }));
+    const raw = await generatePlanDetails({ profile: profile || {}, program, phases: clean, exerciseNames: [...new Set((exRows || []).map((e) => e.name))] });
+    return res.status(200).json({ details: sanitizePlanDetails(raw, clean, program.weeks) });
+  } catch (e) {
+    console.error("plan-details error:", e, "program_id:", plan_details_program_id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// POST /api/goal-insight  { goal_id } | { phase_id } | { program_id } | { plan_details_program_id, phases } | { checkin_id } | { recommendation_id } | { record_outcome_for }
 // Coach-only: recomputes the goal's score server-side (never trusts a
 // client-supplied score in the prompt) and generates a short AI coaching
 // insight, persisted as a new client_goal_insights row.
@@ -345,7 +371,8 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for } = req.body || {};
+  const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for, plan_details_program_id } = req.body || {};
+  if (plan_details_program_id) return handlePlanDetails(req, res);
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);
 
