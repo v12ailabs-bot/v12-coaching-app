@@ -6,8 +6,8 @@ export const Card = ({ children, style }) => (
   </div>
 );
 
-export const CardTitle = ({ children }) => (
-  <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 16 }}>
+export const CardTitle = ({ children, style }) => (
+  <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: S.muted, marginBottom: 16, ...style }}>
     {children}
   </div>
 );

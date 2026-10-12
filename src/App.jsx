@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
 import { apreSetPlan } from "./lib/progression/apre.js";
+import { ClientRoadmapLive } from "./features/clientDashboard/ClientRoadmapLive.jsx";
 
 
 
@@ -2581,7 +2582,7 @@ function ClientProgram({ profile }) {
           {program.progression_model_key && <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>Progression model: {program.progression_model_key}</div>}
           {roadmap.length > 0 && (
             <div style={{ marginTop: 18 }}>
-              <ProgramRoadmap phases={roadmap} currentPhase={program.phase} startDate={program.start_date} />
+              <ClientRoadmapLive profile={profile} program={program} phases={roadmap} showPhaseCard={false} />
             </div>
           )}
           {phaseHistory.length > 0 && (
