@@ -4,6 +4,7 @@ import { S, RADIUS } from "../../../theme.jsx";
 import { Modal, Btn, StatusBadge } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
 import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
+import { PhaseDraftModal } from "./PhaseDraftModal.jsx";
 
 // Coach-side phase cards (roadmap board): one card per saved phase with its
 // real status, dates, focus and exit-criteria checklist. Exit criteria are
@@ -68,8 +69,9 @@ function CriteriaEditor({ phase, onClose, onSaved }) {
   );
 }
 
-export function RoadmapPhaseCards({ rows, program, onCriteriaSaved, onEditDetails }) {
+export function RoadmapPhaseCards({ rows, program, clientId, onCriteriaSaved, onEditDetails }) {
   const [editing, setEditing] = useState(null);
+  const [drafting, setDrafting] = useState(null);
   const phases = rows.map((r, idx) => ({ ...r, _idx: idx })).filter((r) => r.phase.trim());
   if (!phases.length) return null;
   const currentIndex = phases.findIndex((p) => p.phase === program.phase);
@@ -126,11 +128,13 @@ export function RoadmapPhaseCards({ rows, program, onCriteriaSaved, onEditDetail
                   <div style={{ fontSize: 11, color: S.muted }}>Save the roadmap to edit this phase's criteria here.</div>
                 )}
                 {onEditDetails && <Btn sm onClick={() => onEditDetails(p._idx)}>Plan details</Btn>}
+                {p.id && <Btn sm onClick={() => setDrafting(p)}>Draft workouts</Btn>}
               </div>
             </div>
           );
         })}
       </div>
+      {drafting && <PhaseDraftModal phase={drafting} program={program} clientId={clientId} onClose={() => setDrafting(null)} />}
       {editing && <CriteriaEditor phase={editing} onClose={() => setEditing(null)} onSaved={onCriteriaSaved} />}
     </>
   );
