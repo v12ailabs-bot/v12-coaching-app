@@ -18,8 +18,8 @@ import { recommendForExercise, fetchRecommendations, decide } from "../../../lib
 const input = { background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "6px 8px", fontSize: 12, outline: "none", borderRadius: RADIUS.md, width: "100%" };
 const lbl = { fontSize: 10, color: S.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3, display: "block" };
 const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
-const STATUS_TONE = { increase: "green", decrease: "amber", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
-const STATUS_LABEL = { increase: "Increase", decrease: "Decrease", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
+const STATUS_TONE = { progress: "green", regression: "red", non_comparable: "neutral", increase: "green", decrease: "amber", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
+const STATUS_LABEL = { progress: "Progress", regression: "Regression", non_comparable: "Not comparable", increase: "Increase", decrease: "Decrease", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
 
 function ConfigForm({ methodId, config, onChange }) {
   const set = (k, v) => onChange({ ...config, [k]: v });
@@ -27,6 +27,7 @@ function ConfigForm({ methodId, config, onChange }) {
     <div><label style={lbl}>{label}</label><input style={input} type="number" step="any" value={config[k] ?? ""} onChange={(e) => set(k, numOrNull(e.target.value))} {...props} /></div>
   );
   const isApre = methodId.startsWith("apre_");
+  const isDensity = methodId === "density_progression";
   const effort = config.effort || { metric: "", required: false, max: null };
   const setEffort = (patch) => {
     const next = { ...effort, ...patch };
@@ -37,7 +38,7 @@ function ConfigForm({ methodId, config, onChange }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
         {methodId === "double_progression" && <>{field("repMin", "Rep min")}{field("repMax", "Rep max")}</>}
         {methodId === "linear_progression" && field("targetReps", "Target reps")}
-        {!isApre && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {!isApre && !isDensity && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
         {isApre && (
           <div>
             <label style={lbl}>Change within published range</label>
@@ -47,14 +48,50 @@ function ConfigForm({ methodId, config, onChange }) {
           </div>
         )}
         {methodId === "percentage_based" && field("percent", "% of 1RM")}
-        {field("increment", "Increment (lb)")}
-        <div>
+        {!isDensity && field("increment", "Increment (lb)")}
+        {!isDensity && <div>
           <label style={lbl}>Equipment (default increment)</label>
           <select style={input} value={config.equipment || ""} onChange={(e) => set("equipment", e.target.value || undefined)}>
             <option value="">—</option>{["barbell", "dumbbell", "machine", "cable", "kettlebell", "other"].map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
-        </div>
+        </div>}
       </div>
+      {isDensity && (
+        <div style={{ display: "grid", gap: 8 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+            <div><label style={lbl}>Mode</label>
+              <select style={input} value={config.mode || ""} onChange={(e) => set("mode", e.target.value || undefined)}>
+                <option value="">Choose…</option><option value="fixed_time">Fixed time — more work</option><option value="fixed_work">Fixed work — less time</option><option value="fixed_interval">Fixed intervals — more output</option>
+              </select></div>
+            <div><label style={lbl}>Work unit</label>
+              <select style={input} value={config.unit || ""} onChange={(e) => set("unit", e.target.value || undefined)}>
+                <option value="">Choose…</option><option value="reps">Reps</option><option value="rounds">Rounds</option><option value="volume_load">Volume load (reps × lb)</option><option value="reps_at_load">Reps at a set load</option>
+              </select></div>
+            {config.unit === "rounds" && field("repsPerRound", "Reps per round")}
+            {config.unit === "reps_at_load" && field("load", "Prescribed load (lb)")}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+            {config.mode === "fixed_time" && <>{field("timeCapSec", "Time cap (sec)")}{field("minImprovement", "Min improvement (work)")}{field("increment", "Increase target by")}{field("maxTarget", "Max target")}</>}
+            {config.mode === "fixed_work" && <>{field("workAmount", "Prescribed work")}{field("minImprovementSec", "Min faster (sec)")}{field("timeStepSec", "Cut target by (sec)")}{field("minTimeSec", "Fastest target (sec)")}{field("restSec", "Prescribed rest (sec)")}</>}
+            {config.mode === "fixed_interval" && <>{field("workSec", "Work (sec)")}{field("restSec", "Rest (sec)")}{field("rounds", "Rounds")}{field("minImprovement", "Min improvement (output)")}{field("increment", "Increase target by")}{field("maxTarget", "Max target")}</>}
+            {field("regressionTolerance", "Regression tolerance")}
+            {field("regressionFlagAfter", "Flag me after N regressions")}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8, alignItems: "end" }}>
+            <div><label style={lbl}>Readiness rule</label>
+              <select style={input} value={config.readiness?.field || ""} onChange={(e) => onChange({ ...config, readiness: e.target.value ? { field: e.target.value, min: config.readiness?.min ?? 5, required: !!config.readiness?.required } : undefined })}>
+                <option value="">None</option><option value="energy">Energy</option><option value="sleep">Sleep</option><option value="mood">Mood</option>
+              </select></div>
+            {config.readiness && <div><label style={lbl}>Minimum value</label><input style={input} type="number" step="any" value={config.readiness.min ?? ""} onChange={(e) => onChange({ ...config, readiness: { ...config.readiness, min: numOrNull(e.target.value) } })} /></div>}
+            <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={!!config.requirePainCheck} onChange={(e) => set("requirePainCheck", e.target.checked || undefined)} />Require a pain check</label>
+            <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={!!config.includeWarmup} onChange={(e) => set("includeWarmup", e.target.checked || undefined)} />Count warm-up sets</label>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 }}>
+            <div><label style={lbl}>Prescription effective from</label><input style={input} type="date" value={config.effectiveFrom || ""} onChange={(e) => set("effectiveFrom", e.target.value || undefined)} /></div>
+            <div><label style={lbl}>Fixed baseline date (optional)</label><input style={input} type="date" value={config.baselineDate || ""} onChange={(e) => set("baselineDate", e.target.value || undefined)} /></div>
+          </div>
+        </div>
+      )}
       {methodId !== "percentage_based" && !isApre && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
           <div>
@@ -89,6 +126,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
   const [oneRepMax, setOneRepMax] = useState("");
   const [week, setWeek] = useState("");
   const [techniqueOk, setTechniqueOk] = useState(false);
+  const [painAns, setPainAns] = useState(""); // "" = not asked, "no", "yes"
   const [editLoad, setEditLoad] = useState({});
   // The client's current target for this exercise (set by approving a recommendation).
   const [target, setTarget] = useState(exercise.prescribed_weight ? { weight: exercise.prescribed_weight, at: exercise.prescribed_set_at } : null);
@@ -126,7 +164,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
     setRunning(true); setOutcome(null);
     const res = await recommendForExercise({
       exercise: { ...exercise, progression_method: savedAs.methodId, progression_config: savedAs.config }, clientId,
-      currentLoad: numOrNull(currentLoad), oneRepMax: numOrNull(oneRepMax), week: week === "" ? undefined : Number(week), techniqueConfirmed: techniqueOk || undefined,
+      currentLoad: numOrNull(currentLoad), oneRepMax: numOrNull(oneRepMax), week: week === "" ? undefined : Number(week), techniqueConfirmed: techniqueOk || undefined, painReported: painAns === "yes" ? true : painAns === "no" ? false : undefined,
     });
     setOutcome(res); setRunning(false); loadRecs();
   };
@@ -152,7 +190,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           <label style={lbl}>Method</label>
           <select style={input} value={methodId} onChange={(e) => { setMethodId(e.target.value); setConfig({}); setOutcome(null); }}>
             <option value="">None assigned</option>
-            {Object.values(METHODS).map((m) => <option key={m.id} value={m.id}>{m.name}{m.status === "calculated" ? "" : " (reference only)"}</option>)}
+            {Object.values(METHODS).filter((m) => m.scope !== "plan").map((m) => <option key={m.id} value={m.id}>{m.name}{m.status === "calculated" ? "" : " (reference only)"}</option>)}
           </select>
         </div>
         {method && <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.5 }}>{method.purpose}</div>}
@@ -178,11 +216,15 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           <div style={{ borderTop: "1px solid " + S.border, paddingTop: 10, display: "grid", gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>Latest session</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
-              {savedAs.methodId !== "percentage_based" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
+              {savedAs.methodId !== "percentage_based" && savedAs.methodId !== "density_progression" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
               {savedAs.methodId === "percentage_based" && <>
                 <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
                 {savedAs.config.weeklyPercents && <div><label style={lbl}>Week</label><input style={input} type="number" value={week} onChange={(e) => setWeek(e.target.value)} /></div>}
               </>}
+              {savedAs.methodId === "density_progression" && (
+                <div><label style={lbl}>Pain today?</label>
+                  <select style={input} value={painAns} onChange={(e) => setPainAns(e.target.value)}><option value="">Not asked</option><option value="no">No pain</option><option value="yes">Pain reported</option></select></div>
+              )}
               {savedAs.config.technique?.required && <label style={{ fontSize: 12, display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={techniqueOk} onChange={(e) => setTechniqueOk(e.target.checked)} />Technique was acceptable</label>}
               <Btn sm teal onClick={run} disabled={running}>{running ? "Calculating..." : "Calculate recommendation"}</Btn>
             </div>
@@ -212,23 +254,26 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
                     </span>
                   </div>
                   <div style={{ marginTop: 4 }}>
-                    {c.recommendedLoad != null ? <>Calculated load: <b>{c.recommendedLoad} lb</b></> : "No calculated load"}
+                    {c.calc?.nonLoad
+                      ? (c.proposedAdjustment ? <>Proposed: <b>{c.proposedAdjustment.type.replace(/_/g, " ")}</b> {c.proposedAdjustment.from} → <b>{c.proposedAdjustment.to}</b> {c.proposedAdjustment.unit}</> : "No target change proposed")
+                      : c.recommendedLoad != null ? <>Calculated load: <b>{c.recommendedLoad} lb</b></> : "No calculated load"}
+                    {c.coachReviewFlag && <> · <b style={{ color: S.danger }}>Flagged for your review</b></>}
                     {r.approved_prescription && <> · Approved: <b>{r.approved_prescription.load} lb</b>{r.approved_prescription.source === "coach_override" ? " (coach override)" : ""}</>}
                   </div>
                   {(c.reasons || []).map((x, i) => <div key={i} style={{ color: S.muted, marginTop: 2 }}>• {x}</div>)}
                   {r.decision_note && <div style={{ color: S.muted }}>Note: {r.decision_note}</div>}
                   {r.status === "pending" && (
                     <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
-                      <Btn sm onClick={() => act(r, "approve")} disabled={c.recommendedLoad == null}>Approve</Btn>
-                      <input style={{ ...input, width: 80 }} type="number" step="any" placeholder="Load" value={editLoad[r.id] ?? ""} onChange={(e) => setEditLoad((m) => ({ ...m, [r.id]: e.target.value }))} />
-                      <Btn sm teal onClick={() => act(r, "modify", Number(editLoad[r.id]))} disabled={!(Number(editLoad[r.id]) > 0)}>Edit &amp; approve</Btn>
+                      <Btn sm onClick={() => act(r, "approve")} disabled={!c.calc?.nonLoad && c.recommendedLoad == null}>{c.calc?.nonLoad && !c.proposedAdjustment ? "Acknowledge" : "Approve"}</Btn>
+                      {!c.calc?.nonLoad && <input style={{ ...input, width: 80 }} type="number" step="any" placeholder="Load" value={editLoad[r.id] ?? ""} onChange={(e) => setEditLoad((m) => ({ ...m, [r.id]: e.target.value }))} />}
+                      {!c.calc?.nonLoad && <Btn sm teal onClick={() => act(r, "modify", Number(editLoad[r.id]))} disabled={!(Number(editLoad[r.id]) > 0)}>Edit &amp; approve</Btn>}
                       <Btn sm danger onClick={() => act(r, "reject")}>Reject</Btn>
                     </div>
                   )}
                 </div>
               );
             })}
-            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving sets the target weight the client sees on this exercise.</div>}
+            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving a load sets the target weight the client sees. Approving a density change updates that exercise's target in its progression settings (nothing the client sees changes).</div>}
           </div>
         )}
       </div>

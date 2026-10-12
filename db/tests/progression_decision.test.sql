@@ -6,12 +6,15 @@ create schema auth;
 create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid', true), '')::uuid $$;
 create table profiles (id uuid primary key, role text default 'client');
 create function public.is_coach() returns boolean language sql stable security definer as $$ select exists (select 1 from profiles where id = auth.uid() and role='coach') $$;
+create table programs (id uuid primary key default gen_random_uuid());
 create table exercises (id uuid primary key default gen_random_uuid(), client_id uuid references profiles(id) on delete cascade, name text not null, day_of_week text);
 create table workout_logs (id uuid primary key default gen_random_uuid(), client_id uuid, exercise_id uuid references exercises(id) on delete cascade, date date, sets int, reps int, weight numeric);
 grant usage on schema public, auth to authenticated;
 \i /work/db/add_progression_engine.sql
 \i /work/db/add_prescribed_weight.sql
 \i /work/db/add_prescribed_weight.sql
+\i /work/db/add_density_taper.sql
+\i /work/db/add_density_taper.sql
 grant all on all tables in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated;
 
@@ -72,4 +75,61 @@ select assert((select prescribed_weight is null from exercises where id = 'e0000
 select throws($$update exercises set prescribed_weight = 0 where id = 'e0000000-0000-0000-0000-000000000001'$$, 'exercises_prescribed_weight_check');
 -- the original calc is still immutable
 select throws($$update progression_recommendations set recommended_load = 1 where id = 'a0000000-0000-0000-0000-000000000003'$$, 'immutable');
-select 'ALL PROGRESSION DECISION TESTS PASSED' as result;
+
+-- ============================ density (non-load) recommendations ============================
+set test.uid = '00000000-0000-0000-0000-0000000000c0';
+update exercises set progression_config = '{"mode":"fixed_time","targetWork":40}' where id = 'e0000000-0000-0000-0000-000000000002';
+insert into progression_recommendations (id, client_id, exercise_id, method_id, session_date, calc_input, calc_result, recommended_load) values
+ ('d0000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000a','e0000000-0000-0000-0000-000000000002','density_progression','2026-10-01','{}',
+  '{"status":"progress","calc":{"nonLoad":true},"proposedAdjustment":{"type":"increase_target_work","from":40,"to":48,"configPatch":{"targetWork":48}}}', null),
+ ('d0000000-0000-0000-0000-000000000002','00000000-0000-0000-0000-00000000000a','e0000000-0000-0000-0000-000000000002','density_progression','2026-10-08','{}',
+  '{"status":"regression","calc":{"nonLoad":true},"proposedAdjustment":null}', null),
+ ('d0000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-00000000000a','e0000000-0000-0000-0000-000000000002','density_progression','2026-10-15','{}',
+  '{"status":"progress","calc":{"nonLoad":true},"proposedAdjustment":{"configPatch":{"targetWork":50}}}', null);
+set test.uid = '00000000-0000-0000-0000-00000000000a';
+select throws($$select decide_progression_recommendation('d0000000-0000-0000-0000-000000000001','approve')$$, 'Only a coach');
+set test.uid = '00000000-0000-0000-0000-0000000000c0';
+-- modify is for loads only; nothing changes
+select throws($$select decide_progression_recommendation('d0000000-0000-0000-0000-000000000001','modify', 50)$$, 'load recommendations only');
+select assert((select status = 'pending' from progression_recommendations where id = 'd0000000-0000-0000-0000-000000000001'), 'refused modify left it pending');
+-- approve applies the new target to the exercise config (merged, other keys kept) and records the decision
+select decide_progression_recommendation('d0000000-0000-0000-0000-000000000001','approve', null, 'ok');
+select assert((select (progression_config->>'targetWork')::int = 48 and progression_config->>'mode' = 'fixed_time' from exercises where id = 'e0000000-0000-0000-0000-000000000002'), 'target patched, mode kept');
+select assert((select status = 'approved' and approved_prescription->>'source' = 'calculated' and (approved_prescription->'adjustment'->>'to')::int = 48 from progression_recommendations where id = 'd0000000-0000-0000-0000-000000000001'), 'decision + adjustment recorded');
+select assert((select prescribed_weight is null from exercises where id = 'e0000000-0000-0000-0000-000000000002'), 'density approval never writes a load');
+select assert((select calc_result->'proposedAdjustment'->'configPatch'->>'targetWork' = '48' from progression_recommendations where id = 'd0000000-0000-0000-0000-000000000001'), 'original calculation untouched');
+-- a regression is acknowledged, nothing applied
+select decide_progression_recommendation('d0000000-0000-0000-0000-000000000002','approve');
+select assert((select approved_prescription->>'acknowledged' = 'true' from progression_recommendations where id = 'd0000000-0000-0000-0000-000000000002'), 'regression acknowledged');
+select assert((select (progression_config->>'targetWork')::int = 48 from exercises where id = 'e0000000-0000-0000-0000-000000000002'), 'acknowledging changed no target');
+-- reject applies nothing
+select decide_progression_recommendation('d0000000-0000-0000-0000-000000000003','reject');
+select assert((select (progression_config->>'targetWork')::int = 48 from exercises where id = 'e0000000-0000-0000-0000-000000000002'), 'reject changed no target');
+select throws($$select decide_progression_recommendation('d0000000-0000-0000-0000-000000000001','approve')$$, 'already approved');
+
+-- ============================ taper plans ============================
+insert into taper_plans (id, client_id, name, event_date, config, calculated, current_plan, created_by)
+values ('b0000000-0000-0000-0000-000000000001','00000000-0000-0000-0000-00000000000a','Meet taper','2026-10-10','{"reductionPct":40}','{"plannedVolume":13}','{"plannedVolume":13}','00000000-0000-0000-0000-0000000000c0');
+set role authenticated;  -- from here RLS applies (the setup above ran as the table owner)
+set test.uid = '00000000-0000-0000-0000-00000000000a';
+select assert((select count(*) from taper_plans) = 0, 'clients cannot read taper plans');
+select throws($$insert into taper_plans (client_id, name, event_date, config, calculated, current_plan) values ('00000000-0000-0000-0000-00000000000a','x','2026-10-10','{}','{}','{}')$$, 'row-level security');
+set test.uid = '00000000-0000-0000-0000-0000000000c0';
+-- status + current plan + a log entry are allowed
+update taper_plans set status = 'active', current_plan = '{"plannedVolume":11}', override_log = '[{"note":"first"}]' where id = 'b0000000-0000-0000-0000-000000000001';
+select assert((select status = 'active' and (current_plan->>'plannedVolume')::int = 11 from taper_plans), 'coach can override the in-force plan');
+update taper_plans set override_log = override_log || '[{"note":"second"}]'::jsonb where id = 'b0000000-0000-0000-0000-000000000001';
+select assert((select jsonb_array_length(override_log) = 2 from taper_plans), 'log appended');
+-- the original plan and the log history cannot be rewritten
+select throws($$update taper_plans set calculated = '{"plannedVolume":1}'$$, 'immutable');
+select throws($$update taper_plans set config = '{"reductionPct":10}'$$, 'immutable');
+select throws($$update taper_plans set event_date = '2026-11-01'$$, 'immutable');
+select throws($$update taper_plans set override_log = '[{"note":"first"}]'$$, 'append-only');
+select throws($$update taper_plans set override_log = '[{"note":"EDITED"},{"note":"second"}]'$$, 'append-only');
+select throws($$update taper_plans set override_log = '{}'$$, 'append-only');
+select assert((select (calculated->>'plannedVolume')::int = 13 and (config->>'reductionPct')::int = 40 from taper_plans), 'original plan intact');
+-- no deleting audit history
+delete from taper_plans where id = 'b0000000-0000-0000-0000-000000000001';
+select assert((select count(*) from taper_plans) = 1, 'the app cannot delete a taper plan');
+reset role;
+select 'ALL PROGRESSION DECISION + DENSITY/TAPER TESTS PASSED' as result;

@@ -2,6 +2,7 @@ import { supabase } from "../../supabaseClient.js";
 import { evaluateProgression } from "./methods.js";
 import { latestSessionRows } from "./engine.js";
 import { decideRecommendation } from "./decisions.js";
+import { planTaper, applyTaperOverride, evaluateTaperWatch } from "./taper.js";
 
 // Thin Supabase layer around the pure engine. Nothing here is wired into the UI
 // yet (Slice 1). Writes go to progression_recommendations (coach-only RLS) —
@@ -13,7 +14,7 @@ import { decideRecommendation } from "./decisions.js";
 // recalculated. Only actionable results (increase / hold / prescription) are
 // stored; insufficient-data and invalid results are returned but not saved, so
 // an early incomplete session can never block a later, complete one.
-export async function recommendForExercise({ exercise, clientId, currentLoad, oneRepMax, week, techniqueConfirmed }) {
+export async function recommendForExercise({ exercise, clientId, currentLoad, oneRepMax, week, techniqueConfirmed, painReported }) {
   const methodId = exercise.progression_method;
   if (!methodId) return { error: "This exercise has no progression method assigned." };
   const { data: rows, error } = await supabase.from("workout_logs").select("*").eq("exercise_id", exercise.id).eq("client_id", clientId).order("date");
@@ -25,8 +26,21 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
       .eq("exercise_id", exercise.id).eq("method_id", methodId).eq("session_date", session.date).maybeSingle();
     if (existing) return { sessionDate: session.date, stored: existing, calcResult: existing.calc_result };
   }
-  const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed });
-  const actionable = ["increase", "decrease", "hold", "prescription"].includes(calcResult.status);
+  // Density compares whole sessions, so it gets every logged row, the statuses of
+  // its earlier recommendations (for the consecutive-regression rule) and, if the
+  // coach configured a readiness rule, that day's check-in values.
+  let extra = {};
+  if (methodId === "density_progression") {
+    const { data: prior } = await supabase.from("progression_recommendations").select("calc_result,session_date").eq("exercise_id", exercise.id).eq("method_id", methodId).lt("session_date", session.date || "9999-12-31").order("session_date", { ascending: false }).limit(10);
+    let readiness = null;
+    if (exercise.progression_config?.readiness && session.date) {
+      const { data: ck } = await supabase.from("daily_checkins").select("energy,sleep,mood").eq("client_id", clientId).eq("date", session.date).maybeSingle();
+      readiness = ck || null;
+    }
+    extra = { allRows: rows, history: (prior || []).map((p) => p.calc_result?.status), readiness };
+  }
+  const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed, painReported, ...extra });
+  const actionable = ["increase", "decrease", "hold", "prescription", "progress", "regression"].includes(calcResult.status);
   if (!session.date || !actionable) return { sessionDate: session.date, calcResult, stored: null };
 
   const row = {
@@ -58,4 +72,49 @@ export async function decide(recommendation, decision) {
   });
   if (error) return { ok: false, error: error.message };
   return { ok: true, status: data.status, prescribedWeight: data.prescribed_weight };
+}
+
+// ---- Performance taper (plan-level, not per exercise) -----------------------------
+// Baseline volume comes from the client's logged working sets over the coach's
+// reference period. The calculated plan, the in-force plan and every override are
+// stored separately (taper_plans: the original is immutable, the log is append-only).
+async function loadTaperLogs(clientId, referencePeriod) {
+  const from = referencePeriod?.start, to = referencePeriod?.end;
+  const { data: ex } = await supabase.from("exercises").select("id,name").eq("client_id", clientId);
+  const ids = (ex || []).map((e) => e.id);
+  if (!ids.length || !from || !to) return [];
+  const nameById = Object.fromEntries((ex || []).map((e) => [e.id, e.name]));
+  const { data: logs } = await supabase.from("workout_logs").select("date,sets,reps,weight,set_type,exercise_id").in("exercise_id", ids).gte("date", from).lte("date", to);
+  return (logs || []).map((l) => ({ ...l, exercise: nameById[l.exercise_id] }));
+}
+
+export async function createTaperPlan({ clientId, programId = null, name, config, coachId }) {
+  const logs = await loadTaperLogs(clientId, config?.referencePeriod);
+  const plan = planTaper({ config, logs });
+  if (plan.status !== "prescription") return { ok: false, plan };
+  const { data, error } = await supabase.from("taper_plans").insert({
+    client_id: clientId, program_id: programId, name, event_date: config.eventDate, config, calculated: plan, current_plan: plan, created_by: coachId || null,
+  }).select().single();
+  return error ? { ok: false, error: error.message, plan } : { ok: true, row: data, plan };
+}
+
+export async function fetchTaperPlans(clientId) {
+  const { data } = await supabase.from("taper_plans").select("*").eq("client_id", clientId).order("event_date", { ascending: false });
+  return data || [];
+}
+
+export async function overrideTaper(row, override, coachId) {
+  const r = applyTaperOverride({ plan: row.current_plan, calculated: row.calculated, log: row.override_log || [], override, by: coachId });
+  if (!r.ok) return r;
+  const { error } = await supabase.from("taper_plans").update({ current_plan: r.plan, override_log: r.log }).eq("id", row.id);
+  return error ? { ok: false, errors: [error.message] } : { ok: true, plan: r.plan, log: r.log };
+}
+
+// Flags for coach review from real data only (check-in readiness values in the taper
+// window + pain reports the coach passes in). Never changes the plan.
+export async function taperWatch(row, { painReports = [], performance = null } = {}) {
+  const w = row.current_plan?.window;
+  if (!w) return null;
+  const { data } = await supabase.from("daily_checkins").select("date,energy,sleep,mood").eq("client_id", row.client_id).gte("date", w.start).lte("date", w.end);
+  return evaluateTaperWatch({ config: row.config, window: w, readinessRows: data || [], painReports, performance });
 }

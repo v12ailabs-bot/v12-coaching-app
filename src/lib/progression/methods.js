@@ -2,6 +2,8 @@ import {
   evaluateDoubleProgression, evaluateLinearProgression, evaluatePercentageBased, evaluateReferenceOnly,
 } from "./engine.js";
 import { evaluateApre, APRE_VARIANTS, APRE_SOURCES } from "./apre.js";
+import { evaluateDensity, DENSITY_MODES, WORK_UNITS } from "./density.js";
+import { planTaper, validateTaperConfig, TAPER_TEMPLATE } from "./taper.js";
 
 // Structured progression-method registry. `status`:
 //   calculated     — the engine computes a recommendation from logged data
@@ -105,31 +107,68 @@ export const METHODS = {
   density_progression: {
     id: "density_progression",
     name: "Density Progression",
-    status: "reference-only",
-    purpose: "Hold load and exercise selection constant; progress by completing more work in the same time window or the same work in less time.",
-    requiredInputs: [], prescriptionParameters: [], eligibility: "Not defined.", rules: [], validation: [],
-    missing: [
-      "The fixed time window (or work block) per exercise.",
-      "The rule that decides when to add reps vs. shorten rest, and by how much.",
-      "The completion threshold that counts as progress.",
+    status: "calculated",
+    purpose: "Do more quality work in the same time, the same work in less time, or more output across the same work/rest intervals — measured as work per minute across comparable sessions.",
+    requiredInputs: ["mode (fixed_time | fixed_work | fixed_interval)", "The work unit (reps, rounds, volume_load, reps_at_load)", "A baseline session and a current session of the same prescription", "Round times (fixed_work) or the prescribed cap/intervals", "Actual rest per round where rest is prescribed", "Coach technique confirmation / pain check where configured"],
+    prescriptionParameters: [
+      { key: "mode", type: DENSITY_MODES.join("|"), required: true },
+      { key: "unit", type: WORK_UNITS.join("|"), required: true, note: "Sessions are only compared in the SAME unit." },
+      { key: "timeCapSec / minImprovement / increment / maxTarget", type: "numbers", required: "fixed_time", note: "More work inside the same cap." },
+      { key: "workAmount / minImprovementSec / timeStepSec / minTimeSec / restSec", type: "numbers", required: "fixed_work", note: "Same work, less time; prescribed rest is never shortened." },
+      { key: "workSec / restSec / rounds / minImprovement / increment / maxTarget", type: "numbers", required: "fixed_interval", note: "More output per equal interval." },
+      { key: "repsPerRound / load", type: "numbers", required: "unit rounds / reps_at_load" },
+      { key: "regressionTolerance / regressionFlagAfter", type: "numbers", required: false, note: "A flag is only raised if you set regressionFlagAfter (>= 2)." },
+      { key: "technique / effort / readiness / holdOnPain / requirePainCheck / includeWarmup / effectiveFrom / baselineDate", type: "criteria", required: false },
     ],
-    workedExample: null,
-    evaluate: (input) => evaluateReferenceOnly("density_progression", METHODS.density_progression),
+    eligibility: "Needs complete, comparable baseline and current sessions in the same unit and load; working sets only (warm-ups excluded unless includeWarmup); rest not shortened where prescribed; technique/pain/effort/readiness criteria met when configured.",
+    rules: [
+      "density = completed work / elapsed time (per minute). fixed_time uses the prescribed cap as elapsed time; fixed_interval uses rounds x (work + rest); fixed_work uses the logged round times.",
+      "progress = improvement >= your minImprovement (or minImprovementSec). The proposed adjustment moves ONLY the target (more work/output, or less time) by your increment, capped by maxTarget / minTimeSec.",
+      "A session worse than the baseline beyond regressionTolerance is a REGRESSION: it is recorded and evaluated, never an automatic deload. Only if you set regressionFlagAfter does N consecutive regressions raise a coach-review flag.",
+      "Different load, rounds, unit or prescription between sessions -> non-comparable (no automatic progression). Missing data -> incomplete, never assumed as success.",
+      "Load, range of motion, exercise selection and the work requirement are never changed by this method.",
+      "Technique can't be detected from the logs (no per-rep failure flag): when required it is an explicit coach confirmation. Pain is a coach input.",
+    ],
+    validation: ["Every threshold must be configured (missing -> invalid, never defaulted)", "Durations parse from 90, 1:30, 45s, 2min", "Reps are whole numbers >= 0; loads >= 0"],
+    workedExample: {
+      description: "Fixed work: 5 rounds of 10 reps (50 reps). Baseline 12:00 total, current 11:00 (60s faster); minImprovementSec 30, timeStepSec 15.",
+      input: {
+        config: { mode: "fixed_work", unit: "reps", workAmount: 50, minImprovementSec: 30, timeStepSec: 15 },
+        rows: [1, 2, 3, 4, 5].map((n) => ({ date: "2026-10-01", sets: n, reps: 10, time: "2:24" })).concat([1, 2, 3, 4, 5].map((n) => ({ date: "2026-10-08", sets: n, reps: 10, time: "2:12" }))),
+      },
+      expected: { status: "progress", recommendedLoad: null },
+    },
+    evaluate: (input) => evaluateDensity({ ...input, rows: input.allRows ?? input.rows ?? input.sets ?? [] }),
   },
 
   performance_taper: {
     id: "performance_taper",
     name: "Performance Taper",
-    status: "reference-only",
-    purpose: "Reduce volume while holding or slightly raising intensity into a testing window.",
-    requiredInputs: [], prescriptionParameters: [], eligibility: "Not defined.", rules: [], validation: [],
-    missing: [
-      "Weekly volume reduction (percent or sets) across the taper.",
-      "How intensity changes week to week.",
-      "The length of the taper and the testing-window criteria.",
+    status: "calculated",
+    scope: "plan",
+    purpose: "An event-driven taper: reduce VOLUME over a defined window ending at an event/test date while intensity, frequency and exercise selection stay separate, coach-configured variables.",
+    requiredInputs: ["eventDate", "durationDays or startDate", "reductionPct", "volumeUnit (sets | reps | volume_load)", "referencePeriod {start,end} for the baseline", "sessionWeekdays", "Logged working sets in the reference period"],
+    prescriptionParameters: [
+      { key: "eventDate / durationDays / startDate", type: "dates", required: true, note: "The taper runs from start to the day before the event." },
+      { key: "reductionPct", type: "0-<100", required: true, note: `Template suggestion ${TAPER_TEMPLATE.suggestedReductionPct.join("-")}%, not a rule.` },
+      { key: "referencePeriod", type: "{start,end}", required: true, note: "Coach-selected, >= 7 days, ends before the taper." },
+      { key: "sessionWeekdays", type: "Sun..Sat[]", required: true },
+      { key: "exercises / reductionPctByRole", type: "optional", required: false, note: "Event-specific vs general exercises can taper by different amounts." },
+      { key: "intensity", type: "{type pct1rm|load_lb|rpe, min, max}", required: false, note: "Passed through unchanged; the engine never alters intensity." },
+      { key: "distribution / roundTo / maxSessionVolumePct / lastSessionDaysBeforeEvent", type: "optional", required: false },
+      { key: "readiness / performanceDropPct", type: "optional rules", required: false, note: "Coach-review flags only; used only when the data exists." },
     ],
+    eligibility: `Needs a baseline: at least ${TAPER_TEMPLATE.minReferenceTrainingDays} training days with logged volume in the reference period. No baseline is ever manufactured.`,
+    rules: [
+      "Baseline weekly volume = working-set volume in the reference period / its weeks (sets, reps, or reps x load; rows without the needed data are left out and reported).",
+      "Target volume = baseline weekly x taper weeks x (1 - reduction%). Distributed over the scheduled sessions (flat or linear_decrease), rounded to roundTo by largest remainder, no session above maxSessionVolumePct of the baseline per-session volume.",
+      `Defaults (suggestions only): ${TAPER_TEMPLATE.suggestedDurationDays.join("-")} day window, ${TAPER_TEMPLATE.suggestedReductionPct.join("-")}% reduction. Values outside produce a warning, not an error.`,
+      "Poor readiness, pain or performance deterioration raise a coach-review flag only under rules you configure and only from data that exists. Nothing changes automatically.",
+      "The taper ends the day before the event; it is never restarted or extended automatically. The calculated plan, the in-force plan and every coach override (with note) are stored separately.",
+    ],
+    validation: validateTaperConfig({}).errors.length ? ["Dates, duration (1-60), reduction (0-<100), intensity ranges, weekdays and reference period are validated; invalid values return errors, never silent fixes."] : [],
     workedExample: null,
-    evaluate: (input) => evaluateReferenceOnly("performance_taper", METHODS.performance_taper),
+    evaluate: (input) => planTaper({ config: input.config, logs: input.logs || [] }),
   },
 
   conjugate: {

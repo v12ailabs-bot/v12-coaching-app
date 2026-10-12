@@ -150,8 +150,8 @@ test("percentage-based: rounds to the increment; needs a verified 1RM; validates
 });
 
 // ---- reference-only: never a number -------------------------------------------------
-test("density, taper and conjugate are not calculated and say what is missing", () => {
-  for (const id of ["density_progression", "performance_taper", "conjugate"]) {
+test("conjugate is not calculated and says what is missing", () => {
+  for (const id of ["conjugate"]) {
     const r = evaluateProgression(id, { config: cfg, currentLoad: 100, sets: three(12) });
     assert.equal(r.status, "reference_only", id);
     assert.equal(r.recommendedLoad, null, id + " must not produce a load");
@@ -159,8 +159,8 @@ test("density, taper and conjugate are not calculated and say what is missing", 
   }
 });
 
-test("calculated methods: double, linear, percentage, APRE 3/6/10", () => {
-  assert.deepEqual(calculatedMethodIds().sort(), ["apre_10", "apre_3", "apre_6", "double_progression", "linear_progression", "percentage_based"]);
+test("calculated methods: double, linear, percentage, APRE 3/6/10, density, taper", () => {
+  assert.deepEqual(calculatedMethodIds().sort(), ["apre_10", "apre_3", "apre_6", "density_progression", "double_progression", "linear_progression", "percentage_based", "performance_taper"]);
 });
 
 test("unknown method id is invalid, not a silent success", () => {
@@ -303,4 +303,20 @@ test("apreSetPlan gives set 1/2 loads at 50/75% rounded, set 3 at the working we
 test("APRE through the registry entry point takes currentLoad as the working weight", () => {
   const r = evaluateProgression("apre_6", { config: { increment: 5 }, currentLoad: 200, sets: [{ sets: 3, reps: 8, weight: 200 }] });
   assert.equal(r.recommendedLoad, 205);
+});
+
+// ---- non-load (density) recommendations through the decision layer ------------------
+const densityRec = (adj) => ({ status: "pending", calc_result: { status: adj ? "progress" : "regression", calc: { nonLoad: true }, proposedAdjustment: adj } });
+
+test("density recommendations: approve records the target change (no load); modify is refused; reject applies nothing", () => {
+  const adj = { type: "increase_target_work", from: 40, to: 48, configPatch: { targetWork: 48 } };
+  const a = decideRecommendation(densityRec(adj), { decision: "approve" });
+  assert.equal(a.ok, true); assert.equal(a.status, "approved");
+  assert.deepEqual(a.approvedPrescription, { source: "calculated", adjustment: adj, acknowledged: false });
+  assert.equal(decideRecommendation(densityRec(adj), { decision: "modify", modifiedLoad: 50 }).ok, false);
+  const rj = decideRecommendation(densityRec(adj), { decision: "reject" });
+  assert.equal(rj.status, "rejected"); assert.equal(rj.approvedPrescription, null);
+  const ack = decideRecommendation(densityRec(null), { decision: "approve" });
+  assert.equal(ack.approvedPrescription.acknowledged, true, "a regression is acknowledged, nothing applied");
+  assert.equal(decideRecommendation({ ...densityRec(adj), status: "approved" }, { decision: "approve" }).ok, false);
 });
