@@ -327,6 +327,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
   const [genSource, setGenSource] = useState("manual"); // becomes 'ai_generated' after Generate Roadmap, until saved
   const [genDetails, setGenDetails] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
+  const [wizardStart, setWizardStart] = useState(0);
   const [tracking, setTracking] = useState({ daily: [], nutCtx: null }); // evidence for the plan-vs-actual assessment
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -528,7 +529,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
     <Card style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
         <CardTitle>Program Roadmap</CardTitle>
-        {program && <Btn sm teal onClick={() => setWizardOpen(true)}>Edit Program</Btn>}
+        {program && <Btn sm teal onClick={() => { setWizardStart(0); setWizardOpen(true); }}>Edit Program</Btn>}
       </div>
       {!program ? (
         <div style={{ fontSize: 13, color: S.muted }}>No program yet. Generate or assign a program first, then plan its roadmap here.</div>
@@ -537,7 +538,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
-          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails}
+          <RoadmapPhaseCards rows={rows} program={program} clientId={clientId} tracking={tracking} onEditDetails={setEditingDetails} onPatchPhase={(id, patch) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)))} onEditProgram={() => { setWizardStart(1); setWizardOpen(true); }}
             onCriteriaSaved={(id, criteria) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, exit_criteria: criteria } : r)))} />
           {rows.map((r, i) => {
             const range = dateRangeForWeeks(program.start_date, r.week_start === "" ? null : parseInt(r.week_start), r.week_end === "" ? null : parseInt(r.week_end));
@@ -611,7 +612,7 @@ export function ProgramRoadmapPlanner({ clientId }) {
               {review.warnings.map((x, k) => <div key={"w" + k} style={{ fontSize: 12, color: S.warning, padding: "2px 0" }}>• {x.message}</div>)}
             </div>
           )}
-          {wizardOpen && <RoadmapWizard program={program} initialRows={rows} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
+          {wizardOpen && <RoadmapWizard program={program} initialRows={rows} startAt={wizardStart} onSave={saveFromWizard} onClose={() => setWizardOpen(false)} />}
           {editingDetails != null && rows[editingDetails] && (
             <PlanDetailsEditor phase={rows[editingDetails]} onClose={() => setEditingDetails(null)}
               onSave={(patch) => { setRows((rs) => rs.map((r, idx) => (idx === editingDetails ? { ...r, ...patch } : r))); setEditingDetails(null); setMsg({ ok: true, text: "Plan details updated in the draft — click Save Roadmap to keep them." }); }} />
