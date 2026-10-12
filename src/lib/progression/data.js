@@ -46,11 +46,16 @@ export async function fetchRecommendations(exerciseId, limit = 5) {
   return data || [];
 }
 
-export async function decide(recommendation, decision, coachId) {
-  const d = decideRecommendation(recommendation, decision);
-  if (!d.ok) return d;
-  const { error } = await supabase.from("progression_recommendations").update({
-    status: d.status, approved_prescription: d.approvedPrescription, decided_by: coachId, decided_at: new Date().toISOString(), decision_note: d.note,
-  }).eq("id", recommendation.id).eq("status", "pending");
-  return error ? { ok: false, error: error.message } : d;
+// Records the coach's decision AND, for approve/modify, writes the load to the
+// exercise as the client's current target — one database transaction
+// (decide_progression_recommendation), so the decision and the prescription
+// can't disagree. Validation mirrors decisions.js; the database re-checks it.
+export async function decide(recommendation, decision) {
+  const pre = decideRecommendation(recommendation, decision);
+  if (!pre.ok) return pre;
+  const { data, error } = await supabase.rpc("decide_progression_recommendation", {
+    p_rec_id: recommendation.id, p_decision: decision.decision, p_modified_load: decision.decision === "modify" ? decision.modifiedLoad : null, p_note: decision.note || null,
+  });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, status: data.status, prescribedWeight: data.prescribed_weight };
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer } from "recharts";
+import { apreSetPlan } from "./lib/progression/apre.js";
 
 
 
@@ -1302,6 +1303,9 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const blockType = selectedEx?.block_type || "straight_set";
   // Optional RIR/RPE entry appears only when the coach set an effort rule for
   // this exercise (progression_config.effort); otherwise the row is unchanged.
+  // The coach's approved target weight for this exercise (from a progression
+  // recommendation), shown as a hint — never pre-filled as if it were logged.
+  const prescribed = Number(selectedEx?.prescribed_weight) > 0 ? Number(selectedEx.prescribed_weight) : null;
   const effortMetric = selectedEx?.progression_config?.effort?.metric === "rir" || selectedEx?.progression_config?.effort?.metric === "rpe" ? selectedEx.progression_config.effort.metric : null;
   const groupMembers = selectedEx
     ? exercises.filter((e) => e.day_of_week === selectedEx.day_of_week && e.group_id === selectedEx.group_id)
@@ -1384,6 +1388,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
         // same payload as before. Effort outside the DB's valid range is
         // dropped rather than failing the whole insert.
         if (s.warmup) row.set_type = "warmup";
+        if (prescribed && !s.warmup && !ex?.is_bodyweight) row.prescribed_weight = prescribed;
         const cfg = ex?.progression_config || {};
         const presc = cfg.targetReps ?? cfg.repMax;
         if (!s.warmup && Number.isInteger(presc)) row.prescribed_reps = presc;
@@ -1588,6 +1593,23 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                   {blockType==="straight_set" ? (
                     <>
                       <div style={{marginBottom:14}}>
+                        {prescribed && !selectedEx.is_bodyweight && (() => {
+                          const m = String(selectedEx.progression_method||"");
+                          const variant = m.startsWith("apre_") ? parseInt(m.slice(5)) : null;
+                          const loggedSet3 = logs.find(l=>l.date===todayStr()&&Number(l.sets)===3);
+                          const set3Reps = loggedSet3 ? loggedSet3.reps : (parseInt(sets[2]?.reps) || null);
+                          const plan = variant ? apreSetPlan({variant, workingWeight:prescribed, set3Reps, config:selectedEx.progression_config||{}}) : null;
+                          return (
+                            <div style={{border:"1px solid "+S.border,borderRadius:8,padding:"8px 12px",marginBottom:10,fontSize:12,lineHeight:1.6}}>
+                              <div><span style={{color:S.accent,fontWeight:700,textTransform:"uppercase",fontSize:9,letterSpacing:1}}>Coach target&nbsp;</span><b>{prescribed} lb</b></div>
+                              {plan && (
+                                <div style={{color:S.muted}}>
+                                  {plan.sets.map(p=>`Set ${p.n}: ${p.reps==="max"?"max reps":p.reps+" reps"} × ${p.load!=null?p.load+" lb":"(set after set 3)"}`).join("  ·  ")}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
                         {sets.map((s,i)=>{
                           const isLogged = loggedSetNums.has(i+1);
                           return (
@@ -1596,7 +1618,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                               {!selectedEx.is_bodyweight && (
                                 <div style={{display:"flex",alignItems:"center",gap:6}}>
                                   <button onClick={()=>setStepper(i,"weight",-1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>−</button>
-                                  <input type="number" placeholder="lbs" value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:56,textAlign:"center",outline:"none"}}/>
+                                  <input type="number" placeholder={prescribed?String(prescribed):"lbs"} value={s.weight} onChange={e=>{const n=[...sets];n[i].weight=e.target.value;setSets(n);}} style={{background:S.bg,border:"1px solid "+S.border,color:S.text,padding:"7px 6px",fontSize:13,width:56,textAlign:"center",outline:"none"}}/>
                                   <button onClick={()=>setStepper(i,"weight",1)} style={{width:26,height:26,background:S.surface2,border:"1px solid "+S.border,color:S.text,cursor:"pointer"}}>+</button>
                                 </div>
                               )}

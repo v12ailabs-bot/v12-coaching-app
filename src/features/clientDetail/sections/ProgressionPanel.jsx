@@ -90,6 +90,14 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
   const [week, setWeek] = useState("");
   const [techniqueOk, setTechniqueOk] = useState(false);
   const [editLoad, setEditLoad] = useState({});
+  // The client's current target for this exercise (set by approving a recommendation).
+  const [target, setTarget] = useState(exercise.prescribed_weight ? { weight: exercise.prescribed_weight, at: exercise.prescribed_set_at } : null);
+  const clearTarget = async () => {
+    if (!window.confirm("Remove the target weight the client sees for this exercise?")) return;
+    const { error } = await supabase.from("exercises").update({ prescribed_weight: null, prescribed_set_at: null, prescribed_recommendation_id: null }).eq("id", exercise.id);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    exercise.prescribed_weight = null; setTarget(null); setMsg({ ok: true, text: "Target removed." });
+  };
 
   const method = methodId ? METHODS[methodId] : null;
   const dirty = methodId !== savedAs.methodId || JSON.stringify(config) !== JSON.stringify(savedAs.config);
@@ -124,9 +132,12 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
   };
 
   const act = async (rec, decision, modifiedLoad) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const r = await decide(rec, { decision, modifiedLoad }, user?.id);
-    if (!r.ok) setMsg({ ok: false, text: r.error }); else setMsg({ ok: true, text: `Recommendation ${r.status}.` });
+    const r = await decide(rec, { decision, modifiedLoad });
+    if (!r.ok) setMsg({ ok: false, text: r.error });
+    else {
+      setMsg({ ok: true, text: r.prescribedWeight ? `Recommendation ${r.status}. The client now sees a ${r.prescribedWeight} lb target.` : `Recommendation ${r.status}.` });
+      if (r.prescribedWeight) { exercise.prescribed_weight = r.prescribedWeight; exercise.prescribed_set_at = new Date().toISOString(); setTarget({ weight: r.prescribedWeight, at: exercise.prescribed_set_at }); }
+    }
     setOutcome(null); loadRecs();
   };
 
@@ -157,6 +168,12 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           {msg && <span style={{ fontSize: 12, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
         </div>
 
+        {target && (
+          <div style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span>Client's current target: <b>{target.weight} lb</b>{target.at ? <span style={{ color: S.muted }}> · set {new Date(target.at).toLocaleDateString()}</span> : null}</span>
+            <Btn sm onClick={clearTarget}>Remove</Btn>
+          </div>
+        )}
         {savedAs.methodId && METHODS[savedAs.methodId]?.status === "calculated" && (
           <div style={{ borderTop: "1px solid " + S.border, paddingTop: 10, display: "grid", gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>Latest session</div>
@@ -211,7 +228,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
                 </div>
               );
             })}
-            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving records your prescription; it does not change the client's workout automatically.</div>}
+            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving sets the target weight the client sees on this exercise.</div>}
           </div>
         )}
       </div>
