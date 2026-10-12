@@ -11,7 +11,7 @@ import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
-import { RestTimer } from "./components/RestTimer.jsx";
+import { RestTimer, RestTimerBar, useRestTimer } from "./components/RestTimer.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
 import { WorkoutScheduler } from "./features/scheduling/WorkoutScheduler.jsx";
 import { MacroCalculator } from "./features/library/MacroCalculator.jsx";
@@ -1304,6 +1304,8 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const blockType = selectedEx?.block_type || "straight_set";
   // Optional RIR/RPE entry appears only when the coach set an effort rule for
   // this exercise (progression_config.effort); otherwise the row is unchanged.
+  // One rest timer for the whole workout page (desktop card + phone bar share it).
+  const rest = useRestTimer();
   // The coach's approved target weight for this exercise (from a progression
   // recommendation), shown as a hint — never pre-filled as if it were logged.
   const prescribed = Number(selectedEx?.prescribed_weight) > 0 ? Number(selectedEx.prescribed_weight) : null;
@@ -1373,6 +1375,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   // sets 1-2 are already saved (and still showing, prefilled, in the tracker)
   // must not re-insert duplicate rows for 1-2.
   const handleLog = async()=>{
+    rest.prime(); // unlock audio inside the tap, before any await
     setSaving(true);
     const ex = exercises.find(e=>e.id===selected);
     const today = todayStr();
@@ -1402,10 +1405,12 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
       });
     if(entries.length>0) await supabase.from("workout_logs").insert(entries);
     setSaving(false);setSaved(true);setSets(sets.map(()=>blankRow()));
+    if(entries.length>0) rest.startAfterSet();
     setTimeout(()=>setSaved(false),2000);
   };
 
   const handleLogGroup = async () => {
+    rest.prime();
     setSaving(true);
     const date = todayStr();
     const entries = [];
@@ -1429,6 +1434,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
     });
     if (entries.length > 0) await supabase.from("workout_logs").insert(entries);
     setSaving(false); setSaved(true); setRounds(freshRounds(selectedEx.sets, groupMembers));
+    if (entries.length > 0) rest.startAfterSet();
     setTimeout(() => setSaved(false), 2000);
   };
   // All-time best (independent of the graphs' per-date reduction below): the
@@ -1473,7 +1479,8 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const dayPct = dayTotal ? Math.round((dayDoneCount/dayTotal)*100) : 0;
 
   return (
-    <div>
+    <div style={isMobile && selectedEx ? { paddingBottom: 96 } : undefined}>
+      {isMobile && selectedEx && <RestTimerBar timer={rest}/>}
       {embedded
         ? <div style={{fontSize:13,color:S.muted,marginBottom:18,lineHeight:1.6}}>Log the sets you complete for each day's exercises. Your progression graphs live under Progress → Strength.</div>
         : <PageTitle title="Workout" sub="Track your strength progression"/>}
@@ -1732,7 +1739,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                     <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:8}}><span style={{color:S.muted}}>Exercises</span><span>{dayDoneCount} of {dayTotal} completed</span></div>
                     <div style={{display:"flex",justifyContent:"space-between",fontSize:13}}><span style={{color:S.muted}}>Sets Logged Today</span><span>{loggedSetNums.size} of {selectedEx.sets??"—"}</span></div>
                   </Card>
-                  <RestTimer/>
+                  <RestTimer timer={rest}/>
                   {selectedEx.notes && (
                     <Card style={{marginBottom:0}}>
                       <div style={{fontSize:10,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:12}}>Coaching Cue</div>
