@@ -10,6 +10,7 @@ import { RoadmapWizard } from "./RoadmapWizard.jsx";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
 import { PlanHistory } from "./PlanHistory.jsx";
+import { programCalendarProgressFrom } from "../../../lib/scoring.js";
 import { planSnapshot, canonicalJson } from "../../../lib/planCheckpoints.js";
 import { DAY_ORDER, phaseRankOf, BLOCK_TYPE_SHORT } from "../../../lib/constants.js";
 import { TOP_PHASES, SUB_PHASES, synthesizePhaseLabel } from "../../../lib/progressionModels.js";
@@ -535,6 +536,29 @@ export function ProgramRoadmapPlanner({ clientId }) {
         <div style={{ fontSize: 13, color: S.muted }}>No program yet. Generate or assign a program first, then plan its roadmap here.</div>
       ) : (
         <>
+          {(() => {
+            // Overall program progress, from the real start date and duration —
+            // never a made-up percentage when either is missing.
+            const prog = programCalendarProgressFrom(program);
+            const current = rows.find((r) => r.phase === program.phase);
+            return (
+              <div style={{ border: "1px solid " + S.border, borderRadius: 10, padding: "12px 14px", marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 10, flexWrap: "wrap", alignItems: "baseline" }}>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{program.name || "Program"}{program.weeks ? <span style={{ color: S.muted, fontWeight: 400 }}> · {program.weeks} weeks</span> : null}</div>
+                  <div style={{ fontSize: 12, color: S.muted }}>{program.phase ? `Current phase: ${program.phase}` : "No current phase set"}</div>
+                </div>
+                {prog ? (
+                  <div style={{ marginTop: 8 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                      <span style={{ color: S.muted }}>Program progress</span>
+                      <span>{Math.min(prog.elapsedWeeks, prog.totalWeeks)} of {prog.totalWeeks} weeks · {prog.pct}%</span>
+                    </div>
+                    <div style={{ height: 6, background: S.surface2, borderRadius: 3 }}><div style={{ width: `${prog.pct}%`, height: "100%", background: S.accent, borderRadius: 3 }} /></div>
+                  </div>
+                ) : <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Set a program start date and duration to track overall progress.</div>}
+              </div>
+            );
+          })()}
           <div style={{ fontSize: 12, color: S.muted, marginBottom: 16, lineHeight: 1.6 }}>
             Define the sequence of phases for this client's program (e.g. Assessment, Phase 1 — Fat Loss, Phase 2 — Strength, Maintenance). The step matching the Current Phase above is highlighted; earlier steps show as complete.
           </div>
