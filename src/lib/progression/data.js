@@ -26,7 +26,7 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
     if (existing) return { sessionDate: session.date, stored: existing, calcResult: existing.calc_result };
   }
   const calcResult = evaluateProgression(methodId, { config: exercise.progression_config || {}, currentLoad, sets: session.rows, oneRepMax, week, techniqueConfirmed });
-  const actionable = ["increase", "hold", "prescription"].includes(calcResult.status);
+  const actionable = ["increase", "decrease", "hold", "prescription"].includes(calcResult.status);
   if (!session.date || !actionable) return { sessionDate: session.date, calcResult, stored: null };
 
   const row = {

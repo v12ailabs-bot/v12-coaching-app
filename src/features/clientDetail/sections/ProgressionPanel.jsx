@@ -18,14 +18,15 @@ import { recommendForExercise, fetchRecommendations, decide } from "../../../lib
 const input = { background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "6px 8px", fontSize: 12, outline: "none", borderRadius: RADIUS.md, width: "100%" };
 const lbl = { fontSize: 10, color: S.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3, display: "block" };
 const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
-const STATUS_TONE = { increase: "green", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
-const STATUS_LABEL = { increase: "Increase", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
+const STATUS_TONE = { increase: "green", decrease: "amber", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
+const STATUS_LABEL = { increase: "Increase", decrease: "Decrease", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
 
 function ConfigForm({ methodId, config, onChange }) {
   const set = (k, v) => onChange({ ...config, [k]: v });
   const field = (k, label, props = {}) => (
     <div><label style={lbl}>{label}</label><input style={input} type="number" step="any" value={config[k] ?? ""} onChange={(e) => set(k, numOrNull(e.target.value))} {...props} /></div>
   );
+  const isApre = methodId.startsWith("apre_");
   const effort = config.effort || { metric: "", required: false, max: null };
   const setEffort = (patch) => {
     const next = { ...effort, ...patch };
@@ -36,7 +37,15 @@ function ConfigForm({ methodId, config, onChange }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
         {methodId === "double_progression" && <>{field("repMin", "Rep min")}{field("repMax", "Rep max")}</>}
         {methodId === "linear_progression" && field("targetReps", "Target reps")}
-        {methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {!isApre && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {isApre && (
+          <div>
+            <label style={lbl}>Change within published range</label>
+            <select style={input} value={config.stepMode || "low"} onChange={(e) => set("stepMode", e.target.value)}>
+              <option value="low">Low (smaller change)</option><option value="mid">Middle</option><option value="high">High (larger change)</option>
+            </select>
+          </div>
+        )}
         {methodId === "percentage_based" && field("percent", "% of 1RM")}
         {field("increment", "Increment (lb)")}
         <div>
@@ -46,7 +55,7 @@ function ConfigForm({ methodId, config, onChange }) {
           </select>
         </div>
       </div>
-      {methodId !== "percentage_based" && (
+      {methodId !== "percentage_based" && !isApre && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
           <div>
             <label style={lbl}>Effort rule</label>
@@ -152,7 +161,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           <div style={{ borderTop: "1px solid " + S.border, paddingTop: 10, display: "grid", gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>Latest session</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
-              {savedAs.methodId !== "percentage_based" && <div><label style={lbl}>Current load (lb)</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
+              {savedAs.methodId !== "percentage_based" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
               {savedAs.methodId === "percentage_based" && <>
                 <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
                 {savedAs.config.weeklyPercents && <div><label style={lbl}>Week</label><input style={input} type="number" value={week} onChange={(e) => setWeek(e.target.value)} /></div>}
