@@ -1,6 +1,7 @@
 import {
   evaluateDoubleProgression, evaluateLinearProgression, evaluatePercentageBased, evaluateReferenceOnly,
 } from "./engine.js";
+import { evaluateApre, APRE_VARIANTS, APRE_SOURCES } from "./apre.js";
 
 // Structured progression-method registry. `status`:
 //   calculated     — the engine computes a recommendation from logged data
@@ -145,20 +146,36 @@ export const METHODS = {
 
 function apreVariant(n) {
   const id = `apre_${n}`;
+  const v = APRE_VARIANTS[n];
+  const example = { variant: n, workingWeight: 200, config: { increment: 5 }, sets: [{ sets: 3, reps: n === 3 ? 5 : n === 6 ? 8 : 12, weight: 200 }] };
   return {
     id,
     name: `APRE ${n}`,
-    status: "reference-only",
-    purpose: `Autoregulated progressive resistance exercise, ${n}RM variant: the client's reps on an AMRAP set set the load for the following set and session.`,
-    requiredInputs: [], prescriptionParameters: [], eligibility: "Not enabled: the adjustment rules for this variant have not been verified.", rules: [], validation: [],
-    missing: [
-      `The verified APRE ${n} adjustment table (reps achieved on the AMRAP set -> load change for the next set and for the next session).`,
-      `The verified APRE ${n} set structure (number of sets and each set's rep target / percentage of working weight).`,
-      "How the baseline working load is established for this variant.",
-      "Loadable rounding rules per equipment.",
+    status: "calculated",
+    purpose: `Autoregulated progressive resistance exercise (${n}RM variant): the reps achieved on the max-rep third set set the load for set 4 and for the next session.`,
+    requiredInputs: [`The ${n}RM working weight (nRM)`, "Reps and load for set 3 (the max-rep set at the working weight)", "Load increment (per exercise or equipment)"],
+    prescriptionParameters: [
+      { key: "stepMode", type: "low|mid|high", required: false, note: "Where inside the published change range to land. Default low = the smaller change." },
+      { key: "increment / equipment", type: "number|string", required: true, note: "Loads are rounded to the loadable increment (ties round up)." },
     ],
-    workedExample: null,
-    evaluate: () => evaluateReferenceOnly(id, METHODS[id]),
+    structure: v.sets,
+    adjustmentTable: v.bands,
+    sources: APRE_SOURCES,
+    eligibility: `Set 3 must be logged as a working set, at the working weight, with a whole-number rep count that falls inside the verified table (APRE ${n} bands: ${v.bands.map((b) => `${b.min}${b.max == null ? "+" : b.max === b.min ? "" : "–" + b.max}`).join(", ")} reps).`,
+    rules: [
+      "Set 1 and 2 are warm-up/priming sets at 50% and 75% of the working weight; set 3 is a max-rep set at 100%; set 4 is a max-rep set at the ADJUSTED load.",
+      "Adjusted load = working weight + the table change for the set 3 reps (low/mid/high end), rounded to the increment.",
+      "The adjusted load is also the next session's working weight (stated in every source consulted).",
+      "Set 3 reps outside the published bands -> no number; the coach decides.",
+      "Not implemented: a separate set-4-reps adjustment, and the optional stop-at-1-RIR modification.",
+    ],
+    validation: ["Working weight > 0", "Set 3 logged at the working weight", "Set 3 reps are a whole number >= 0", "Increment > 0"],
+    workedExample: {
+      description: `APRE ${n}: working weight 200 lb, ${example.sets[0].reps} reps on set 3, increment 5, low end.`,
+      input: example,
+      expected: n === 3 ? { status: "increase", recommendedLoad: 205 } : n === 6 ? { status: "increase", recommendedLoad: 205 } : { status: "increase", recommendedLoad: 205 },
+    },
+    evaluate: (input) => evaluateApre({ ...input, workingWeight: input.workingWeight ?? input.currentLoad, variant: n, config: { ...(input.config || {}), variant: n } }),
   };
 }
 

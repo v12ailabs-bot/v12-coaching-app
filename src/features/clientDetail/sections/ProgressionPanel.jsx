@@ -18,14 +18,15 @@ import { recommendForExercise, fetchRecommendations, decide } from "../../../lib
 const input = { background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "6px 8px", fontSize: 12, outline: "none", borderRadius: RADIUS.md, width: "100%" };
 const lbl = { fontSize: 10, color: S.muted, textTransform: "uppercase", letterSpacing: 1, marginBottom: 3, display: "block" };
 const numOrNull = (v) => (v === "" || v == null ? null : Number(v));
-const STATUS_TONE = { increase: "green", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
-const STATUS_LABEL = { increase: "Increase", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
+const STATUS_TONE = { increase: "green", decrease: "amber", hold: "amber", prescription: "green", insufficient_data: "amber", invalid: "red", reference_only: "neutral" };
+const STATUS_LABEL = { increase: "Increase", decrease: "Decrease", hold: "Hold", prescription: "Prescription", insufficient_data: "Insufficient data", invalid: "Invalid", reference_only: "Reference only" };
 
 function ConfigForm({ methodId, config, onChange }) {
   const set = (k, v) => onChange({ ...config, [k]: v });
   const field = (k, label, props = {}) => (
     <div><label style={lbl}>{label}</label><input style={input} type="number" step="any" value={config[k] ?? ""} onChange={(e) => set(k, numOrNull(e.target.value))} {...props} /></div>
   );
+  const isApre = methodId.startsWith("apre_");
   const effort = config.effort || { metric: "", required: false, max: null };
   const setEffort = (patch) => {
     const next = { ...effort, ...patch };
@@ -36,7 +37,15 @@ function ConfigForm({ methodId, config, onChange }) {
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8 }}>
         {methodId === "double_progression" && <>{field("repMin", "Rep min")}{field("repMax", "Rep max")}</>}
         {methodId === "linear_progression" && field("targetReps", "Target reps")}
-        {methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {!isApre && methodId !== "percentage_based" && field("requiredSets", "Working sets")}
+        {isApre && (
+          <div>
+            <label style={lbl}>Change within published range</label>
+            <select style={input} value={config.stepMode || "low"} onChange={(e) => set("stepMode", e.target.value)}>
+              <option value="low">Low (smaller change)</option><option value="mid">Middle</option><option value="high">High (larger change)</option>
+            </select>
+          </div>
+        )}
         {methodId === "percentage_based" && field("percent", "% of 1RM")}
         {field("increment", "Increment (lb)")}
         <div>
@@ -46,7 +55,7 @@ function ConfigForm({ methodId, config, onChange }) {
           </select>
         </div>
       </div>
-      {methodId !== "percentage_based" && (
+      {methodId !== "percentage_based" && !isApre && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
           <div>
             <label style={lbl}>Effort rule</label>
@@ -81,6 +90,14 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
   const [week, setWeek] = useState("");
   const [techniqueOk, setTechniqueOk] = useState(false);
   const [editLoad, setEditLoad] = useState({});
+  // The client's current target for this exercise (set by approving a recommendation).
+  const [target, setTarget] = useState(exercise.prescribed_weight ? { weight: exercise.prescribed_weight, at: exercise.prescribed_set_at } : null);
+  const clearTarget = async () => {
+    if (!window.confirm("Remove the target weight the client sees for this exercise?")) return;
+    const { error } = await supabase.from("exercises").update({ prescribed_weight: null, prescribed_set_at: null, prescribed_recommendation_id: null }).eq("id", exercise.id);
+    if (error) { setMsg({ ok: false, text: error.message }); return; }
+    exercise.prescribed_weight = null; setTarget(null); setMsg({ ok: true, text: "Target removed." });
+  };
 
   const method = methodId ? METHODS[methodId] : null;
   const dirty = methodId !== savedAs.methodId || JSON.stringify(config) !== JSON.stringify(savedAs.config);
@@ -115,9 +132,12 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
   };
 
   const act = async (rec, decision, modifiedLoad) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    const r = await decide(rec, { decision, modifiedLoad }, user?.id);
-    if (!r.ok) setMsg({ ok: false, text: r.error }); else setMsg({ ok: true, text: `Recommendation ${r.status}.` });
+    const r = await decide(rec, { decision, modifiedLoad });
+    if (!r.ok) setMsg({ ok: false, text: r.error });
+    else {
+      setMsg({ ok: true, text: r.prescribedWeight ? `Recommendation ${r.status}. The client now sees a ${r.prescribedWeight} lb target.` : `Recommendation ${r.status}.` });
+      if (r.prescribedWeight) { exercise.prescribed_weight = r.prescribedWeight; exercise.prescribed_set_at = new Date().toISOString(); setTarget({ weight: r.prescribedWeight, at: exercise.prescribed_set_at }); }
+    }
     setOutcome(null); loadRecs();
   };
 
@@ -148,11 +168,17 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
           {msg && <span style={{ fontSize: 12, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
         </div>
 
+        {target && (
+          <div style={{ fontSize: 12, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            <span>Client's current target: <b>{target.weight} lb</b>{target.at ? <span style={{ color: S.muted }}> · set {new Date(target.at).toLocaleDateString()}</span> : null}</span>
+            <Btn sm onClick={clearTarget}>Remove</Btn>
+          </div>
+        )}
         {savedAs.methodId && METHODS[savedAs.methodId]?.status === "calculated" && (
           <div style={{ borderTop: "1px solid " + S.border, paddingTop: 10, display: "grid", gap: 8 }}>
             <div style={{ fontSize: 12, fontWeight: 700 }}>Latest session</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
-              {savedAs.methodId !== "percentage_based" && <div><label style={lbl}>Current load (lb)</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
+              {savedAs.methodId !== "percentage_based" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
               {savedAs.methodId === "percentage_based" && <>
                 <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
                 {savedAs.config.weeklyPercents && <div><label style={lbl}>Week</label><input style={input} type="number" value={week} onChange={(e) => setWeek(e.target.value)} /></div>}
@@ -202,7 +228,7 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
                 </div>
               );
             })}
-            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving records your prescription; it does not change the client's workout automatically.</div>}
+            {pendingRec && <div style={{ fontSize: 11, color: S.muted, marginTop: 6 }}>Approving sets the target weight the client sees on this exercise.</div>}
           </div>
         )}
       </div>
