@@ -6,23 +6,23 @@ import { requireCoach } from "./auth.js";
 // before touching supabaseAdmin, so there's one place to get this right
 // instead of N.
 
-interface MinimalRequest {
-  headers: Record<string, string | string[] | undefined>;
-}
+                          
+                                                         
+ 
 
-interface MinimalResponse {
-  status: (code: number) => MinimalResponse;
-  json: (body: unknown) => void;
-}
+                           
+                                            
+                                
+ 
 
 // Coach-driven operations: viewing tasks/recommendations, approve/modify/
 // reject/defer, manual outcome recording. Not a reimplementation -- calls
 // the existing requireCoach() unchanged, so this repo still has exactly one
 // definition of "is this caller a coach."
 export async function requireCoachForHeadCoach(
-  req: MinimalRequest,
-  res: MinimalResponse,
-): Promise<{ id: string } | null> {
+  req                ,
+  res                 ,
+)                                 {
   return requireCoach(req, res);
 }
 
@@ -33,7 +33,7 @@ export async function requireCoachForHeadCoach(
 // process," same shape as checkin-digest.js's existing CRON_SECRET check.
 // Reuses CRON_SECRET rather than adding a new env var; revisit only if a
 // caller other than a cron-triggered worker ever needs this.
-export function requireHeadCoachWorker(req: MinimalRequest, res: MinimalResponse): boolean {
+export function requireHeadCoachWorker(req                , res                 )          {
   const secret = process.env.CRON_SECRET;
   const authHeader = req.headers.authorization;
   if (!secret || authHeader !== `Bearer ${secret}`) {

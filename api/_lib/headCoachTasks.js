@@ -13,37 +13,37 @@ import { supabaseAdmin } from "./supabaseAdmin.js";
 // PROCESSING/DECISION_READY/ACTION_PENDING/MONITORING/CLOSED/RETRYING/
 // ESCALATED until later HC steps build the stages that produce them).
 
-export type TaskStatus =
-  | "QUEUED"
-  | "CONTEXT_BUILDING"
-  | "READY"
-  | "PROCESSING"
-  | "DECISION_READY"
-  | "ACTION_PENDING"
-  | "MONITORING"
-  | "CLOSED"
-  | "FAILED"
-  | "RETRYING"
-  | "ESCALATED";
+                        
+            
+                      
+           
+                
+                    
+                    
+                
+            
+            
+              
+                
 
-export type Actor = "system" | "coach" | "client" | "model";
+                                                            
 
-export interface HeadCoachTask {
-  id: string;
-  taskType: string;
-  clientId: string;
-  status: TaskStatus;
-  sourceTable: string;
-  sourceId: string;
-  attemptCount: number;
-  lastError: string | null;
-  createdAt: string;
-  updatedAt: string;
-  claimedAt: string | null;
-  completedAt: string | null;
-}
+                                
+             
+                   
+                   
+                     
+                      
+                   
+                       
+                           
+                    
+                    
+                           
+                             
+ 
 
-function fromRow(row: any): HeadCoachTask {
+function fromRow(row     )                {
   return {
     id: row.id,
     taskType: row.task_type,
@@ -60,22 +60,22 @@ function fromRow(row: any): HeadCoachTask {
   };
 }
 
-interface AuditEventInput {
-  eventType: string;
-  taskId?: string | null;
-  recommendationId?: string | null;
-  clientId?: string | null;
-  actor: Actor;
-  actorId?: string | null;
-  actorLabel?: string | null;
-  payload?: Record<string, unknown>;
-}
+                           
+                    
+                         
+                                   
+                           
+               
+                          
+                             
+                                    
+ 
 
 // Fire-and-forget-safe (awaited, but never throws) -- a failure to write an
 // audit row must never break the actual task operation it's describing.
 // head_coach_audit_events is append-only at the DB level (HC-002 trigger);
 // this is the one and only write path into it.
-export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
+export async function writeAuditEvent(input                 )                {
   try {
     // supabase-js resolves with { data, error } on a DB-level failure -- it
     // does NOT throw -- so the error must be checked explicitly or a failed
@@ -96,22 +96,22 @@ export async function writeAuditEvent(input: AuditEventInput): Promise<void> {
   }
 }
 
-interface CreateTaskInput {
-  clientId: string;
-  taskType: "REVIEW_CHECK_IN";
-  sourceTable: "daily_checkins" | "weekly_checkins";
-  sourceId: string;
-  actor: Actor;
-  actorId?: string | null;
-  actorLabel?: string | null;
-}
+                           
+                   
+                              
+                                                    
+                   
+               
+                          
+                             
+ 
 
 // Idempotent: if a task already exists for this (task_type, source_table,
 // source_id) -- the exact unique constraint HC-002 added for this reason --
 // returns the EXISTING row instead of erroring, so a coach double-clicking
 // "review" (or a retry after a network blip) can never create two tasks for
 // the same check-in.
-export async function createTask(input: CreateTaskInput): Promise<HeadCoachTask> {
+export async function createTask(input                 )                         {
   const { data: inserted, error } = await supabaseAdmin
     .from("head_coach_tasks")
     .insert({
@@ -158,11 +158,11 @@ export async function createTask(input: CreateTaskInput): Promise<HeadCoachTask>
 // need for safe claiming, even though MVP only ever has one synchronous
 // caller.
 async function transitionTask(
-  taskId: string,
-  allowedFrom: TaskStatus[],
-  to: TaskStatus,
-  extra: Record<string, unknown> = {},
-): Promise<HeadCoachTask | null> {
+  taskId        ,
+  allowedFrom              ,
+  to            ,
+  extra                          = {},
+)                                {
   const { data, error } = await supabaseAdmin
     .from("head_coach_tasks")
     .update({ status: to, updated_at: new Date().toISOString(), ...extra })
@@ -174,7 +174,7 @@ async function transitionTask(
   return data ? fromRow(data) : null;
 }
 
-export async function claimTask(taskId: string): Promise<HeadCoachTask | null> {
+export async function claimTask(taskId        )                                {
   const now = new Date().toISOString();
   return transitionTask(taskId, ["QUEUED"], "CONTEXT_BUILDING", {
     locked_by: "goal-insight:review-checkin",
@@ -183,7 +183,7 @@ export async function claimTask(taskId: string): Promise<HeadCoachTask | null> {
   });
 }
 
-export async function markReady(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function markReady(taskId        , clientId        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["CONTEXT_BUILDING"], "READY");
   if (task) await writeAuditEvent({ eventType: "task_ready", taskId, clientId, actor, actorId });
   return task;
@@ -204,7 +204,7 @@ export async function markReady(taskId: string, clientId: string, actor: Actor, 
 // stuck showing RETRYING forever, with no way for the coach to act on the
 // (valid, sitting-right-there) recommendation. escalateTask already
 // correctly accepted both states; this didn't.
-export async function markDecisionReady(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function markDecisionReady(taskId        , clientId        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["READY", "RETRYING"], "DECISION_READY", {});
   if (task) await writeAuditEvent({ eventType: "decision_ready", taskId, clientId, actor, actorId });
   return task;
@@ -218,13 +218,13 @@ export async function markDecisionReady(taskId: string, clientId: string, actor:
 // out -- a deferred recommendation's row is locked once decided (HC-002),
 // so revisiting it later means a new REVIEW_CHECK_IN task, not resuming
 // this one.
-export async function markActionPending(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function markActionPending(taskId        , clientId        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["DECISION_READY"], "ACTION_PENDING", {});
   if (task) await writeAuditEvent({ eventType: "action_pending", taskId, clientId, actor, actorId });
   return task;
 }
 
-export async function closeTaskDecided(taskId: string, clientId: string, decision: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function closeTaskDecided(taskId        , clientId        , decision        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["DECISION_READY"], "CLOSED", { completed_at: new Date().toISOString() });
   if (task) await writeAuditEvent({ eventType: "recommendation_decided_closed", taskId, clientId, actor, actorId, payload: { decision } });
   return task;
@@ -235,7 +235,7 @@ export async function closeTaskDecided(taskId: string, clientId: string, decisio
 // coach carried out the recommendation manually; MONITORING is not
 // modeled as a separate step in this MVP, the task just waits in
 // ACTION_PENDING until an outcome is recorded).
-export async function closeTaskAfterOutcome(taskId: string, clientId: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function closeTaskAfterOutcome(taskId        , clientId        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["ACTION_PENDING"], "CLOSED", { completed_at: new Date().toISOString() });
   if (task) await writeAuditEvent({ eventType: "outcome_recorded", taskId, clientId, actor, actorId });
   return task;
@@ -244,7 +244,7 @@ export async function closeTaskAfterOutcome(taskId: string, clientId: string, ac
 // HC-009 Safety Gate outcomes: a task the gate resolves deterministically
 // (no_action or escalate) never reaches AI reasoning at all -- it goes
 // straight from READY to a terminal/flagged state.
-export async function closeTaskNoAction(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function closeTaskNoAction(taskId        , clientId        , reason        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["READY"], "CLOSED", { completed_at: new Date().toISOString() });
   if (task) await writeAuditEvent({ eventType: "safety_gate_no_action", taskId, clientId, actor, actorId, payload: { reason } });
   return task;
@@ -253,7 +253,7 @@ export async function closeTaskNoAction(taskId: string, clientId: string, reason
 // Allowed from READY (HC-009's deterministic safety gate, or the AI's own
 // output declaring status "escalate") or RETRYING (HC-012's output
 // validator giving up after a bounded retry) -- either path lands here.
-export async function escalateTask(taskId: string, clientId: string, reason: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function escalateTask(taskId        , clientId        , reason        , actor       , actorId                )                                {
   const task = await transitionTask(taskId, ["READY", "RETRYING"], "ESCALATED", { completed_at: new Date().toISOString() });
   if (task) await writeAuditEvent({ eventType: "escalated", taskId, clientId, actor, actorId, payload: { reason } });
   return task;
@@ -263,7 +263,7 @@ export async function escalateTask(taskId: string, clientId: string, reason: str
 // model's first response fails validation, per the spec's "if output is
 // invalid: bounded retry." attempt_count is incremented so a retried task
 // is distinguishable from a clean first-try success in the record.
-export async function markRetrying(taskId: string, clientId: string, task: HeadCoachTask, issues: unknown, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function markRetrying(taskId        , clientId        , task               , issues         , actor       , actorId                )                                {
   const retried = await transitionTask(taskId, ["READY"], "RETRYING", { attempt_count: task.attemptCount + 1 });
   if (retried) await writeAuditEvent({ eventType: "output_validation_retry", taskId, clientId, actor, actorId, payload: { issues } });
   return retried;
@@ -272,7 +272,7 @@ export async function markRetrying(taskId: string, clientId: string, task: HeadC
 // attemptCount is passed in (not read fresh) so the caller doesn't need an
 // extra round-trip -- every caller already has the current task row from
 // create/claim before it can fail.
-export async function failTask(task: HeadCoachTask, errorMessage: string, actor: Actor, actorId?: string | null): Promise<HeadCoachTask | null> {
+export async function failTask(task               , errorMessage        , actor       , actorId                )                                {
   const failed = await transitionTask(task.id, [task.status], "FAILED", {
     last_error: errorMessage,
     attempt_count: task.attemptCount + 1,
@@ -282,7 +282,7 @@ export async function failTask(task: HeadCoachTask, errorMessage: string, actor:
   return failed;
 }
 
-export async function getTask(taskId: string): Promise<HeadCoachTask | null> {
+export async function getTask(taskId        )                                {
   const { data } = await supabaseAdmin.from("head_coach_tasks").select("*").eq("id", taskId).maybeSingle();
   return data ? fromRow(data) : null;
 }

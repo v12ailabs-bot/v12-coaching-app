@@ -29,16 +29,16 @@ import { supabaseAdmin } from "./supabaseAdmin.js";
 //                         now -- no real V12 methodology document has been provided in
 //                         this effort; this is a known, honest gap, not a bug)
 
-export interface TaskHistoryReconstruction {
-  task: Record<string, unknown>;
-  sourceCheckIn: { table: string; row: Record<string, unknown> | null };
-  auditTrail: Record<string, unknown>[];
-  contextSnapshots: Record<string, unknown>[];
-  recommendations: Record<string, unknown>[];
-  outcomes: Record<string, unknown>[];
-}
+                                            
+                                
+                                                                        
+                                        
+                                              
+                                             
+                                      
+ 
 
-export async function reconstructTaskHistory(taskId: string): Promise<TaskHistoryReconstruction> {
+export async function reconstructTaskHistory(taskId        )                                     {
   const { data: task, error: taskErr } = await supabaseAdmin.from("head_coach_tasks").select("*").eq("id", taskId).maybeSingle();
   if (taskErr) throw taskErr;
   if (!task) throw new Error("Task not found.");
@@ -50,10 +50,10 @@ export async function reconstructTaskHistory(taskId: string): Promise<TaskHistor
     supabaseAdmin.from("head_coach_recommendations").select("*").eq("task_id", taskId).order("created_at"),
   ]);
 
-  const recIds = (recommendations || []).map((r: any) => r.id);
+  const recIds = (recommendations || []).map((r     ) => r.id);
   const { data: outcomes } = recIds.length
     ? await supabaseAdmin.from("head_coach_outcomes").select("*").in("recommendation_id", recIds).order("created_at")
-    : { data: [] as Record<string, unknown>[] };
+    : { data: []                              };
 
   return {
     task,

@@ -26,13 +26,13 @@
 //   npm run headcoach:e2e -- <coachId> <clientId>
 //
 // Requires Node's native TypeScript type-stripping (on by default since
-// Node 23.6; this repo's api/_lib/*.ts modules are imported directly, same
+// Node 23.6; this repo's api/_lib/headCoach*.js modules are imported directly, same
 // as every other ad hoc script used throughout this feature's development).
 // ---------------------------------------------------------------------------
 
 import { supabaseAdmin } from "../api/_lib/supabaseAdmin.js";
 import goalInsightHandler from "../api/goal-insight.js";
-import { reconstructTaskHistory } from "../api/_lib/headCoachAuditTrail.ts";
+import { reconstructTaskHistory } from "../api/_lib/headCoachAuditTrail.js";
 
 if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_KEY || !process.env.ANTHROPIC_API_KEY) {
   console.error("Missing SUPABASE_URL, SUPABASE_SERVICE_KEY, or ANTHROPIC_API_KEY in .env");

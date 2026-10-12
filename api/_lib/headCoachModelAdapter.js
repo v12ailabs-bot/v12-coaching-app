@@ -16,23 +16,23 @@ import Anthropic from "@anthropic-ai/sdk";
 // this in before a real prompt exists would mean burning real API calls on
 // placeholder text every time a coach clicks a button.
 
-export interface ModelUsage {
-  inputTokens: number | null;
-  outputTokens: number | null;
-}
+                             
+                             
+                              
+ 
 
-export interface ModelCompletionResult {
-  text: string;
-  model: string;
-  modelVersion: string | null;
-  usage: ModelUsage;
-  latencyMs: number;
-}
+                                        
+               
+                
+                              
+                    
+                    
+ 
 
-export interface ModelCompletionOptions {
-  maxTokens?: number;
-  system?: string;
-}
+                                         
+                     
+                  
+ 
 
 // Thrown (not returned) on failure, carrying enough for the caller to record
 // it -- head_coach_recommendations has model/model_version/latency_ms
@@ -42,9 +42,9 @@ export interface ModelCompletionOptions {
 // existing failTask(), rather than an unhandled exception taking down the
 // request.
 export class ModelAdapterError extends Error {
-  readonly model: string;
-  readonly latencyMs: number;
-  constructor(message: string, model: string, latencyMs: number) {
+           model        ;
+           latencyMs        ;
+  constructor(message        , model        , latencyMs        ) {
     super(message);
     this.name = "ModelAdapterError";
     this.model = model;
@@ -52,11 +52,11 @@ export class ModelAdapterError extends Error {
   }
 }
 
-export interface ModelAdapter {
-  readonly providerName: string;
-  readonly model: string;
-  complete(prompt: string, options?: ModelCompletionOptions): Promise<ModelCompletionResult>;
-}
+                               
+                                
+                         
+                                                                                             
+ 
 
 // Matches the model string already used by every existing AI function in
 // api/_lib/anthropic.js -- not a Head Coach-specific choice, just staying
@@ -70,12 +70,12 @@ const DEFAULT_MODEL = "claude-opus-4-8";
 // block instead of Vercel's plain-text 504, which the browser can't parse.
 const CALL_TIMEOUT_MS = 28000;
 
-export class ClaudeAdapter implements ModelAdapter {
-  readonly providerName = "anthropic";
-  readonly model: string;
-  private client: Anthropic;
+export class ClaudeAdapter                         {
+           providerName = "anthropic";
+           model        ;
+          client           ;
 
-  constructor(model: string = DEFAULT_MODEL) {
+  constructor(model         = DEFAULT_MODEL) {
     this.model = model;
     // maxRetries 0: the SDK's own retries would stack on top of the hard
     // wall-clock cutoff in complete() and could push the request past
@@ -83,7 +83,7 @@ export class ClaudeAdapter implements ModelAdapter {
     this.client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY, maxRetries: 0 });
   }
 
-  async complete(prompt: string, options: ModelCompletionOptions = {}): Promise<ModelCompletionResult> {
+  async complete(prompt        , options                         = {})                                 {
     const start = Date.now();
     try {
       const message = await this.client.messages.create({
@@ -93,7 +93,7 @@ export class ClaudeAdapter implements ModelAdapter {
         messages: [{ role: "user", content: prompt }],
       }, { signal: AbortSignal.timeout(CALL_TIMEOUT_MS) });
       const latencyMs = Date.now() - start;
-      const textBlock = message.content.find((b): b is Anthropic.TextBlock => b.type === "text");
+      const textBlock = message.content.find((b)                           => b.type === "text");
       return {
         text: (textBlock?.text ?? "").trim(),
         model: message.model,
@@ -107,7 +107,7 @@ export class ClaudeAdapter implements ModelAdapter {
         },
         latencyMs,
       };
-    } catch (e: any) {
+    } catch (e     ) {
       const latencyMs = Date.now() - start;
       const timedOut = e?.name === "TimeoutError" || e?.name === "AbortError" || /abort|timed? ?out/i.test(e?.message ?? "");
       throw new ModelAdapterError(timedOut ? `Claude did not respond within ${CALL_TIMEOUT_MS / 1000}s` : (e?.message ?? String(e)), this.model, latencyMs);
@@ -115,4 +115,4 @@ export class ClaudeAdapter implements ModelAdapter {
   }
 }
 
-export const headCoachModel: ModelAdapter = new ClaudeAdapter();
+export const headCoachModel               = new ClaudeAdapter();

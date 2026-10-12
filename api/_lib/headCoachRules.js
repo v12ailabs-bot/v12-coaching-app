@@ -1,5 +1,5 @@
 import { milestoneProgress } from "../../src/lib/milestoneProgress.js";
-import type { HeadCoachContext } from "./headCoachContextBuilder.ts";
+                                                                     
 
 // HC-007 Rule Registry. Per the owner's decision: this is a versioned,
 // code-reviewed TS module, not a DB table -- deploy-gated rules are a
@@ -29,35 +29,35 @@ import type { HeadCoachContext } from "./headCoachContextBuilder.ts";
 // structural constraint on the AI's output itself, which belongs in the
 // Safety Gate (HC-009) / Prompt Architecture (HC-011), not this registry.
 
-export type RuleCategory = "safety" | "validation" | "advisory";
-export type RuleAuthorityLevel = "L0" | "L1" | "L2" | "L3" | "L4";
-export type RuleStatus = "active" | "deprecated" | "draft";
-export type RuleFailureBehavior = "no_action" | "escalate" | "task_failure";
+                                                                
+                                                                  
+                                                           
+                                                                            
 
-export interface Rule {
-  ruleId: string;
-  name: string;
-  category: RuleCategory;
-  // Lower number = higher priority = evaluated first. Convention used here:
-  // safety (1-9) < validation (10-19) < advisory (20+), matching the spec's
-  // own "safety is evaluated before normal optimization."
-  priority: number;
-  trigger: "REVIEW_CHECK_IN";
-  requiredData: string[]; // dot-paths into HeadCoachContext this rule reads
-  condition: (context: HeadCoachContext) => boolean;
-  allowedActions: string[];
-  authority: RuleAuthorityLevel;
-  exceptions: string;
-  dependencies: string[];
-  version: number;
-  status: RuleStatus;
-  failureBehavior: RuleFailureBehavior;
-  description: string;
-}
+                       
+                 
+               
+                         
+                                                                            
+                                                                            
+                                                          
+                   
+                             
+                                                                            
+                                                    
+                           
+                                
+                     
+                         
+                  
+                     
+                                       
+                      
+ 
 
 export const RULE_REGISTRY_VERSION = "2026-09-23.1";
 
-export const RULES: Rule[] = [
+export const RULES         = [
   {
     ruleId: "missing_consequential_data",
     name: "No check-in data in window",
@@ -133,7 +133,7 @@ export const RULES: Rule[] = [
     priority: 21,
     trigger: "REVIEW_CHECK_IN",
     requiredData: ["milestones"],
-    condition: (ctx) => (ctx.milestones || []).some((m: any) => milestoneProgress(m, m.current_value).achieved),
+    condition: (ctx) => (ctx.milestones || []).some((m     ) => milestoneProgress(m, m.current_value).achieved),
     allowedActions: ["recommend", "no_action"],
     authority: "L1",
     exceptions: "None.",
@@ -149,6 +149,6 @@ export const RULES: Rule[] = [
 // is a lookup helper only -- actually evaluating each rule's condition
 // against a real context and recording which ones fired is the Rule
 // Engine's job (HC-008, not built yet).
-export function rulesFor(trigger: Rule["trigger"]): Rule[] {
+export function rulesFor(trigger                 )         {
   return RULES.filter((r) => r.trigger === trigger && r.status === "active").sort((a, b) => a.priority - b.priority);
 }

@@ -1,6 +1,6 @@
-import { headCoachModel, ModelAdapterError } from "./headCoachModelAdapter.ts";
-import type { HeadCoachContext } from "./headCoachContextBuilder.ts";
-import type { RuleOutcome } from "./headCoachRuleEngine.ts";
+import { headCoachModel, ModelAdapterError } from "./headCoachModelAdapter.js";
+                                                                     
+                                                            
 
 // HC-011 Prompt Architecture / REVIEW_CHECK_IN Prompt -- the first place in
 // this whole effort that actually calls the model to reason about a client.
@@ -66,7 +66,7 @@ Respond with ONLY valid JSON (no markdown fences), matching exactly this shape:
 }
 If the evidence is sparse or ambiguous, say so plainly in "observation" and "limiting_factor" rather than guessing -- a low-confidence "no_action" is a completely valid, often correct answer.`;
 
-function firedRulesSection(outcomes: RuleOutcome[]): string {
+function firedRulesSection(outcomes               )         {
   const fired = outcomes.filter((o) => o.status === "fired");
   if (!fired.length) {
     return "No rules fired for this check-in. Reason independently from the context -- there is no deterministic flag to anchor to.";
@@ -74,7 +74,7 @@ function firedRulesSection(outcomes: RuleOutcome[]): string {
   return fired.map((o) => `- ${o.ruleId} (${o.category}, rule v${o.version}): already flagged by the deterministic rule layer. Your authority must not exceed what this rule permits.`).join("\n");
 }
 
-export function buildReviewCheckInPrompt(context: HeadCoachContext, ruleOutcomes: RuleOutcome[]): { system: string; prompt: string } {
+export function buildReviewCheckInPrompt(context                  , ruleOutcomes               )                                     {
   const rulesSection = firedRulesSection(ruleOutcomes);
   const contextJson = JSON.stringify(context);
 
@@ -90,34 +90,34 @@ Review this client's current check-in and overall context. Produce your structur
   return { system: SYSTEM_PROMPT, prompt };
 }
 
-export interface ReviewCheckInAiOutput {
-  status: string;
-  observation: string;
-  evidence: string[];
-  interpretation: string;
-  confidence: number;
-  confidence_level: string;
-  limiting_factor: string | null;
-  competing_hypotheses: string[];
-  options: string[];
-  recommendation: string;
-  rationale: string;
-  authority: string;
-  expected_response: string;
-  review_condition: string;
-  client_communication_needed: boolean;
-  communication_draft: string | null;
-}
+                                        
+                 
+                      
+                     
+                         
+                     
+                           
+                                 
+                                 
+                    
+                         
+                    
+                    
+                            
+                           
+                                       
+                                     
+ 
 
-export interface ReviewCheckInGenerationResult {
-  output: ReviewCheckInAiOutput | null;
-  raw: string;
-  parseError: string | null;
-  model: string;
-  modelVersion: string | null;
-  usage: { inputTokens: number | null; outputTokens: number | null };
-  latencyMs: number;
-}
+                                                
+                                       
+              
+                            
+                
+                              
+                                                                     
+                    
+ 
 
 // Throws ModelAdapterError on a real API failure (network, auth, rate
 // limit, etc.) -- callers should catch it the same way every other Head
@@ -126,18 +126,18 @@ export interface ReviewCheckInGenerationResult {
 // returned with output: null and parseError set, since that's a data-
 // quality outcome for HC-012 to actually adjudicate, not a hard failure.
 export async function generateReviewCheckInRecommendation(
-  context: HeadCoachContext,
-  ruleOutcomes: RuleOutcome[],
-): Promise<ReviewCheckInGenerationResult> {
+  context                  ,
+  ruleOutcomes               ,
+)                                         {
   const { system, prompt } = buildReviewCheckInPrompt(context, ruleOutcomes);
   const result = await headCoachModel.complete(prompt, { system, maxTokens: 1500 });
 
   const cleaned = result.text.trim().replace(/^```json?\s*/i, "").replace(/```$/, "");
-  let output: ReviewCheckInAiOutput | null = null;
-  let parseError: string | null = null;
+  let output                               = null;
+  let parseError                = null;
   try {
     output = JSON.parse(cleaned);
-  } catch (e: any) {
+  } catch (e     ) {
     parseError = e?.message ?? String(e);
   }
 
