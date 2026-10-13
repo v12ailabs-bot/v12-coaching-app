@@ -2,7 +2,8 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
 import { Inp, Btn } from "../../components/ui/index.js";
-import { toGrams, computeNutrients, sumNutrient, validateQuantityG, formatKcal, formatMacro } from "../../lib/foodMath.js";
+import { toGrams, parseHouseholdMeasures, unitOptions } from "../../lib/householdMeasures.js";
+import { computeNutrients, sumNutrient, validateQuantityG, formatKcal, formatMacro } from "../../lib/foodMath.js";
 
 // Ingredient-level logging for one meal slot. Search hits the debounced
 // search_foods() RPC (never the whole library). Each line's nutrients are
@@ -34,7 +35,10 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
   // A slot with legacy manual numbers and no entries yet shows them as a fixed
   // "Manual entry" line (the database preserves them the same way on first add).
   const [lines, setLines] = useState(() => {
-    const saved = entries.map((e) => ({ key: e.id, id: e.id, entry: e, qty: e.quantity_g == null ? "" : String(e.quantity_g) }));
+    // A saved entry remembers what the client typed (e.g. 1.5 cup) alongside the
+    // grams it was converted to; older entries have no unit and show as grams.
+    const saved = entries.map((e) => ({ key: e.id, id: e.id, entry: e, qty: e.quantity_g == null ? "" : String(e.quantity_g), measures: {},
+      ...(e.entered_unit && e.entered_quantity != null ? { unit: e.entered_unit, amount: String(Number(e.entered_quantity)) } : {}) }));
     const hasLegacy = existing && [existing.calories, existing.protein_g, existing.carbs_g, existing.fats_g].some((v) => v != null);
     if (saved.length === 0 && hasLegacy) {
       saved.push({ key: "legacy", legacy: true, qty: "", entry: { food_id: null, food_name: "Manual entry", kcal: existing.calories, protein_g: existing.protein_g, carbs_g: existing.carbs_g, fat_g: existing.fats_g } });
@@ -78,7 +82,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
     }
     const key = "new-" + f.id;
     setNotice("");
-    setLines((p) => [...p, { key, food: f, qty: "" }]);
+    setLines((p) => [...p, { key, food: f, qty: "", measures: parseHouseholdMeasures(f.household_measures) }]);
     setQ(""); setResults([]);
     setTimeout(() => qtyRefs.current[key]?.focus(), 0);
   };
@@ -89,8 +93,20 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
   const setQty = (key, v, unit) => setLines((p) => p.map((l) => {
     if (l.key !== key) return l;
     const u = unit || l.unit || "g";
-    return { ...l, unit: u, amount: v, qty: toGrams(v, u) };
+    return { ...l, unit: u, amount: v, qty: toGrams(v, u, l.measures) };
   }));
+
+  // Saved entries only snapshot nutrients, so fetch each food's household
+  // measures to offer its units again when a meal is reopened.
+  useEffect(() => {
+    const ids = [...new Set(entries.map((e) => e.food_id).filter(Boolean))];
+    if (!ids.length) return;
+    supabase.from("foods").select("id,household_measures").in("id", ids).then(({ data, error }) => {
+      if (error || !data) return;
+      const byId = Object.fromEntries(data.map((f) => [f.id, parseHouseholdMeasures(f.household_measures)]));
+      setLines((p) => p.map((l) => (l.entry?.food_id && byId[l.entry.food_id] ? { ...l, measures: byId[l.entry.food_id] } : l)));
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const removeLine = (l) => {
     setLines((p) => p.filter((x) => x.key !== l.key));
     if (l.id) setRemoved((p) => [...p, l.id]);
@@ -116,6 +132,12 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
   const hasInvalid = editable.some((l) => validateQuantityG(l.qty).error);
   const dirty = removed.length > 0 || lines.some((l) => (!l.id && !l.legacy) || (l.entry && l.entry.food_id != null && Number(l.qty) !== Number(l.entry.quantity_g)));
 
+  // What the client typed, kept next to the grams so a household amount is never
+  // mistaken for a weighed one. Grams entries need no extra fields (and this keeps
+  // plain gram logging working even before the columns exist).
+  const enteredOf = (l) => (l.unit && l.unit !== "g" && l.amount != null && l.amount !== ""
+    ? { entered_quantity: Number(l.amount), entered_unit: l.unit } : { entered_quantity: null, entered_unit: null });
+
   const save = async () => {
     setSaving(true); setSaveErr("");
     try {
@@ -132,14 +154,14 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
         if (error) throw error;
       }
       for (const l of lines.filter((x) => x.id && x.entry.food_id != null && Number(x.qty) !== Number(x.entry.quantity_g))) {
-        const { error } = await supabase.from("meal_log_entries").update({ quantity_g: l.qty }).eq("id", l.id);
+        const { error } = await supabase.from("meal_log_entries").update({ quantity_g: l.qty, ...enteredOf(l) }).eq("id", l.id);
         if (error) throw error;
       }
       // One at a time on purpose: the trigger that preserves a legacy manual
       // total as its own line fires on the slot's first entry.
       for (const l of lines.filter((x) => !x.id && !x.legacy)) {
         const { error } = await supabase.from("meal_log_entries").insert({
-          meal_log_id: mealId, client_id: profile.id, food_id: l.food.id, quantity_g: l.qty,
+          meal_log_id: mealId, client_id: profile.id, food_id: l.food.id, quantity_g: l.qty, ...enteredOf(l),
         });
         if (error) throw error;
       }
@@ -224,10 +246,16 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
                       <input ref={(el) => { qtyRefs.current[l.key] = el; }} type="text" inputMode="decimal" value={l.amount ?? l.qty}
                         onChange={(e) => setQty(l.key, e.target.value)} placeholder="0" aria-label={`Amount of ${src.food_name || src.name}`}
                         style={{ width: 80, background: "transparent", color: S.text, border: "1px solid " + (err && l.qty !== "" ? S.danger : S.border), padding: "8px", fontSize: 14 }} />
-                      <select value={l.unit || "g"} onChange={(e) => setQty(l.key, l.amount ?? l.qty, e.target.value)} aria-label="Unit"
-                        style={{ background: "transparent", color: S.text, border: "1px solid " + S.border, padding: "8px 6px", fontSize: 13 }}>
-                        <option value="g">g</option><option value="oz">oz</option><option value="lb">lb</option>
-                      </select>
+                      {(() => {
+                        const opts = unitOptions(l.measures);
+                        if (l.unit && !opts.some((o) => o.key === l.unit)) opts.push({ key: l.unit, label: l.unit, household: true });
+                        return (
+                          <select value={l.unit || "g"} onChange={(e) => setQty(l.key, l.amount ?? l.qty, e.target.value)} aria-label="Unit"
+                            style={{ background: "transparent", color: S.text, border: "1px solid " + S.border, padding: "8px 6px", fontSize: 13, maxWidth: 150 }}>
+                            {opts.map((o) => <option key={o.key} value={o.key}>{o.label}</option>)}
+                          </select>
+                        );
+                      })()}
                     </div>
                   )}
                   {!l.legacy && <button onClick={() => removeLine(l)} aria-label="Remove ingredient" style={{ background: "transparent", border: "none", color: S.muted, cursor: "pointer", fontSize: 16 }}>✕</button>}
@@ -235,7 +263,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
                 {err && l.qty !== "" ? (
                   <div style={{ ...small, color: S.danger }}>{err}</div>
                 ) : !n.error && (
-                  <div style={small}>{l.unit && l.unit !== "g" && l.qty !== "" ? `= ${l.qty} g · ` : ""}{manual ? "Manual numbers (kept as logged) — " : ""}{formatKcal(n.kcal)} kcal · P {formatMacro(n.protein)} · C {formatMacro(n.carbs)} · F {formatMacro(n.fat)}</div>
+                  <div style={small}>{l.unit && l.unit !== "g" && l.qty !== "" ? `= ${l.qty} g${unitOptions(l.measures).find((o) => o.key === l.unit)?.household ? " (estimated from the household measure)" : ""} · ` : ""}{manual ? "Manual numbers (kept as logged) — " : ""}{formatKcal(n.kcal)} kcal · P {formatMacro(n.protein)} · C {formatMacro(n.carbs)} · F {formatMacro(n.fat)}</div>
                 )}
               </div>
             );

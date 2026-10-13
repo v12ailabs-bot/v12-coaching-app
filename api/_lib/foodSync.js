@@ -43,6 +43,9 @@ export function mapPage(page) {
     cooking_method: select(P["Cooking method"]),
     canned_liquid: select(P["Canned liquid"]),
     preparation_notes: text(P["Preparation notes"]),
+    // Free text like "cup=158 g; tbsp=9.9 g", stored verbatim and parsed by the app
+    // (src/lib/householdMeasures.js). Empty/absent property -> null.
+    household_measures: text(P["Household measures"]),
     kcal_per_100g: num(P["Energy (kcal)"]),
     protein_per_100g: num(P["Protein (g)"]),
     carbs_per_100g: num(P["Carbs (g)"]),
@@ -102,7 +105,7 @@ export function requiredFieldError(r) {
   return null;
 }
 
-const HASH_FIELDS = ["food_code", "name", "record_type", "category", "aliases", "region_tags", "brand", "state", "cooking_method", "canned_liquid", "preparation_notes",
+const HASH_FIELDS = ["food_code", "name", "record_type", "category", "aliases", "region_tags", "brand", "state", "cooking_method", "canned_liquid", "preparation_notes", "household_measures",
   ...NUTRIENTS, "source_type", "source_reference", "source_food_description", "source_url", "source_accessed", "match_quality", "verification_status", "verified_on",
   "is_active", "is_published", "dedupe_key", "counterpart_notion_id", "replaced_by_notion_id"];
 
