@@ -54,7 +54,7 @@ function CalorieRing({ logged, target }) {
 }
 
 // This week as seven small columns against the daily calorie target.
-function WeekColumns({ days, dailyTarget }) {
+export function WeekColumns({ days, dailyTarget }) {
   const max = Math.max(dailyTarget * 1.3, ...days.map((d) => d.cal || 0));
   return (
     <div style={{ display: "flex", gap: 6, alignItems: "flex-end", height: 64, position: "relative", marginTop: 4 }}>
