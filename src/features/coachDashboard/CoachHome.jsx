@@ -12,6 +12,7 @@ import { InterventionModal } from "./InterventionModal.jsx";
 import { yesterdayDate } from "../../lib/dates.js";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
+import { CoachTodaySection } from "./CoachTodaySection.jsx";
 import { RoadmapCheckinsCard } from "./RoadmapCheckinsCard.jsx";
 import { RoadmapCheckinModal } from "./RoadmapCheckinModal.jsx";
 import { buildRoadmapCheckins } from "../../lib/roadmapCheckins.js";
@@ -453,6 +454,7 @@ export function CoachHome({ setPage, openClient }) {
       mealLogs={nutByClient[roadmapRow.clientId]?.mealLogs || []} milestoneAlerts={milestoneAlerts} reminder={reminders[roadmapRow.clientId]}
       openClient={openClient} onChanged={(c) => applyRoadmapChange(roadmapRow.clientId, c)} onClose={() => setRoadmapReviewId(null)} />
   ) : null;
+  const todaySection = <CoachTodaySection clients={coachedList} reminders={reminders} openClient={openClient} />;
   const roadmapCard = <RoadmapCheckinsCard rows={roadmapRows} nameOf={nameOf} onReview={setRoadmapReviewId} reminders={reminders} />;
 
   if (isMobile) {
@@ -468,7 +470,7 @@ export function CoachHome({ setPage, openClient }) {
         progressSeries={progressSeries} progressDeltaPct={deltaOf(progressSeries)}
         checkinCounts={checkinCounts} totalCoached={coachedList.length} totalCheckinsThisWeek={totalCheckinsThisWeek}
         needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts}
-        phaseAlerts={[]} checkpointAlerts={[]} roadmapCard={roadmapCard} messages={messages}
+        phaseAlerts={[]} checkpointAlerts={[]} roadmapCard={roadmapCard} todaySection={todaySection} messages={messages}
         programGroups={programGroups}
         nameOf={nameOf} openClient={openClient} setPage={setPage}
         clientIds={coachedList.map((c) => c.id)}
@@ -485,6 +487,7 @@ export function CoachHome({ setPage, openClient }) {
       {modal}
       {roadmapModal}
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview" />
+      <div style={{ marginBottom: 20 }}>{todaySection}</div>
 
       <CoachStatCards
         totalClients={coachedList.length}
