@@ -21,7 +21,9 @@ export function useProgramSettings(profile) {
       if (!live) return;
       setS({
         loaded: true,
-        showRoadmap: owner.data?.show_roadmap_to_client ?? true,
+        // Program Only never sees a roadmap; derived, so nothing stored changes and
+        // moving back to coaching shows the roadmap exactly as it was.
+        showRoadmap: profile.client_type === "program_only" ? false : (owner.data?.show_roadmap_to_client ?? true),
         progressTracking: owner.data?.progress_tracking_enabled ?? true,
         clientCanEditCheckins: own.data?.client_can_edit_checkins ?? true,
       });

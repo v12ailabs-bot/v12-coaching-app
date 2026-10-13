@@ -2400,7 +2400,7 @@ function ClientProgram({ profile }) {
           </div>
           {program.phase_note && <div style={{ fontSize: 13, color: S.text, opacity: 0.9, lineHeight: 1.6, marginTop: 6 }}>{program.phase_note}</div>}
           {program.progression_model_key && <div style={{ fontSize: 11, color: S.muted, marginTop: 8 }}>Progression model: {program.progression_model_key}</div>}
-          {roadmap.length > 0 && (
+          {roadmap.length > 0 && profile.client_type !== "program_only" && (
             <div style={{ marginTop: 18 }}>
               <ClientRoadmapLive profile={profile} program={program} phases={roadmap} showPhaseCard={false} />
             </div>
@@ -2904,7 +2904,7 @@ function ClientDashboard({ profile, logout }) {
       {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "proghome" && programOnly && <ProgramOnlyHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
-      {page === "v12roadmap" && !isStarter && <V12RoadmapPage profile={profile} />}
+      {page === "v12roadmap" && !isStarter && !programOnly && <V12RoadmapPage profile={profile} />}
       {page === "program" && !isStarter && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && !isStarter && <TodayScreen profile={profile} onDone={() => setPage("dashboard")} />}
