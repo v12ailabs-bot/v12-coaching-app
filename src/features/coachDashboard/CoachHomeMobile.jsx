@@ -279,7 +279,7 @@ export function CoachHomeMobile({
   rows,
   checkinSeries, checkinDeltaPct, progressSeries, progressDeltaPct,
   checkinCounts, totalCoached, totalCheckinsThisWeek,
-  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, roadmapCard, messages,
+  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, roadmapCard, todaySection, messages,
   programGroups,
   nameOf, openClient, setPage, clientIds, onReview,
   programSubscriberRows, monthlyRevenue, revenueTrendPct,
@@ -287,6 +287,7 @@ export function CoachHomeMobile({
   return (
     <div>
       <PageTitle title="Coaching Dashboard" sub="V12 System · Priority Overview" />
+      {todaySection && <div style={{ marginBottom: 14 }}>{todaySection}</div>}
       <PerformanceSnapshot totalClients={totalClients} totalClientsTrendPct={totalClientsTrendPct} activeClients={activeClients} atRiskCount={atRiskCount} offlineCount={offlineCount} monthlyRevenue={monthlyRevenue} revenueTrendPct={revenueTrendPct} />
       <ClientOverviewRow rows={rows} openClient={openClient} setPage={setPage} />
       <PerformanceOverview checkinSeries={checkinSeries} checkinDeltaPct={checkinDeltaPct} progressSeries={progressSeries} progressDeltaPct={progressDeltaPct} />
