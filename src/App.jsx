@@ -30,6 +30,7 @@ import { DAY_ORDER, EX_TYPES, groupByDay, PROGRAM_HABITS, streakBack, COACH_EMAI
 import { Progress } from "./features/progress/ProgressPage.jsx";
 import { ProgramProgress } from "./features/progress/ProgramProgressPage.jsx";
 import { ClientDetailPage } from "./features/clientDetail/ClientDetailPage.jsx";
+import { SavedMealsCard } from "./features/nutrition/SavedMealsCard.jsx";
 import { FoodMealEditor, loadEntries } from "./features/nutrition/FoodMealEditor.jsx";
 import { TodayScreen } from "./features/today/TodayScreen.jsx";
 import { weekStartStr, isWithinWeeklyBackdateWindow } from "./lib/dates.js";
@@ -631,7 +632,7 @@ function Sidebar({ isCoach, programOnly, isStarter, page, setPage }) {
   const clientNav = isStarter
     ? [{id:"starterhome",icon:"⚡",label:"Home",short:"Home"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"schedule",icon:"🗓",label:"Schedule",short:"Schedule"},{id:"resources",icon:"📚",label:"Library",short:"Library"}]
     : programOnly
-    ? [{id:"proghome",icon:"⚡",label:"Home",short:"Home"},{id:"program",icon:"📋",label:"Plan",short:"Plan"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
+    ? [{id:"proghome",icon:"⚡",label:"Home",short:"Home"},{id:"nutrition",icon:"🥗",label:"Nutrition",short:"Nutrition"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}]
     : [{id:"dashboard",icon:"⚡",label:"Home",short:"Home"},{id:"checkin",icon:"✅",label:"Check-In",short:"Check-In"},{id:"workouts",icon:"🏋",label:"Workouts",short:"Workouts"},{id:"progress",icon:"📈",label:"Progress",short:"Progress"},{id:"more",icon:"☰",label:"More",short:"More"}];
   const nav = isCoach
     ? [{id:"dashboard",icon:"⚡",label:"Overview",short:"Home"},{id:"clients",icon:"👥",label:"Clients",short:"Clients"},{id:"crm",icon:"📇",label:"Leads / CRM",short:"Leads"},{id:"metrics",icon:"📊",label:"Business + Content",short:"Metrics"},{id:"assess",icon:"🧭",label:"Assessments",short:"Assess"},{id:"progression",icon:"🧬",label:"Progression",short:"Progress"},{id:"library",icon:"📚",label:"Library",short:"Library"}]
@@ -2496,6 +2497,7 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
   const [todayCheckin, setTodayCheckin] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [savedKey, setSavedKey] = useState(0);
 
   useEffect(() => {
     const today = todayStr();
@@ -2542,7 +2544,16 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
             const existing = mealLogs.find((l) => l.meal === label) || null;
             return (
               <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10, padding: "12px 4px", borderBottom: i < slots.length - 1 ? "1px solid " + S.border : "none" }}>
-                <span style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{label}</span>
+                <span style={{ fontSize: 14, fontWeight: 600, color: S.text }}>{label}
+                  {existing && (existing.calories != null || existing.protein_g != null) && (
+                    <button type="button" onClick={async () => {
+                      const name = window.prompt("Name this saved meal:", label);
+                      if (!name || !name.trim()) return;
+                      const { error } = await supabase.from("saved_meals").insert({ client_id: profile.id, name: name.trim(), calories: existing.calories, protein_g: existing.protein_g, carbs_g: existing.carbs_g, fats_g: existing.fats_g });
+                      if (error) window.alert(error.message); else setSavedKey((k) => k + 1);
+                    }} style={{ background: "none", border: "none", color: S.accent2, cursor: "pointer", fontSize: 11, marginLeft: 10 }}>☆ Save as meal</button>
+                  )}
+                </span>
                 <MealLogEntry profile={profile} mealLabel={label} existing={existing} simple={simple}
                   entries={entries.filter((e) => existing && e.meal_log_id === existing.id)}
                   onSaved={(row) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== label), row])}
@@ -2555,6 +2566,8 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
           })}
         </div>
       </Card>
+      <SavedMealsCard profile={profile} slots={slots} simple={simple} mealLogs={mealLogs} entries={entries} refreshKey={savedKey}
+        onLogged={(row, slot) => setMealLogs((prev) => [...prev.filter((l) => l.meal !== slot), row])} />
     </>
   );
 }
@@ -2797,7 +2810,6 @@ function CheckInHome({ profile, setPage }) {
 function MoreMenu({ programOnly, setPage }) {
   const items = programOnly
     ? [
-        { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Log meals and see your week" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
         { id: "habits", icon: "✅", label: "Habits & Assessment", sub: "Habit tracker and V12 scores" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
@@ -2903,9 +2915,9 @@ function ClientDashboard({ profile, logout }) {
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
       {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
-      {page === "proghome" && programOnly && <ProgramOnlyHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
+      {page === "proghome" && programOnly && (<><UpgradeCTA profile={profile} /><InvoiceCard profile={profile} /><ProgramOnlyHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} /></>)}
       {page === "v12roadmap" && !isStarter && !programOnly && <V12RoadmapPage profile={profile} />}
-      {page === "program" && !isStarter && <ClientProgram profile={profile} />}
+      {page === "program" && !isStarter && !programOnly && <ClientProgram profile={profile} />}
       {page === "checkin" && !programOnly && !isStarter && <CheckInHome profile={profile} setPage={setPage} />}
       {page === "daily" && !programOnly && !isStarter && <TodayScreen profile={profile} onDone={() => setPage("dashboard")} />}
       {page === "weekly" && !programOnly && !isStarter && <WeeklyCheckin profile={profile} onDone={() => setPage("dashboard")} />}
