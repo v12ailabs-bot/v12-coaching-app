@@ -137,7 +137,7 @@ export function InterventionModal({ assessment, daily: dailyAll = [], nutCtx: nu
         <StatusBadge label={statusLabel} tone={statusTone} />
       </div>
 
-      <Tabs tabs={tabs} active={tab} onChange={setTab} />
+      <Tabs tabs={tabs} active={tab} onChange={setTab} wrap />
       <div style={{ marginTop: 16 }}>
         {error && <div style={{ fontSize: 12, color: S.danger, marginBottom: 10 }}>{error}</div>}
 

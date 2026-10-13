@@ -86,6 +86,7 @@ export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = fal
                     {dateRangeForWeeks(startDate, p.week_start, p.week_end) || `Weeks ${p.week_start}-${p.week_end}`}
                   </div>
                 )}
+                {(p.checkpoints || []).length > 0 && <div style={{ fontSize: 10, color: S.accent2, marginTop: 2, whiteSpace: "nowrap" }}>◆ {p.checkpoints.length} checkpoint{p.checkpoints.length === 1 ? "" : "s"}</div>}
                 {status === "current" && <div style={{ fontSize: 9, letterSpacing: 1, textTransform: "uppercase", color: S.accent, marginTop: 2, fontWeight: 700 }}>Current</div>}
                 {forCoach && p.exit_criteria?.length > 0 && (
                   <div style={{ fontSize: 10, color: S.muted, marginTop: 2, whiteSpace: "nowrap" }}>
@@ -104,6 +105,18 @@ export function ProgramRoadmap({ phases, currentPhase, startDate, forCoach = fal
           );
         })}
       </div>
+      {(() => {
+        const all = phases.flatMap((p) => (p.checkpoints || []).map((c) => ({ ...c, phase: p.phase }))).sort((x, y) => Number(x.day) - Number(y.day));
+        if (!all.length) return null;
+        return (
+          <div style={{ marginTop: 10, borderTop: "1px solid " + S.border, paddingTop: 10 }}>
+            <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Checkpoints</div>
+            {all.map((c, i) => (
+              <div key={i} style={{ fontSize: 13, color: c.done ? S.muted : S.text, padding: "3px 0" }}>{c.done ? "✓" : "◆"} {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, startDate)} · {c.phase}</span></div>
+            ))}
+          </div>
+        );
+      })()}
       {openPhase && (
         <Modal title={openPhase.phase} onClose={() => setOpenIndex(null)}>
           {(openPhase.week_start != null && openPhase.week_end != null) && (
