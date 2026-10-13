@@ -2556,6 +2556,16 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false, onChange }) {
                       if (error) window.alert(error.message); else setSavedKey((k) => k + 1);
                     }} style={{ background: "none", border: "none", color: S.accent2, cursor: "pointer", fontSize: 11, marginLeft: 10 }}>☆ Save as meal</button>
                   )}
+                  {existing && entries.filter((e) => e.meal_log_id === existing.id).length > 0 && (
+                    <div style={{ marginTop: 4, fontWeight: 400 }}>
+                      {entries.filter((e) => e.meal_log_id === existing.id).map((e) => (
+                        <div key={e.id} style={{ fontSize: 11, color: S.muted, lineHeight: 1.6 }}>
+                          {e.food_name}{e.food_id && e.quantity_g != null ? ` · ${e.entered_unit && e.entered_quantity != null ? `${Number(e.entered_quantity)} ${e.entered_unit} (${Number(e.quantity_g)} g)` : `${Number(e.quantity_g)} g`}` : ""}
+                          {e.kcal != null ? ` — ${Math.round(e.kcal)} kcal` : ""}{e.protein_g != null ? ` · P ${Math.round(e.protein_g)}` : ""}{e.carbs_g != null ? ` · C ${Math.round(e.carbs_g)}` : ""}{e.fat_g != null ? ` · F ${Math.round(e.fat_g)}` : ""}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </span>
                 <MealLogEntry profile={profile} mealLabel={label} existing={existing} simple={simple}
                   entries={entries.filter((e) => existing && e.meal_log_id === existing.id)}
@@ -2585,7 +2595,12 @@ function MealLogEntry({ profile, mealLabel, existing, onSaved, onEntriesSaved, e
   // "foods" = ingredient-level logging; "manual" = the legacy totals form. A
   // slot that already has ingredient lines is edited only through foods, since
   // typing manual totals over it would desync from its lines.
-  const [mode, setMode] = useState(entries.length > 0 ? "foods" : "manual");
+  // New meals open in the plate builder (search foods, add as many as you like, one
+  // save). Quick entry stays one tap away, and a slot that only has legacy typed-in
+  // totals still opens in it.
+  const legacyManual = entries.length === 0 && !!existing && [existing.calories, existing.protein_g, existing.carbs_g, existing.fats_g].some((v) => v != null);
+  const startMode = () => (legacyManual ? "manual" : "foods");
+  const [mode, setMode] = useState(startMode);
   const [form, setForm] = useState({ calories: existing?.calories ?? "", protein_g: existing?.protein_g ?? "", carbs_g: existing?.carbs_g ?? "", fats_g: existing?.fats_g ?? "" });
   const [saving, setSaving] = useState(false);
   const num = (v) => (v === "" || v == null ? null : Number(v));
@@ -2605,7 +2620,7 @@ function MealLogEntry({ profile, mealLabel, existing, onSaved, onEntriesSaved, e
 
   if (!open) {
     return (
-      <Btn sm teal onClick={() => { setMode(entries.length > 0 ? "foods" : "manual"); setOpen(true); }}>
+      <Btn sm teal onClick={() => { setMode(startMode()); setOpen(true); }}>
         {existing ? `Logged: ${existing.calories ?? "—"} kcal · Edit` : "+ Log"}
       </Btn>
     );
