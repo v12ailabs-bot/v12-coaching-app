@@ -11,7 +11,9 @@ export const S = {
   surface2: "#1C1C20",
   border: "#242427",
   text: "#FFFFFF",
-  muted: "#A1A1AA",
+  // Lifted from #A1A1AA for better contrast on the dark cards. The subtext
+  // font rule in GlobalStyles keys off this exact colour (rgb(180, 180, 190)).
+  muted: "#B4B4BE",
   accent: "#FF6A00",
   accent2: "#00C9A7",
   neon: "#C6FF00",
@@ -110,12 +112,25 @@ export function avatarFrom(nameOrEmail = "") {
 export function GlobalStyles() {
   return (
     <style>{`
-      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap');
+      @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Space+Grotesk:wght@500;600&family=Manrope:wght@400;500;600&display=swap');
       * { box-sizing: border-box; }
       /* Portrait-first: never let content force a horizontal scroll. */
       html, body { max-width: 100%; overflow-x: hidden; }
       body { margin: 0; background: ${S.bg}; color: ${S.text};
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+      /* Type system: Bebas Neue stays for headers and big stat numbers (set
+         inline where used). Space Grotesk carries subtext, captions, helper
+         text, chart titles/axes/tooltips and stat labels; Manrope carries form
+         fields and long paragraphs. Nearly all text here is styled inline, so
+         subtext is picked out by the muted colour every caption already uses. */
+      [style*="rgb(180, 180, 190)"]:not([style*="Bebas"]) { font-family: 'Space Grotesk', -apple-system, sans-serif; font-weight: 500; letter-spacing: .2px; font-variant-numeric: tabular-nums; }
+      .recharts-wrapper text, .recharts-tooltip-wrapper, .recharts-legend-wrapper { font-family: 'Space Grotesk', sans-serif !important; font-variant-numeric: tabular-nums; }
+      .accent-key { color: ${S.accent}; font-weight: 600; }
+      input, textarea, select { font-family: 'Manrope', -apple-system, sans-serif; font-size: 14px; }
+      input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]), textarea, select { padding: 12px 14px; }
+      textarea { min-height: 96px; line-height: 1.5; }
+      input::placeholder, textarea::placeholder { opacity: .5; }
+      p { font-family: 'Manrope', -apple-system, sans-serif; line-height: 1.55; }
       img { max-width: 100%; }
       .spinner { width: 32px; height: 32px; border-radius: 50%;
         border: 3px solid ${S.border}; border-top-color: ${S.accent};

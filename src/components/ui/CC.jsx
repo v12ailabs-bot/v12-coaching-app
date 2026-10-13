@@ -7,7 +7,7 @@ import { Card } from "./Card.jsx";
 // without touching any of those callers.
 export const CC = ({ title, sub, height = 230, children }) => (
   <Card>
-    <div style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, marginBottom: 2 }}>{title}</div>
+    <div style={{ fontFamily: "'Space Grotesk',sans-serif", fontWeight: 600, fontSize: 16, marginBottom: 2 }}>{title}</div>
     <div style={{ fontSize: 11, color: S.muted, marginBottom: 14 }}>{sub}</div>
     <div style={{ height }}>{children}</div>
   </Card>
