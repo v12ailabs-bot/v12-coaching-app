@@ -2462,6 +2462,7 @@ function genericGuideFor(goal) {
 }
 function GenericNutritionGuide({ profile }) {
   const guide = genericGuideFor(profile.goal);
+  const [weekKey, setWeekKey] = useState(0);
   return (
     <div>
       <PageTitle title={guide.title} sub="A general guide matched to your goal" />
@@ -2473,8 +2474,8 @@ function GenericNutritionGuide({ profile }) {
           tracker (fewer slots, calories+protein only) — no coach-set
           calorie target to compare against, so full macro granularity
           isn't useful the way it is for a coaching client's dialed-in plan. */}
-      <TodaysMealsCard profile={profile} calorieTarget={null} simple />
-      <WeeklyIntakeCard profile={profile} />
+      <TodaysMealsCard profile={profile} calorieTarget={null} simple onChange={() => setWeekKey((k) => k + 1)} />
+      <WeeklyIntakeCard key={weekKey} profile={profile} />
     </div>
   );
 }
@@ -2492,12 +2493,14 @@ const MEAL_SLOTS_SIMPLE = ["Breakfast", "Lunch", "Dinner"];
 // and the Program Only generic guide (`simple`: fewer slots, calories+protein
 // only, no target) — same mechanism, less depth. Self-fetching so either
 // caller can drop it in without threading meal-log state through.
-function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
+function TodaysMealsCard({ profile, calorieTarget, simple = false, onChange }) {
   const [mealLogs, setMealLogs] = useState([]);
   const [todayCheckin, setTodayCheckin] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [savedKey, setSavedKey] = useState(0);
+  // Tell the parent whenever today's logs change so weekly views can refresh.
+  useEffect(() => { if (onChange) onChange(); }, [mealLogs, entries]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const today = todayStr();
@@ -2530,8 +2533,8 @@ function TodaysMealsCard({ profile, calorieTarget, simple = false }) {
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap", fontSize: 13 }}>
             <span><strong style={{ color: S.text }}>{sumField("calories")}</strong> <span style={{ color: S.muted }}>{calorieTarget != null ? `/ ${calorieTarget} kcal` : "kcal"}</span></span>
             <span><strong style={{ color: S.text }}>{sumField("protein_g")}</strong><span style={{ color: S.muted }}>g protein</span></span>
-            {!simple && <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>}
-            {!simple && <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>}
+            {(!simple || sumField("carbs_g") > 0) && <span><strong style={{ color: S.text }}>{sumField("carbs_g")}</strong><span style={{ color: S.muted }}>g carbs</span></span>}
+            {(!simple || sumField("fats_g") > 0) && <span><strong style={{ color: S.text }}>{sumField("fats_g")}</strong><span style={{ color: S.muted }}>g fats</span></span>}
           </div>
         ) : (
           <div style={{ fontSize: 12, color: S.muted }}>Nothing logged yet today — log a meal below or fill in nutrition on your daily check-in.</div>
