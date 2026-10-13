@@ -4,11 +4,12 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ReferenceLine, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT } from "../../theme.jsx";
-import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../components/ui/index.js";
+import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG, TrendChart } from "../../components/ui/index.js";
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
 import { mergeDailyNutrition } from "../../lib/scoring/nutritionAdherence.js";
 import { adherenceFrom, nutritionStatusFrom } from "../../lib/scoring.js";
+import { RANGES } from "../../lib/chartBuckets.js";
 import { rangeStartStr } from "../../lib/dates.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { HabitsProgress, CheckinNotes } from "./SharedProgressViews.jsx";
@@ -162,7 +163,7 @@ function ProgressInner({ profile, coachView }) {
 
       {["weight","wellness","measurements"].includes(tab) && (
         <div style={{marginBottom:20}}>
-          <RG options={["30D","3M","6M","1Y","All"]} value={range} onChange={setRange}/>
+          <RG options={RANGES} value={range} onChange={setRange}/>
         </div>
       )}
 
@@ -194,16 +195,7 @@ function ProgressInner({ profile, coachView }) {
           {(filteredDaily.length===0&&filteredWeightSeries.length===0)?empty:(
             <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
               <CC title="Bodyweight Trend" sub={goal?`Daily + weekly check-ins · target ${goal.target_value}${goal.unit}`:"Daily + weekly check-ins"}>
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={filteredWeightSeries}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                    <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredWeightSeries.length)}/>
-                    <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                    <Tooltip {...TT}/>
-                    {goal && <ReferenceLine y={goal.target_value} stroke={S.accent2} strokeDasharray="4 4" label={{value:"Goal",fontSize:9,fill:S.accent2,position:"insideTopRight"}}/>}
-                    <Line type="monotone" dataKey="weight" stroke={S.accent} strokeWidth={2} dot={{r:2}}/>
-                  </LineChart>
-                </ResponsiveContainer>
+                <TrendChart rows={weightSeries} series={[{key:"weight",name:"Weight",color:S.accent}]} range={range} unit=" lb" refLines={goal?[{y:goal.target_value,color:S.accent2,label:"Goal"}]:[]}/>
               </CC>
               {bmiWeekly.length > 0 && (
                 <CC title="BMI Trend" sub="Weekly, from bodyweight + your height">
@@ -238,61 +230,24 @@ function ProgressInner({ profile, coachView }) {
         <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
           {[["energy",S.accent,"Energy"],["sleep",S.accent2,"Sleep Quality"],["mood","#8B5CF6","Mood"],["water","#3B82F6","Water (glasses)"]].map(([key,color,label])=>(
             <CC key={key} title={label} sub={range==="All"?"Full history":range}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredDaily}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
-                  <YAxis domain={[0,key==="water"?16:10]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  <Line type="monotone" dataKey={key} stroke={color} strokeWidth={2} dot={{r:2}}/>
-                </LineChart>
-              </ResponsiveContainer>
+              <TrendChart rows={daily} series={[{key,name:label,color}]} range={range} domain={[0,key==="water"?16:10]}/>
             </CC>
           ))}
           {filteredDaily.some(d=>d.sleep_hours!=null) && (
             <CC title="Sleep Hours" sub={range==="All"?"Full history":range}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredDaily}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
-                  <YAxis domain={[0,12]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  <Line type="monotone" dataKey="sleep_hours" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
-                </LineChart>
-              </ResponsiveContainer>
+              <TrendChart rows={daily} series={[{key:"sleep_hours",name:"Sleep",color:S.accent2}]} range={range} domain={[0,12]} unit=" h"/>
             </CC>
           )}
           {filteredNutDaily.some(d=>d.calories!=null) && (
             <CC title="Calories" sub={target?.calories!=null?`${range==="All"?"Full history":range} · target ${target.calories} kcal`:(range==="All"?"Full history":range)}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredNutDaily}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredNutDaily.length)}/>
-                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  {target?.calories!=null && <ReferenceLine y={target.calories} stroke={S.muted} strokeDasharray="4 4" label={{value:"Target",fontSize:9,fill:S.muted,position:"insideTopRight"}}/>}
-                  <Line type="monotone" dataKey="calories" stroke={S.accent} strokeWidth={2} dot={{r:2}} connectNulls/>
-                </LineChart>
-              </ResponsiveContainer>
+              <TrendChart rows={nutDaily} series={[{key:"calories",name:"Calories",color:S.accent}]} range={range} unit=" kcal" refLines={target?.calories!=null?[{y:target.calories,color:S.muted,label:"Target"}]:[]}/>
             </CC>
           )}
           {filteredNutDaily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
             <CC title="Macros (g)" sub={`${range==="All"?"Full history":range} · dashed = target`}>
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredNutDaily}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredNutDaily.length)}/>
-                  <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
-                  <Tooltip {...TT}/>
-                  <Legend wrapperStyle={{fontSize:11}}/>
-                  {target?.protein_g!=null && <ReferenceLine y={target.protein_g} stroke={S.accent2} strokeDasharray="4 4"/>}
-                  {target?.carbs_g!=null && <ReferenceLine y={target.carbs_g} stroke="#3B82F6" strokeDasharray="4 4"/>}
-                  {target?.fats_g!=null && <ReferenceLine y={target.fats_g} stroke="#8B5CF6" strokeDasharray="4 4"/>}
-                  <Line type="monotone" dataKey="protein_g" name="Protein" stroke={S.accent2} strokeWidth={2} dot={{r:2}} connectNulls/>
-                  <Line type="monotone" dataKey="carbs_g" name="Carbs" stroke="#3B82F6" strokeWidth={2} dot={{r:2}} connectNulls/>
-                  <Line type="monotone" dataKey="fats_g" name="Fats" stroke="#8B5CF6" strokeWidth={2} dot={{r:2}} connectNulls/>
-                </LineChart>
-              </ResponsiveContainer>
+              <TrendChart rows={nutDaily} legend unit=" g" range={range}
+                series={[{key:"protein_g",name:"Protein",color:S.accent2},{key:"carbs_g",name:"Carbs",color:"#3B82F6"},{key:"fats_g",name:"Fats",color:"#8B5CF6"}]}
+                refLines={[target?.protein_g!=null&&{y:target.protein_g,color:S.accent2},target?.carbs_g!=null&&{y:target.carbs_g,color:"#3B82F6"},target?.fats_g!=null&&{y:target.fats_g,color:"#8B5CF6"}].filter(Boolean)}/>
             </CC>
           )}
         </div>

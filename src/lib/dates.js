@@ -47,7 +47,7 @@ export function isWithinWeeklyBackdateWindow(weekDateStr, today = todayStr()) {
 // Start date for a Progress-tab range selector ("30D"/"3M"/"6M"/"1Y"/"All").
 // "All" has no lower bound -- callers should skip filtering entirely rather
 // than compare against a sentinel date.
-const RANGE_DAYS = { "30D": 30, "3M": 91, "6M": 182, "1Y": 365 };
+const RANGE_DAYS = { "7D": 6, "30D": 30, "3M": 91, "6M": 182, "1Y": 365 };
 export function rangeStartStr(range, today = todayStr()) {
   if (range === "All" || !RANGE_DAYS[range]) return null;
   const d = new Date(today + "T00:00:00");
