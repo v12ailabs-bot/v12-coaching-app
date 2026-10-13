@@ -7,6 +7,7 @@ import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
 import { CoachClientOverview } from "./CoachClientOverview.jsx";
 import { ProgramGenerateActions } from "./sections/ProgramGenerateActions.jsx";
+import { SessionReminderCard } from "./sections/SessionReminderCard.jsx";
 import { ClientInsightCard } from "./sections/ClientInsightCard.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
 import { TrainingPartnerSection } from "./sections/TrainingPartnerSection.jsx";
@@ -555,6 +556,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                           <CoachClientOverview client={client} onAddNote={()=>{ setRailOpen(true); requestAnimationFrame(()=>document.getElementById("section-coach-notes")?.scrollIntoView({behavior:"smooth",block:"start"})); }} />
                         </div>
                       )}
+                      <SessionReminderCard clientId={client.id}/>
                       <div id="section-insights"><ClientInsightCard client={client}/></div>
                       {/* Program Roadmap | Program History — forward-looking
                           next to backward-looking, reading left-to-right. */}
