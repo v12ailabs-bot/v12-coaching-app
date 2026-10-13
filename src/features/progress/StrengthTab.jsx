@@ -2,7 +2,8 @@ import { useState, useEffect } from "react";
 import { LineChart, Line, CartesianGrid, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { supabase } from "../../supabaseClient.js";
 import { S, TT, trainingOwnerId } from "../../theme.jsx";
-import { Card, CC, DayFolder } from "../../components/ui/index.js";
+import { Card, CC, DayFolder, RG, TrendChart } from "../../components/ui/index.js";
+import { RANGES } from "../../lib/chartBuckets.js";
 import { EX_TYPES } from "../../lib/constants.js";
 
 // Strength-progress grouping. The coach-set exercise_type wins; otherwise the
@@ -44,6 +45,7 @@ function fmtSec(sec) {
 export function StrengthTab({ profile }) {
   const [groups, setGroups] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [range, setRange] = useState("30D");
 
   useEffect(()=>{
     (async()=>{
@@ -67,7 +69,7 @@ export function StrengthTab({ profile }) {
       });
       const series = Object.values(byEx).map(({ex,grp,byDate})=>({
         id:ex.id, name:ex.name, is_bodyweight:ex.is_bodyweight, grp,
-        data:Object.entries(byDate).map(([date,v])=>({date,...v})).sort((a,b)=>a.date<b.date?-1:1),
+        data:Object.entries(byDate).map(([date,v])=>({date,...v,weight:v.weight||null,reps:v.reps||null})).sort((a,b)=>a.date<b.date?-1:1),
       })).filter(s=>s.data.length>0);
       const g = {Compound:[], Accessory:[], Circuit:[]};
       series.forEach(s=>{ (g[s.grp]||g.Accessory).push(s); });
@@ -82,44 +84,19 @@ export function StrengthTab({ profile }) {
   const FOLDERS = [{key:"Compound",title:"Compounds"},{key:"Accessory",title:"Accessories"},{key:"Circuit",title:"Circuits"}];
   return (
     <div>
+      <div style={{marginBottom:16}}><RG options={RANGES} value={range} onChange={setRange}/></div>
       {FOLDERS.filter(f=>groups[f.key].length>0).map(f=>(
         <DayFolder key={f.key} title={f.title} meta={`${groups[f.key].length} exercise${groups[f.key].length>1?"s":""}`}>
           <div className="g2" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
             {groups[f.key].map(s=>(
               <CC key={s.id} title={s.name} sub={f.key==="Circuit"?"Best logged time":(s.is_bodyweight?"Top-set reps":"Top-set weight + reps")}>
-                <ResponsiveContainer width="100%" height="100%">
-                  {f.key==="Circuit" ? (
-                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:0}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-                      <YAxis tick={{fontSize:10,fill:"#666"}} tickFormatter={fmtSec} domain={["auto","auto"]}/>
-                      <Tooltip {...TT} formatter={v=>[fmtSec(v),"Time"]}/>
-                      <Line type="monotone" dataKey="timeSec" stroke={S.neon} strokeWidth={2} dot={{r:3}}
-                        label={{position:"top",fontSize:9,fill:S.neon,formatter:fmtSec}}/>
-                    </LineChart>
-                  ) : s.is_bodyweight ? (
-                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:0}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-                      <YAxis tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
-                      <Tooltip {...TT}/>
-                      <Line type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:3}}
-                        label={{position:"top",fontSize:9,fill:S.accent2}}/>
-                    </LineChart>
-                  ) : (
-                    <LineChart data={s.data} margin={{top:20,right:12,left:0,bottom:20}}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                      <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)}/>
-                      <YAxis yAxisId="w" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
-                      <YAxis yAxisId="r" orientation="right" tick={{fontSize:10,fill:"#666"}} domain={["auto","auto"]}/>
-                      <Tooltip {...TT}/>
-                      <Line yAxisId="w" type="monotone" dataKey="weight" name="Weight (lb)" stroke={S.neon} strokeWidth={2} dot={{r:3}}
-                        label={{position:"top",fontSize:9,fill:S.neon}}/>
-                      <Line yAxisId="r" type="monotone" dataKey="reps" name="Reps" stroke={S.accent2} strokeWidth={2} dot={{r:2}}
-                        label={{position:"bottom",fontSize:9,fill:S.accent2}}/>
-                    </LineChart>
-                  )}
-                </ResponsiveContainer>
+                {f.key==="Circuit" ? (
+                  <TrendChart rows={s.data} range={range} series={[{key:"timeSec",name:"Time",color:S.neon}]} fmtY={fmtSec}/>
+                ) : s.is_bodyweight ? (
+                  <TrendChart rows={s.data} range={range} series={[{key:"reps",name:"Reps",color:S.accent2}]}/>
+                ) : (
+                  <TrendChart rows={s.data} range={range} legend unit="" series={[{key:"weight",name:"Weight (lb)",color:S.neon},{key:"reps",name:"Reps",color:S.accent2,axis:"right"}]}/>
+                )}
               </CC>
             ))}
           </div>
