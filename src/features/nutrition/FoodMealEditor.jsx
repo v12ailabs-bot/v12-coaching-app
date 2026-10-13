@@ -200,7 +200,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
     <div style={{ width: "100%", marginTop: 10, border: "1px solid " + S.border, padding: 12 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         <div style={{ flex: "1 1 200px" }}>
-          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search foods (e.g. chicken, rice)…" aria-label="Search foods" />
+          <Inp value={q} onChange={(e) => setQ(e.target.value)} placeholder={lines.length ? "Add another food…" : "Search foods (e.g. chicken, rice)…"} aria-label="Search foods" />
         </div>
         <select value={recType} onChange={(e) => setRecType(e.target.value)} aria-label="Food type"
           style={{ background: S.surface2, color: S.text, border: "1px solid " + S.border, padding: "0 8px", height: 40, fontSize: 12 }}>
@@ -230,7 +230,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
       {notice && <div style={{ ...small, color: S.accent2, marginBottom: 8 }}>{notice}</div>}
 
       {lines.length === 0 ? (
-        <div style={{ ...small, marginBottom: 10 }}>Search above and tap a food to add it, then enter how much you ate in grams, ounces or pounds.</div>
+        <div style={{ ...small, marginBottom: 10 }}>Build your plate: search a food, tap it, enter how much, then search the next one. Add as many as you like, then save the meal once.</div>
       ) : (
         <div style={{ marginBottom: 10 }}>
           {computed.map(({ l, n }) => {
@@ -272,7 +272,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
       )}
 
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 13, marginBottom: 10 }}>
-        <span style={small}>Meal total</span>
+        <span style={small}>Plate total</span>
         <span><strong>{formatKcal(totals.kcal)}</strong> kcal</span>
         <span><strong>{formatMacro(totals.protein)}</strong>g protein</span>
         <span><strong>{formatMacro(totals.carbs)}</strong>g carbs</span>
@@ -281,7 +281,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
 
       {saveErr && <div style={{ ...small, color: S.danger, marginBottom: 8 }}>{saveErr}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <Btn sm onClick={save} disabled={saving || !dirty || hasInvalid || (lines.every((l) => l.legacy) && removed.length === 0)}>{saving ? "Saving..." : "Save meal"}</Btn>
+        <Btn sm onClick={save} disabled={saving || !dirty || hasInvalid || (lines.every((l) => l.legacy) && removed.length === 0)}>{saving ? "Saving..." : lines.filter((l) => !l.legacy).length > 1 ? `Save meal (${lines.filter((l) => !l.legacy).length} foods)` : "Save meal"}</Btn>
         <button onClick={onCancel} style={{ padding: "8px 14px", fontSize: 11, background: "transparent", color: S.muted, border: "1px solid " + S.border, cursor: "pointer" }}>Cancel</button>
         {existing?.id && entries.length > 0 && (
           <button onClick={clearMeal} disabled={saving} style={{ padding: "8px 14px", fontSize: 11, background: "transparent", color: S.muted, border: "1px solid " + S.border, cursor: "pointer", marginLeft: "auto" }}>Clear meal</button>
