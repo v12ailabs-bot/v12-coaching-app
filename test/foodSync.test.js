@@ -47,10 +47,15 @@ test("each publish rule blocks independently", () => {
     "cooked w/o method": { "Cooking method": sel("None") },
     "no source type": { "Source type": sel(null) },
     "no source ref": { "Source reference": t("") },
-    "proxy": { "Match quality": sel("Proxy") },
     "inactive": { Active: { type: "checkbox", checkbox: false } },
   };
   for (const [name, over] of Object.entries(cases)) assert.equal(validate(mapPage(page(over))).publishable, false, name);
+});
+
+test("proxy match quality is a warning, not a blocker", () => {
+  const v = validate(mapPage(page({ "Match quality": sel("Proxy") })));
+  assert.equal(v.publishable, true);
+  assert.ok(v.warnings.some((w) => /Proxy/.test(w)));
 });
 
 test("energy mismatch is a warning, not a blocker", () => {

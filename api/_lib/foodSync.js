@@ -87,7 +87,8 @@ export function validate(r) {
   if (r.state === "Cooked" && (!r.cooking_method || r.cooking_method === "None")) reasons.push("cooked food needs a cooking method");
   if (!r.source_type) reasons.push("missing source type");
   if (!r.source_reference) reasons.push("missing source reference");
-  if (r.match_quality === "Proxy") reasons.push("match quality is Proxy");
+  // Proxy matches (e.g. a local dish approximated from a close food) are allowed through: shown as a warning, not a blocker.
+  if (r.match_quality === "Proxy") warnings.push("match quality is Proxy (approximate nutrition)");
   for (const k of NUTRIENTS) {
     if (r[k] != null && Math.round(r[k] * 100) / 100 !== r[k]) warnings.push(`${k} has more than 2 decimals and will be rounded`);
   }
