@@ -10,10 +10,11 @@ import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
 import { CoachStatCards } from "./CoachStatCards.jsx";
 import { InterventionModal } from "./InterventionModal.jsx";
 import { yesterdayDate } from "../../lib/dates.js";
-import { CheckpointAlertsPanel } from "./CheckpointAlertsPanel.jsx";
 import { ClientOverviewTable } from "./ClientOverviewTable.jsx";
 import { AlertsPanel } from "./AlertsPanel.jsx";
-import { PhaseAlertsPanel } from "./PhaseAlertsPanel.jsx";
+import { RoadmapCheckinsCard } from "./RoadmapCheckinsCard.jsx";
+import { RoadmapCheckinModal } from "./RoadmapCheckinModal.jsx";
+import { buildRoadmapCheckins } from "../../lib/roadmapCheckins.js";
 import { OnboardingAlertsPanel } from "./OnboardingAlertsPanel.jsx";
 import { MilestoneAlertsPanel } from "./MilestoneAlertsPanel.jsx";
 import { isTaskActive, tasksByKey as toTasksByKey } from "../../lib/onboardingTasks.js";
@@ -61,6 +62,10 @@ export function CoachHome({ setPage, openClient }) {
   const [checkpointAlerts, setCheckpointAlerts] = useState([]);
   const [onboardingAlerts, setOnboardingAlerts] = useState([]);
   const [milestoneAlerts, setMilestoneAlerts] = useState([]);
+  // Coach-only session reminders ({client_id: {reminder, reviewed_phase}}) and
+  // which client's Roadmap Check-in review pop-up is open.
+  const [reminders, setReminders] = useState({});
+  const [roadmapReviewId, setRoadmapReviewId] = useState(null);
   // Last real activity per client, from whichever of the four data sources a
   // client actually writes to (daily check-in, weekly check-in, workout log,
   // progress photo) — not just daily_checkins. A client who only logs
@@ -218,7 +223,7 @@ export function CoachHome({ setPage, openClient }) {
             // to 21, and not marked done. Nutrition reviews carry the client's
             // current nutrition score so the coach sees the evidence at a glance.
             if (prog.start_date) {
-              phases.forEach((ph) => (ph.checkpoints || []).forEach((cp) => {
+              phases.forEach((ph, phIdx) => (ph.checkpoints || []).forEach((cp, cpIndex) => {
                 const day = Number(cp.day);
                 if (cp.done || !Number.isFinite(day)) return;
                 const due = new Date(prog.start_date + "T00:00:00Z");
@@ -227,6 +232,7 @@ export function CoachHome({ setPage, openClient }) {
                 if (daysUntil > 7 || daysUntil < -21) return;
                 checkpointAlertsList.push({
                   clientId: prog.client_id, label: cp.label || cp.type, type: cp.type, phase: ph.phase, daysUntil,
+                  phaseId: ph.id, cpIndex, phaseObj: ph, programStart: prog.start_date, phaseNumber: phIdx + 1, phaseTotal: phases.length,
                   nutritionPct: cp.type === "nutrition_review" ? (nutritionStatusFrom(grouped[prog.client_id] || [], nutMap[prog.client_id], 30, yesterdayDate()).score ?? null) : null, // as of yesterday: coaches read next day
                 });
               }));
@@ -243,6 +249,7 @@ export function CoachHome({ setPage, openClient }) {
               phaseAlertsList.push({
                 clientId: prog.client_id, phase: current.phase, endDate: endStr, daysUntilEnd,
                 nextPhase: phases[idx + 1]?.phase || null,
+                phaseId: current.id, phaseObj: current, nextPhaseObj: phases[idx + 1] || null, programStart: prog.start_date, phaseNumber: idx + 1, phaseTotal: phases.length,
               });
             }
           });
@@ -271,6 +278,8 @@ export function CoachHome({ setPage, openClient }) {
       setMonthlyRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthStart())));
       setLastMonthRevenue(sumRevenue((metrics || []).filter((m) => m.date >= monthsAgoStart(1) && m.date <= monthsAgoSameDay(1))));
 
+      const { data: remRows } = await supabase.from("coach_session_reminders").select("client_id,reminder,reviewed_phase");
+      setReminders(Object.fromEntries((remRows || []).map((r) => [r.client_id, r])));
       setClients(list); setByClient(grouped); setWeeklyRecent(weeklies); setGoalsByClient(goalsMap); setNutByClient(nutMap); setProgramByClient(programMap); setPhaseAlerts(phaseAlertsList); setCheckpointAlerts(checkpointAlertsList); setOnboardingAlerts(onboardingAlertsList); setMilestoneAlerts(milestoneAlertsList); setLastActivityByClient(lastActivity); setLoading(false);
     })();
   }, []);
@@ -432,10 +441,25 @@ export function CoachHome({ setPage, openClient }) {
     <InterventionModal assessment={reviewing} daily={byClient[reviewClientId] || []} nutCtx={nutByClient[reviewClientId]} openClient={openClient} onClose={() => setReviewClientId(null)} />
   ) : null;
 
+  const roadmapRows = buildRoadmapCheckins(checkpointAlerts, phaseAlerts, reminders);
+  const roadmapRow = roadmapReviewId ? roadmapRows.find((r) => r.clientId === roadmapReviewId) : null;
+  const applyRoadmapChange = (clientId, { reminderPatch, doneCheckpoints, reviewedPhase }) => {
+    if (reminderPatch) setReminders((m) => ({ ...m, [clientId]: { ...(m[clientId] || {}), client_id: clientId, ...reminderPatch } }));
+    if (doneCheckpoints?.length) setCheckpointAlerts((l) => l.filter((a) => !(a.clientId === clientId && doneCheckpoints.some((d) => d.phaseId === a.phaseId && d.cpIndex === a.cpIndex))));
+    if (reviewedPhase) setPhaseAlerts((l) => l.filter((a) => !(a.clientId === clientId && a.phase === reviewedPhase)));
+  };
+  const roadmapModal = roadmapRow ? (
+    <RoadmapCheckinModal row={roadmapRow} client={clients.find((c) => c.id === roadmapRow.clientId)} daily={byClient[roadmapRow.clientId] || []}
+      mealLogs={nutByClient[roadmapRow.clientId]?.mealLogs || []} milestoneAlerts={milestoneAlerts} reminder={reminders[roadmapRow.clientId]}
+      openClient={openClient} onChanged={(c) => applyRoadmapChange(roadmapRow.clientId, c)} onClose={() => setRoadmapReviewId(null)} />
+  ) : null;
+  const roadmapCard = <RoadmapCheckinsCard rows={roadmapRows} nameOf={nameOf} onReview={setRoadmapReviewId} reminders={reminders} />;
+
   if (isMobile) {
     return (
       <>
       {modal}
+      {roadmapModal}
       <CoachHomeMobile
         totalClients={coachedList.length} totalClientsTrendPct={totalClientsTrendPct} activeClients={coachedList.length - inactiveCount}
         atRiskCount={needs.length} offlineCount={inactiveCount}
@@ -444,7 +468,7 @@ export function CoachHome({ setPage, openClient }) {
         progressSeries={progressSeries} progressDeltaPct={deltaOf(progressSeries)}
         checkinCounts={checkinCounts} totalCoached={coachedList.length} totalCheckinsThisWeek={totalCheckinsThisWeek}
         needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts}
-        phaseAlerts={phaseAlerts} checkpointAlerts={checkpointAlerts} messages={messages}
+        phaseAlerts={[]} checkpointAlerts={[]} roadmapCard={roadmapCard} messages={messages}
         programGroups={programGroups}
         nameOf={nameOf} openClient={openClient} setPage={setPage}
         clientIds={coachedList.map((c) => c.id)}
@@ -459,6 +483,7 @@ export function CoachHome({ setPage, openClient }) {
   return (
     <div>
       {modal}
+      {roadmapModal}
       <PageTitle title="Coach Dashboard" sub="V12 System · Priority overview" />
 
       <CoachStatCards
@@ -483,8 +508,7 @@ export function CoachHome({ setPage, openClient }) {
           <AlertsPanel needs={needs} openClient={openClient} setPage={setPage} onReview={setReviewClientId} />
           <OnboardingAlertsPanel alerts={onboardingAlerts} nameOf={nameOf} openClient={openClient} />
           <MilestoneAlertsPanel alerts={milestoneAlerts} nameOf={nameOf} openClient={openClient} />
-          <PhaseAlertsPanel alerts={phaseAlerts} nameOf={nameOf} openClient={openClient} />
-          <CheckpointAlertsPanel alerts={checkpointAlerts} nameOf={nameOf} openClient={openClient} />
+          {roadmapCard}
           <ClientMessagesPanel messages={messages} nameOf={nameOf} openClient={openClient} />
         </div>
       </div>

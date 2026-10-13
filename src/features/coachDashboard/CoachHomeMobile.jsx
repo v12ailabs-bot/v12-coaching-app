@@ -279,7 +279,7 @@ export function CoachHomeMobile({
   rows,
   checkinSeries, checkinDeltaPct, progressSeries, progressDeltaPct,
   checkinCounts, totalCoached, totalCheckinsThisWeek,
-  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, messages,
+  needs, onboardingAlerts, milestoneAlerts, phaseAlerts, checkpointAlerts, roadmapCard, messages,
   programGroups,
   nameOf, openClient, setPage, clientIds, onReview,
   programSubscriberRows, monthlyRevenue, revenueTrendPct,
@@ -291,6 +291,7 @@ export function CoachHomeMobile({
       <ClientOverviewRow rows={rows} openClient={openClient} setPage={setPage} />
       <PerformanceOverview checkinSeries={checkinSeries} checkinDeltaPct={checkinDeltaPct} progressSeries={progressSeries} progressDeltaPct={progressDeltaPct} />
       <CheckInOverviewCompact counts={checkinCounts} totalCheckinsThisWeek={totalCheckinsThisWeek} />
+      {roadmapCard && <div style={{ marginBottom: 14 }}>{roadmapCard}</div>}
       <AlertsAndMessages needs={needs} onboardingAlerts={onboardingAlerts} milestoneAlerts={milestoneAlerts} phaseAlerts={phaseAlerts} checkpointAlerts={checkpointAlerts} messages={messages} nameOf={nameOf} openClient={openClient} clientIds={clientIds} onReview={onReview} />
       <ProgramDistributionDonut groups={programGroups} />
       <div style={{ marginBottom: 14 }}><RecentActivityFeed nameOf={nameOf} clientIds={clientIds} /></div>
