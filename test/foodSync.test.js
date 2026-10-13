@@ -165,3 +165,15 @@ test("fetchAllPages paginates and backs off on 429", async () => {
   assert.deepEqual(pages.map((p) => p.id), ["a", "b"]);
   assert.equal(slept, 1000);
 });
+
+test("Household measures property is synced verbatim; absent or empty is null; edits change the hash", () => {
+  assert.equal(mapPage(page()).household_measures, null);
+  assert.equal(mapPage(page({ "Household measures": t("") })).household_measures, null);
+  const withM = mapPage(page({ "Household measures": t("cup=140 g; oz=28.35 g") }));
+  assert.equal(withM.household_measures, "cup=140 g; oz=28.35 g");
+  assert.notEqual(contentHash(withM), contentHash(mapPage(page())));
+});
+
+test("household measures do not affect whether a food is published", () => {
+  assert.equal(validate(mapPage(page({ "Household measures": t("garbage ;;; =") }))).publishable, true);
+});
