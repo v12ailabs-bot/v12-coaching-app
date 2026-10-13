@@ -53,3 +53,13 @@ export function sumNutrient(values) {
 // Display rounding: kcal as whole numbers, macros to 1 decimal; null -> "unknown".
 export function formatKcal(v) { return v == null ? "unknown" : String(Math.round(v)); }
 export function formatMacro(v) { return v == null ? "unknown" : (Math.round(v * 10) / 10).toFixed(1); }
+
+const UNIT_G = { g: 1, oz: 28.349523125, lb: 453.59237 };
+// Amount in `unit` -> grams as a string with at most 2 decimals. Anything that
+// isn't a plain number is passed through so the existing validation reports it.
+export function toGrams(amount, unit) {
+  const raw = String(amount ?? "").trim();
+  if (unit === "g" || !UNIT_G[unit] || !/^\d+(\.\d+)?$/.test(raw)) return raw;
+  return (Math.round(Number(raw) * UNIT_G[unit] * 100) / 100).toString();
+}
+

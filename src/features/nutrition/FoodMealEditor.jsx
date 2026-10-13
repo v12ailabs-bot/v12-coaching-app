@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
 import { Inp, Btn } from "../../components/ui/index.js";
-import { computeNutrients, sumNutrient, validateQuantityG, formatKcal, formatMacro } from "../../lib/foodMath.js";
+import { toGrams, computeNutrients, sumNutrient, validateQuantityG, formatKcal, formatMacro } from "../../lib/foodMath.js";
 
 // Ingredient-level logging for one meal slot. Search hits the debounced
 // search_foods() RPC (never the whole library). Each line's nutrients are
@@ -83,7 +83,14 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
     setTimeout(() => qtyRefs.current[key]?.focus(), 0);
   };
 
-  const setQty = (key, v) => setLines((p) => p.map((l) => (l.key === key ? { ...l, qty: v } : l)));
+  // The client can enter an amount in g, oz or lb; everything downstream (the
+  // live preview, validation, and what is saved) still works in exact grams,
+  // so converting here never changes how the database computes nutrients.
+  const setQty = (key, v, unit) => setLines((p) => p.map((l) => {
+    if (l.key !== key) return l;
+    const u = unit || l.unit || "g";
+    return { ...l, unit: u, amount: v, qty: toGrams(v, u) };
+  }));
   const removeLine = (l) => {
     setLines((p) => p.filter((x) => x.key !== l.key));
     if (l.id) setRemoved((p) => [...p, l.id]);
@@ -201,7 +208,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
       {notice && <div style={{ ...small, color: S.accent2, marginBottom: 8 }}>{notice}</div>}
 
       {lines.length === 0 ? (
-        <div style={{ ...small, marginBottom: 10 }}>Search above and tap a food to add it, then enter how many grams.</div>
+        <div style={{ ...small, marginBottom: 10 }}>Search above and tap a food to add it, then enter how much you ate in grams, ounces or pounds.</div>
       ) : (
         <div style={{ marginBottom: 10 }}>
           {computed.map(({ l, n }) => {
@@ -214,10 +221,13 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
                   <div style={{ fontSize: 13, fontWeight: 600, flex: "1 1 160px" }}>{manual ? (l.entry.food_name || "Manual entry") : foodLabel(src)}</div>
                   {!manual && (
                     <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                      <input ref={(el) => { qtyRefs.current[l.key] = el; }} type="text" inputMode="decimal" value={l.qty}
-                        onChange={(e) => setQty(l.key, e.target.value)} placeholder="0" aria-label={`Grams of ${src.food_name || src.name}`}
+                      <input ref={(el) => { qtyRefs.current[l.key] = el; }} type="text" inputMode="decimal" value={l.amount ?? l.qty}
+                        onChange={(e) => setQty(l.key, e.target.value)} placeholder="0" aria-label={`Amount of ${src.food_name || src.name}`}
                         style={{ width: 80, background: "transparent", color: S.text, border: "1px solid " + (err && l.qty !== "" ? S.danger : S.border), padding: "8px", fontSize: 14 }} />
-                      <span style={small}>g</span>
+                      <select value={l.unit || "g"} onChange={(e) => setQty(l.key, l.amount ?? l.qty, e.target.value)} aria-label="Unit"
+                        style={{ background: "transparent", color: S.text, border: "1px solid " + S.border, padding: "8px 6px", fontSize: 13 }}>
+                        <option value="g">g</option><option value="oz">oz</option><option value="lb">lb</option>
+                      </select>
                     </div>
                   )}
                   {!l.legacy && <button onClick={() => removeLine(l)} aria-label="Remove ingredient" style={{ background: "transparent", border: "none", color: S.muted, cursor: "pointer", fontSize: 16 }}>✕</button>}
@@ -225,7 +235,7 @@ export function FoodMealEditor({ profile, mealLabel, existing, entries, onSaved,
                 {err && l.qty !== "" ? (
                   <div style={{ ...small, color: S.danger }}>{err}</div>
                 ) : !n.error && (
-                  <div style={small}>{manual ? "Manual numbers (kept as logged) — " : ""}{formatKcal(n.kcal)} kcal · P {formatMacro(n.protein)} · C {formatMacro(n.carbs)} · F {formatMacro(n.fat)}</div>
+                  <div style={small}>{l.unit && l.unit !== "g" && l.qty !== "" ? `= ${l.qty} g · ` : ""}{manual ? "Manual numbers (kept as logged) — " : ""}{formatKcal(n.kcal)} kcal · P {formatMacro(n.protein)} · C {formatMacro(n.carbs)} · F {formatMacro(n.fat)}</div>
                 )}
               </div>
             );

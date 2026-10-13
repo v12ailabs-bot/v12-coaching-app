@@ -66,14 +66,14 @@ export function SavedMealsCard({ profile, slots, mealLogs, entries, simple, onLo
   };
 
   if (meals == null) return null;
-  const fields = simple ? FIELDS.slice(0, 2) : FIELDS;
+  const fields = FIELDS; // carbs and fats are available to every tier here
   return (
     <Card>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, marginBottom: 6 }}>
         <CardTitle style={{ margin: 0 }}>Saved Meals</CardTitle>
         {!editing && <Btn sm teal onClick={() => startEdit({})}>+ New meal</Btn>}
       </div>
-      <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Meal prepping? Save a meal once, then log it again with one tap.</div>
+      <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Meal prepping? Save a meal once, then tap "Log meal" any day to log it to Today, your weekly totals and your Wellness charts.</div>
       {editing && (
         <div style={{ border: "1px solid " + S.border, borderRadius: RADIUS.md, padding: 12, marginBottom: 12 }}>
           <Fld label="Meal name"><Inp value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} placeholder="e.g. Chicken rice bowl" /></Fld>
@@ -96,7 +96,7 @@ export function SavedMealsCard({ profile, slots, mealLogs, entries, simple, onLo
           <select value={slotFor[m.id] || defaultSlot(slots)} onChange={(e) => setSlotFor((p) => ({ ...p, [m.id]: e.target.value }))} style={{ background: S.surface2, border: "1px solid " + S.border, color: S.text, padding: "8px 10px", fontSize: 13 }}>
             {slots.map((s) => <option key={s}>{s}</option>)}
           </select>
-          <Btn sm teal onClick={() => logIt(m)} disabled={busy}>Log again</Btn>
+          <Btn sm teal onClick={() => logIt(m)} disabled={busy}>Log meal</Btn>
           <button type="button" onClick={() => startEdit(m)} style={{ background: "none", border: "none", color: S.muted, cursor: "pointer", fontSize: 12 }}>Edit</button>
           <button type="button" onClick={() => remove(m)} title="Delete" style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 16 }}>×</button>
         </div>
