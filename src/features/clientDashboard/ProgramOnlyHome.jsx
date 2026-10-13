@@ -6,14 +6,12 @@ import { Card, CardTitle, CC, PageTitle, ProgressRing } from "../../components/u
 import { TodayWorkoutPreview } from "./TodayWorkoutPreview.jsx";
 import { UpcomingCard } from "./UpcomingCard.jsx";
 import { BodyMetricsCard } from "./BodyMetricsCard.jsx";
-import { V12RoadmapCard } from "./V12RoadmapCard.jsx";
 
 // V12 Program's Home tab — mirrors what coaching clients get on ClientHome
 // without needing to look identical: today's workout, next workout, a
 // weight-goal ring, weight/waist trend, and the generic (not coach-authored)
-// onboarding roadmap. No check-in rows (this tier has none) and no coach-set
-// program-phase roadmap (that's ProgramRoadmapCard, coaching-only) — the
-// V12RoadmapCard's universal Day 0-30 journey fills that role here instead.
+// No check-in rows (this tier has none) and no roadmap of any kind: Program Only
+// clients never see the coach-built roadmap or the Day 0-30 journey.
 export function ProgramOnlyHome({ profile, setPage, goToWorkouts }) {
   const [daily, setDaily] = useState([]);
   const [goal, setGoal] = useState(null);
@@ -110,7 +108,6 @@ export function ProgramOnlyHome({ profile, setPage, goToWorkouts }) {
         </CC>
       </div>
 
-      <V12RoadmapCard profile={profile} setPage={setPage} />
     </div>
   );
 }
