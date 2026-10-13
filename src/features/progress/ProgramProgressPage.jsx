@@ -7,6 +7,7 @@ import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, RG, Btn, Alert, ProgressRing } from "../../components/ui/index.js";
 import { PROGRAM_HABITS, streakBack } from "../../lib/constants.js";
 import { StrengthTab } from "./StrengthTab.jsx";
+import { BodyMetricsCard } from "../clientDashboard/BodyMetricsCard.jsx";
 import { ProgressPhotos } from "./PhotosSection.jsx";
 
 const WD_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -24,6 +25,7 @@ function ProgramProgressInner({ profile }) {
   const [scheduledDays, setScheduledDays] = useState(new Set());
   const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
   const [form, setForm] = useState({ direction: "decrease", target_value: "", target_date: "" });
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState(null);
@@ -48,7 +50,7 @@ function ProgramProgressInner({ profile }) {
       setGoal(g || null);
       setLoading(false);
     })();
-  }, [profile.id]);
+  }, [profile.id, reload]);
 
   // Self-service goal creation — program-only clients have no coach touchpoint
   // to set this for them (the coach's Goals section is hidden for this client
@@ -118,6 +120,7 @@ function ProgramProgressInner({ profile }) {
   return (
     <div>
       <PageTitle title="Progress" sub="Your data over time" />
+      <BodyMetricsCard profile={profile} onSaved={() => setReload((n) => n + 1)} />
       <Card style={{ borderLeft: "3px solid " + S.neon }}>
         <CardTitle>Progress Summary</CardTitle>
         <div className="g4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 16 }}>

@@ -5,6 +5,7 @@ import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, CC, PageTitle, ProgressRing } from "../../components/ui/index.js";
 import { TodayWorkoutPreview } from "./TodayWorkoutPreview.jsx";
 import { UpcomingCard } from "./UpcomingCard.jsx";
+import { BodyMetricsCard } from "./BodyMetricsCard.jsx";
 import { V12RoadmapCard } from "./V12RoadmapCard.jsx";
 
 // V12 Program's Home tab — mirrors what coaching clients get on ClientHome
@@ -17,6 +18,7 @@ export function ProgramOnlyHome({ profile, setPage, goToWorkouts }) {
   const [daily, setDaily] = useState([]);
   const [goal, setGoal] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [reload, setReload] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -29,9 +31,9 @@ export function ProgramOnlyHome({ profile, setPage, goToWorkouts }) {
       setGoal(g || null);
       setLoading(false);
     })();
-  }, [profile.id]);
+  }, [profile.id, reload]);
 
-  if (loading) return <div className="spinner" style={{ margin: "80px auto" }} />;
+  if (loading && reload === 0) return <div className="spinner" style={{ margin: "80px auto" }} />;
 
   const weightSeries = daily.filter((d) => d.weight != null).map((d) => ({ date: d.date, weight: d.weight }));
   const waistSeries = daily.filter((d) => d.waist != null).map((d) => ({ date: d.date, waist: d.waist }));
@@ -56,6 +58,8 @@ export function ProgramOnlyHome({ profile, setPage, goToWorkouts }) {
         <TodayWorkoutPreview profile={profile} onViewFull={() => goToWorkouts("today")} />
         <UpcomingCard profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} showCheckins={false} />
       </div>
+
+      <BodyMetricsCard profile={profile} onSaved={() => setReload((n) => n + 1)} />
 
       <Card style={{ marginBottom: 14, borderLeft: "3px solid " + S.accent2 }}>
         <CardTitle>Goal Progress</CardTitle>

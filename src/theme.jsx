@@ -131,6 +131,10 @@ export function GlobalStyles() {
       textarea { min-height: 96px; line-height: 1.5; }
       input::placeholder, textarea::placeholder { opacity: .5; }
       p { font-family: 'Manrope', -apple-system, sans-serif; line-height: 1.55; }
+      /* Rounded corners everywhere: controls by default, and any inline-bordered
+         box that never set its own radius (explicit radii, incl. pills, win). */
+      button, input, select, textarea { border-radius: 10px; }
+      [style*="border: 1px solid"]:not([style*="border-radius"]) { border-radius: 12px; }
       img { max-width: 100%; }
       .spinner { width: 32px; height: 32px; border-radius: 50%;
         border: 3px solid ${S.border}; border-top-color: ${S.accent};

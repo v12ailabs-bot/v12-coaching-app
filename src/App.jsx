@@ -14,6 +14,7 @@ import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer, RestTimerBar, useRestTimer } from "./components/RestTimer.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
+import { WeeklyIntakeCard } from "./features/clientDashboard/WeeklyIntakeCard.jsx";
 import { WorkoutScheduler } from "./features/scheduling/WorkoutScheduler.jsx";
 import { MacroCalculator } from "./features/library/MacroCalculator.jsx";
 import { StarterHome, StarterExpiredScreen } from "./features/clientDashboard/StarterHome.jsx";
@@ -2472,6 +2473,7 @@ function GenericNutritionGuide({ profile }) {
           calorie target to compare against, so full macro granularity
           isn't useful the way it is for a coaching client's dialed-in plan. */}
       <TodaysMealsCard profile={profile} calorieTarget={null} simple />
+      <WeeklyIntakeCard profile={profile} />
     </div>
   );
 }
@@ -2795,7 +2797,7 @@ function CheckInHome({ profile, setPage }) {
 function MoreMenu({ programOnly, setPage }) {
   const items = programOnly
     ? [
-        { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Your fuel plan" },
+        { id: "nutrition", icon: "🥗", label: "Nutrition", sub: "Log meals and see your week" },
         { id: "schedule", icon: "🗓", label: "Schedule", sub: "Build your workout pattern" },
         { id: "habits", icon: "✅", label: "Habits & Assessment", sub: "Habit tracker and V12 scores" },
         { id: "resources", icon: "📚", label: "Library", sub: "Guides and documents" },
