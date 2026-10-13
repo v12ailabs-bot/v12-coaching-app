@@ -2,6 +2,7 @@ import { useState } from "react";
 import { S, RADIUS } from "../../../theme.jsx";
 import { Modal, Btn } from "../../../components/ui/index.js";
 import { dateRangeForWeeks } from "../../../components/ProgramRoadmap.jsx";
+import { checkpointWhen, CHECKPOINT_LABELS } from "../../../lib/planCheckpoints.js";
 import { validateRoadmap } from "../../../lib/roadmapValidation.js";
 import { AddPhaseModal } from "./AddPhaseModal.jsx";
 import { PlanDetailsEditor } from "./PlanDetailsEditor.jsx";
@@ -185,6 +186,13 @@ export function RoadmapWizard({ program, initialRows, startAt = 0, onSave, onClo
                   <Btn sm onClick={() => setDetailsFor(i)}>Plan details</Btn>
                   <span style={{ fontSize: 11, color: S.muted }}>{(r.checkpoints || []).length} checkpoint{(r.checkpoints || []).length === 1 ? "" : "s"}{r.plan_rationale ? " · reason set" : ""}{(r.planned_changes || []).length ? ` · ${(r.planned_changes || []).length} planned change${(r.planned_changes || []).length === 1 ? "" : "s"}` : ""}</span>
                 </div>
+                {(r.checkpoints || []).length > 0 && (
+                  <div style={{ margin: "6px 0 0 32px", display: "grid", gap: 2 }}>
+                    {[...r.checkpoints].sort((a, b) => Number(a.day) - Number(b.day)).map((c, k) => (
+                      <div key={k} style={{ fontSize: 12, color: S.text }}>◆ {c.label || CHECKPOINT_LABELS[c.type]} <span style={{ color: S.muted }}>— {checkpointWhen(c, program.start_date)}</span></div>
+                    ))}
+                  </div>
+                )}
                 <button type="button" onClick={() => setMoreOpen(moreOpen === i ? null : i)} style={{ background: "none", border: "none", color: S.muted, fontSize: 11, cursor: "pointer", margin: "6px 0 0 32px", padding: 0 }}>{moreOpen === i ? "▲ Hide focus & notes" : "▼ Focus & notes"}</button>
                 {moreOpen === i && (
                   <div style={{ margin: "8px 0 0 32px", display: "grid", gap: 6 }}>

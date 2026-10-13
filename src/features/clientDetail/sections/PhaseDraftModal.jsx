@@ -125,15 +125,15 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
             <div key={day} style={{ marginBottom: 12 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4 }}>{day}</div>
               {draft.exercises.map((e, i) => (e.day_of_week || "Unscheduled") !== day ? null : (
-                <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px,2fr) 54px 80px 110px auto", gap: 6, alignItems: "center", padding: "4px 0", borderBottom: "1px solid " + S.border }}>
-                  <div style={{ minWidth: 0 }}>
+                <div key={i} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center", padding: "6px 0", borderBottom: "1px solid " + S.border }}>
+                  <div style={{ minWidth: 0, flex: "1 1 100%" }}>
                     <input style={input} value={e.name} onChange={(ev) => upd(i, { name: ev.target.value })} />
                     {e.change && <div style={{ fontSize: 10, color: S.accent, marginTop: 2 }}>{e.change.action}{e.change.from ? ` (was ${e.change.from})` : ""} — {e.change.reason}</div>}
                     {e.needs_review && <div style={{ fontSize: 10, color: S.warning }}>Check sets/reps/day for this one</div>}
                   </div>
-                  <input style={input} type="number" min="1" value={e.sets ?? ""} onChange={(ev) => upd(i, { sets: ev.target.value === "" ? null : Number(ev.target.value) })} title="Sets" />
-                  <input style={input} value={e.reps ?? ""} onChange={(ev) => upd(i, { reps: ev.target.value })} title="Reps" />
-                  <select style={input} value={e.day_of_week || ""} onChange={(ev) => upd(i, { day_of_week: ev.target.value || null })}>
+                  <input style={{ ...input, width: 60 }} type="number" min="1" value={e.sets ?? ""} onChange={(ev) => upd(i, { sets: ev.target.value === "" ? null : Number(ev.target.value) })} title="Sets" />
+                  <input style={{ ...input, width: 84 }} value={e.reps ?? ""} onChange={(ev) => upd(i, { reps: ev.target.value })} title="Reps" />
+                  <select style={{ ...input, flex: "1 1 100px", minWidth: 0 }} value={e.day_of_week || ""} onChange={(ev) => upd(i, { day_of_week: ev.target.value || null })}>
                     <option value="">—</option>{DAYS.map((d) => <option key={d}>{d}</option>)}
                   </select>
                   <button type="button" title="Remove from draft" onClick={() => { setDraft((d) => ({ ...d, exercises: d.exercises.filter((_, j) => j !== i) })); setDirty(true); }} style={{ background: "none", border: "none", color: S.danger, cursor: "pointer", fontSize: 18 }}>×</button>

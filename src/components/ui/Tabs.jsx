@@ -8,7 +8,26 @@ import { S, FOCUS_RING } from "../../theme.jsx";
 // resize) — `overflowX: auto` scrolls sideways instead if it doesn't fit.
 // `compact` shrinks padding/font for tight spaces (e.g. the ~320px client
 // directory column) so 4 tabs fit without needing to scroll at all.
-export function Tabs({ tabs, active, onChange, compact = false }) {
+export function Tabs({ tabs, active, onChange, compact = false, wrap = false }) {
+  // `wrap`: a button bar that wraps onto extra lines instead of scrolling
+  // sideways, so every option is always visible.
+  if (wrap) {
+    return (
+      <div role="tablist" style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {tabs.map((t) => {
+          const isActive = t.key === active;
+          return (
+            <button key={t.key} role="tab" aria-selected={isActive} onClick={() => onChange(t.key)}
+              style={{ cursor: "pointer", whiteSpace: "nowrap", padding: "8px 14px", fontSize: 13, fontWeight: 600, borderRadius: 999, display: "flex", alignItems: "center", gap: 6,
+                background: isActive ? "rgba(255,106,0,.16)" : S.surface2, color: isActive ? S.accent : S.muted, border: "1px solid " + (isActive ? S.accent : S.border) }}>
+              {t.label}
+              {t.badge != null && <span style={{ fontSize: 10, fontWeight: 700 }}>{t.badge}</span>}
+            </button>
+          );
+        })}
+      </div>
+    );
+  }
   return (
     <div role="tablist" style={{ display: "flex", flexWrap: "nowrap", gap: compact ? 2 : 4, borderBottom: "1px solid " + S.border, overflowX: "auto" }}>
       {tabs.map((t) => {

@@ -7,6 +7,7 @@ import { S, TT } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, CC, Fld, Inp, Btn, RG } from "../../components/ui/index.js";
 import { computeBMI, bmiCategory } from "../../lib/bmi.js";
 import { estimateBodyComposition, bodyFatCategory } from "../../lib/bodyComposition.js";
+import { mergeDailyNutrition } from "../../lib/scoring/nutritionAdherence.js";
 import { adherenceFrom, nutritionStatusFrom } from "../../lib/scoring.js";
 import { rangeStartStr } from "../../lib/dates.js";
 import { computeGoalScore } from "../../lib/scoring/goalScoring.js";
@@ -55,7 +56,7 @@ function ProgressInner({ profile, coachView }) {
     // Active nutrition-plan macro targets, for the calorie/macro reference lines.
     supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).eq("active",true).order("created_at",{ascending:false}).limit(1).maybeSingle().then(({data})=>setTarget(data||null));
     const mcut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
-    supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).gte("date",mcut).then(({data})=>setMealLogs(data||[]));
+    supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id",profile.id).then(({data})=>setMealLogs(data||[]));
     // Last 30 days of habit completions, for the coach-visible adherence grid.
     const cut = (()=>{const d=new Date();d.setDate(d.getDate()-29);return d.toISOString().split("T")[0];})();
     supabase.from("habit_logs").select("*").eq("client_id",profile.id).gte("date",cut).then(({data})=>setHabitLogs(data||[]));
@@ -90,6 +91,11 @@ function ProgressInner({ profile, coachView }) {
   // (adherenceFrom/nutritionScoreFrom), deliberately untouched by this.
   const rangeStart = rangeStartStr(range);
   const filteredDaily = rangeStart ? daily.filter(d=>d.date>=rangeStart) : daily;
+  // Calories/macros charts: the check-in's whole-day macros PLUS anything
+  // logged from the Nutrition tab (meal_logs), summed per date — the same
+  // merge the dashboards use. Charting check-ins alone hid Nutrition-tab logs.
+  const nutDaily = mergeDailyNutrition(daily,mealLogs).sort((a,b)=>a.date<b.date?-1:1);
+  const filteredNutDaily = rangeStart ? nutDaily.filter(d=>d.date>=rangeStart) : nutDaily;
   const filteredWeekly = rangeStart ? weekly.filter(w=>w.date>=rangeStart) : weekly;
   const filteredWeightSeries = rangeStart ? weightSeries.filter(w=>w.date>=rangeStart) : weightSeries;
   // Goal progress, computed with the exact same function GoalsSection uses —
@@ -256,12 +262,12 @@ function ProgressInner({ profile, coachView }) {
               </ResponsiveContainer>
             </CC>
           )}
-          {filteredDaily.some(d=>d.calories!=null) && (
+          {filteredNutDaily.some(d=>d.calories!=null) && (
             <CC title="Calories" sub={target?.calories!=null?`${range==="All"?"Full history":range} · target ${target.calories} kcal`:(range==="All"?"Full history":range)}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredDaily}>
+                <LineChart data={filteredNutDaily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredNutDaily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   {target?.calories!=null && <ReferenceLine y={target.calories} stroke={S.muted} strokeDasharray="4 4" label={{value:"Target",fontSize:9,fill:S.muted,position:"insideTopRight"}}/>}
@@ -270,12 +276,12 @@ function ProgressInner({ profile, coachView }) {
               </ResponsiveContainer>
             </CC>
           )}
-          {filteredDaily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
+          {filteredNutDaily.some(d=>d.protein_g!=null||d.carbs_g!=null||d.fats_g!=null) && (
             <CC title="Macros (g)" sub={`${range==="All"?"Full history":range} · dashed = target`}>
               <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={filteredDaily}>
+                <LineChart data={filteredNutDaily}>
                   <CartesianGrid strokeDasharray="3 3" stroke={S.border}/>
-                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredDaily.length)}/>
+                  <XAxis dataKey="date" tick={{fontSize:10,fill:"#666"}} tickFormatter={d=>d.slice(5)} interval={tickEvery(filteredNutDaily.length)}/>
                   <YAxis domain={["auto","auto"]} tick={{fontSize:10,fill:"#666"}}/>
                   <Tooltip {...TT}/>
                   <Legend wrapperStyle={{fontSize:11}}/>
