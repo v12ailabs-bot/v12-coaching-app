@@ -14,13 +14,12 @@ const selStyle = { background: S.surface2, border: "1px solid " + S.border, colo
 function MiniChart({ data, dataKey, height, domain, color, goalValue, showXAxis }) {
   const hasData = data.some((d) => d[dataKey] != null);
   if (!hasData) return <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: S.muted, fontSize: 12 }}>No data yet</div>;
-  const tickEvery = Math.max(1, Math.floor(data.length / 8));
   return (
     <div style={{ height }}>
       <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data} margin={{ top: 4, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid strokeDasharray="3 3" stroke={S.border} vertical={false} />
-          <XAxis dataKey="date" hide={!showXAxis} tick={{ fontSize: 10, fill: S.muted }} tickFormatter={(d) => d.slice(5)} interval={tickEvery} />
+          <XAxis dataKey="date" hide={!showXAxis} tick={{ fontSize: 10, fill: S.muted }} tickFormatter={(d) => d.slice(5)} interval="preserveStartEnd" minTickGap={44} />
           <YAxis domain={domain} tick={{ fontSize: 10, fill: S.muted }} width={32} />
           <Tooltip {...TT} />
           {goalValue != null && <ReferenceLine y={goalValue} stroke={S.accent2} strokeDasharray="4 4" label={{ value: "Goal", fontSize: 9, fill: S.accent2, position: "insideTopRight" }} />}
@@ -56,7 +55,7 @@ export function ProgressChart({ checkins, goal }) {
         <MetricLabel>Weight (lb)</MetricLabel>
         <MiniChart data={data} dataKey="weight" height={160} domain={["auto", "auto"]} color={S.accent} goalValue={goal?.target_value} showXAxis={false} />
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))", gap: 16 }}>
         <div>
           <MetricLabel>Energy (/10)</MetricLabel>
           <MiniChart data={data} dataKey="energy" height={100} domain={[0, 10]} color={COLORS[1]} showXAxis />

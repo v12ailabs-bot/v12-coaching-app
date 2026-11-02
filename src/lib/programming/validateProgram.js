@@ -134,7 +134,7 @@ export function validateTrainingPlan(raw) {
       if (!GROUPED.has(e.block_type)) return;
       const members = e.group_id ? byGroup.get(e.group_id) : null;
       if (!members || members.length < 2) {
-        warn(`${dp}.exercises`, `${day}: ${e.name} is marked ${e.block_type} but has no partner — treated as a straight set.`);
+        warn(`${dp}.exercises`, `${day}: ${e.name} was tagged ${e.block_type} but had no partner exercise, so it was set to a straight set automatically (fine to leave).`);
         e.block_type = "straight_set";
         e.group_id = null;
       }

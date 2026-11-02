@@ -193,30 +193,37 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
         const est = estimates[d.day];
         const over = est && !est.fits;
         return (
-          <DayFolder key={d.day} defaultOpen title={d.day} meta={`${d.focus || ""} · ${d.exercises.length} exercises`}
-            headerAction={est && <span style={{ fontSize: 11, color: over ? S.danger : S.accent2 }}>{est.coached} min coached{est.prep ? ` · +${est.prep} prep` : ""}{est.finish ? ` · +${est.finish} finish` : ""} / {est.budget}</span>}>
-            <div style={{ overflowX: "auto" }}>
+          <DayFolder key={d.day} defaultOpen title={d.day} meta={`${d.exercises.length} exercises`}
+            headerAction={est && <span style={{ fontSize: 11, color: over ? S.danger : S.accent2, whiteSpace: "nowrap" }}>{est.coached} min coached{est.prep ? ` · +${est.prep} prep` : ""}{est.finish ? ` · +${est.finish} finish` : ""} / {est.budget}</span>}>
+            {d.focus && <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>Focus: {d.focus}</div>}
+            <div>
               {d.exercises.map((e, i) => {
                 const errs = errorFor(d.day, i);
                 const set = (patch) => edit(updateExercise(plan, d.day, i, patch));
+                const bad = (re) => (errs.some((x) => re.test(x.path)) ? S.danger : S.border);
+                const field = (label, width, node) => <div style={{ flex: `0 1 ${width}px`, minWidth: Math.min(width, 90) }}><label style={lbl}>{label}</label>{node}</div>;
                 return (
-                  <div key={i} style={{ display: "grid", gridTemplateColumns: "28px minmax(150px,2fr) 56px 80px 72px minmax(120px,1fr) 100px auto", gap: 6, alignItems: "end", marginBottom: 10, minWidth: 760, paddingBottom: 8, borderBottom: "1px solid " + S.border }}>
-                    <div style={{ fontSize: 11, color: S.muted, paddingBottom: 8 }}>{i + 1}</div>
-                    <div><label style={lbl}>Exercise</label><input style={{ ...inp, borderColor: errs.some((x) => /name/.test(x.path)) ? S.danger : S.border }} value={e.name} onChange={(ev) => set({ name: ev.target.value })} /></div>
-                    <div><label style={lbl}>Sets</label><input style={{ ...inp, borderColor: errs.some((x) => /sets/.test(x.path)) ? S.danger : S.border }} type="number" min={1} max={12} value={e.sets ?? ""} onChange={(ev) => set({ sets: ev.target.value })} /></div>
-                    <div><label style={lbl}>Reps</label><input style={{ ...inp, borderColor: errs.some((x) => /reps/.test(x.path)) ? S.danger : S.border }} value={e.reps ?? ""} onChange={(ev) => set({ reps: ev.target.value })} /></div>
-                    <div><label style={lbl}>Rest (s)</label><input style={{ ...inp, borderColor: errs.some((x) => /rest/.test(x.path)) ? S.danger : S.border }} type="number" min={0} max={600} value={e.rest_seconds ?? ""} onChange={(ev) => set({ rest_seconds: ev.target.value })} /></div>
-                    <div><label style={lbl}>Phase</label><select style={inp} value={e.section || ""} onChange={(ev) => set({ section: ev.target.value || null })}><option value="">Unset</option>{PHASE_ORDER.map((p) => <option key={p} value={p}>{p}</option>)}</select></div>
-                    <div><label style={lbl}>Block</label><select style={inp} value={e.block_type || "straight_set"} onChange={(ev) => set({ block_type: ev.target.value, group_id: ev.target.value === "straight_set" ? null : (e.group_id || "A") })}>{BLOCK_TYPES.map((t) => <option key={t} value={t}>{BLOCK_TYPE_LABEL[t]}</option>)}</select>
-                      {e.block_type && e.block_type !== "straight_set" && <input style={{ ...inp, marginTop: 4 }} placeholder="Group e.g. A" value={e.group_id || ""} onChange={(ev) => set({ group_id: ev.target.value })} />}</div>
-                    <div style={{ display: "flex", gap: 4, paddingBottom: 2 }}>
-                      <button style={ghost} disabled={!canMove(plan, d.day, i, -1)} title="Move up" onClick={() => edit(moveExercise(plan, d.day, i, -1))}>↑</button>
-                      <button style={ghost} disabled={!canMove(plan, d.day, i, +1)} title="Move down" onClick={() => edit(moveExercise(plan, d.day, i, +1))}>↓</button>
-                      <button style={ghost} title="Ask the AI for a replacement for this exercise" disabled={!!busy} onClick={() => revise(d.day, `Replace "${e.name}" with a different exercise that trains the same movement pattern and muscles, respecting the client's equipment and injuries. Keep everything else in this day the same.`)}>⇄</button>
-                      <button style={{ ...ghost, color: S.danger }} title="Remove" onClick={() => edit(removeExercise(plan, d.day, i))}>✕</button>
+                  <div key={i} style={{ background: S.surface2, border: "1px solid " + S.border, borderRadius: RADIUS.sm, padding: 12, marginBottom: 10 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 8 }}>
+                      <span style={{ fontSize: 12, color: S.muted, paddingBottom: 8, width: 18 }}>{i + 1}</span>
+                      <div style={{ flex: "1 1 200px", minWidth: 160 }}><label style={lbl}>Exercise</label><input style={{ ...inp, borderColor: bad(/name/) }} value={e.name} onChange={(ev) => set({ name: ev.target.value })} /></div>
+                      <div style={{ display: "flex", gap: 4, paddingBottom: 2 }}>
+                        <button style={ghost} disabled={!canMove(plan, d.day, i, -1)} title="Move up" onClick={() => edit(moveExercise(plan, d.day, i, -1))}>↑</button>
+                        <button style={ghost} disabled={!canMove(plan, d.day, i, +1)} title="Move down" onClick={() => edit(moveExercise(plan, d.day, i, +1))}>↓</button>
+                        <button style={ghost} title="Ask the AI for a replacement for this exercise" disabled={!!busy} onClick={() => revise(d.day, `Replace "${e.name}" with a different exercise that trains the same movement pattern and muscles, respecting the client's equipment and injuries. Keep everything else in this day the same.`)}>⇄</button>
+                        <button style={{ ...ghost, color: S.danger }} title="Remove" onClick={() => edit(removeExercise(plan, d.day, i))}>✕</button>
+                      </div>
                     </div>
-                    {e.notes && <div style={{ gridColumn: "2 / -1", fontSize: 11, color: S.muted }}>{e.notes}</div>}
-                    {errs.length > 0 && <div style={{ gridColumn: "2 / -1", fontSize: 11, color: S.danger }}>{errs.map((x) => x.message).join(" ")}</div>}
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                      {field("Sets", 70, <input style={{ ...inp, borderColor: bad(/sets/) }} type="number" min={1} max={12} value={e.sets ?? ""} onChange={(ev) => set({ sets: ev.target.value })} />)}
+                      {field("Reps", 90, <input style={{ ...inp, borderColor: bad(/reps/) }} value={e.reps ?? ""} onChange={(ev) => set({ reps: ev.target.value })} />)}
+                      {field("Rest (s)", 80, <input style={{ ...inp, borderColor: bad(/rest/) }} type="number" min={0} max={600} value={e.rest_seconds ?? ""} onChange={(ev) => set({ rest_seconds: ev.target.value })} />)}
+                      {field("Phase", 170, <select style={inp} value={e.section || ""} onChange={(ev) => set({ section: ev.target.value || null })}><option value="">Unset</option>{PHASE_ORDER.map((p) => <option key={p} value={p}>{p}</option>)}</select>)}
+                      {field("Block", 170, <select style={inp} value={e.block_type || "straight_set"} onChange={(ev) => set({ block_type: ev.target.value, group_id: ev.target.value === "straight_set" ? null : (e.group_id || "A") })}>{BLOCK_TYPES.map((t) => <option key={t} value={t}>{BLOCK_TYPE_LABEL[t]}</option>)}</select>)}
+                      {e.block_type && e.block_type !== "straight_set" && field("Group", 80, <input style={inp} placeholder="e.g. A" value={e.group_id || ""} onChange={(ev) => set({ group_id: ev.target.value })} />)}
+                    </div>
+                    {e.notes && <div style={{ fontSize: 11, color: S.muted, marginTop: 8, lineHeight: 1.5 }}>{e.notes}</div>}
+                    {errs.length > 0 && <div style={{ fontSize: 11, color: S.danger, marginTop: 6 }}>{errs.map((x) => x.message).join(" ")}</div>}
                   </div>
                 );
               })}
