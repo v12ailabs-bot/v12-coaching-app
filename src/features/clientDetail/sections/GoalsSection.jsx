@@ -48,6 +48,8 @@ export function GoalsSection({ client }) {
   const [generating, setGenerating] = useState(false);
   const [genErr, setGenErr] = useState(null);
   const [form, setForm] = useState({ direction: "decrease", target_value: "", target_date: "" });
+  const [replacing, setReplacing] = useState(false);
+  const [endStatus, setEndStatus] = useState("achieved");
   const [creating, setCreating] = useState(false);
   const [createMsg, setCreateMsg] = useState(null);
   const [editing, setEditing] = useState(false);
@@ -105,7 +107,10 @@ export function GoalsSection({ client }) {
   }, [client.id]);
   useEffect(() => { load(); }, [load]);
 
-  const createGoal = async () => {
+  // replace=true: retire the current goal (achieved / superseded — its history
+  // and snapshots stay) and start a new one with a fresh baseline from the
+  // client's latest logged weight.
+  const createGoal = async (replace = false) => {
     if (!form.target_value || !form.target_date) return;
     setCreating(true); setCreateMsg(null);
     // Baseline = the most recent logged weight (today's, if the client has one).
@@ -114,6 +119,10 @@ export function GoalsSection({ client }) {
       setCreating(false);
       setCreateMsg({ ok: false, text: "This client has no logged weight yet — they need at least one daily check-in with weight before a goal can be set." });
       return;
+    }
+    if (replace && goal) {
+      const { error: endErr } = await supabase.from("client_goals").update({ status: endStatus === "achieved" ? "achieved" : "superseded" }).eq("id", goal.id);
+      if (endErr) { setCreating(false); setCreateMsg({ ok: false, text: endErr.message }); return; }
     }
     const { error } = await supabase.from("client_goals").insert({
       client_id: client.id,
@@ -127,8 +136,13 @@ export function GoalsSection({ client }) {
       target_date: form.target_date,
     });
     setCreating(false);
-    if (error) { setCreateMsg({ ok: false, text: error.message }); return; }
+    if (error) {
+      // Put the previous goal back so the client is never left with no goal.
+      if (replace && goal) await supabase.from("client_goals").update({ status: "active" }).eq("id", goal.id);
+      setCreateMsg({ ok: false, text: error.message }); return;
+    }
     setForm({ direction: "decrease", target_value: "", target_date: "" });
+    setReplacing(false);
     await load();
   };
 
@@ -179,7 +193,7 @@ export function GoalsSection({ client }) {
           <Fld label="Target Weight (lb)"><Inp type="number" value={form.target_value} onChange={e => setForm(p => ({ ...p, target_value: e.target.value }))} placeholder="e.g. 180" /></Fld>
           <Fld label="Target Date"><Inp type="date" value={form.target_date} onChange={e => setForm(p => ({ ...p, target_date: e.target.value }))} /></Fld>
         </div>
-        <Btn onClick={createGoal} disabled={creating}>{creating ? "Saving..." : "Set Goal"}</Btn>
+        <Btn onClick={() => createGoal(false)} disabled={creating}>{creating ? "Saving..." : "Set Goal"}</Btn>
         <Alert variant={createMsg?.ok ? "success" : "error"}>{createMsg?.text}</Alert>
       </Card>
     );
@@ -191,6 +205,25 @@ export function GoalsSection({ client }) {
 
   return (
     <>
+      {replacing && (
+        <Card>
+          <CardTitle>Set a new goal</CardTitle>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+            The new goal's baseline is the client's latest logged weight{latestWeight != null ? ` (${latestWeight} lb)` : ""}. The current goal is kept in history.
+          </div>
+          <div className="g3" style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 8 }}>
+            <Fld label="Direction"><RG options={["decrease", "increase", "maintain"]} value={form.direction} onChange={v => setForm(p => ({ ...p, direction: v }))} cap /></Fld>
+            <Fld label="Target Weight (lb)"><Inp type="number" value={form.target_value} onChange={e => setForm(p => ({ ...p, target_value: e.target.value }))} placeholder="e.g. 180" /></Fld>
+            <Fld label="Target Date"><Inp type="date" value={form.target_date} onChange={e => setForm(p => ({ ...p, target_date: e.target.value }))} /></Fld>
+          </div>
+          <Fld label="The current goal was"><RG options={["achieved", "replaced"]} value={endStatus} onChange={setEndStatus} cap /></Fld>
+          <div style={{ display: "flex", gap: 10, marginTop: 8 }}>
+            <Btn onClick={() => createGoal(true)} disabled={creating}>{creating ? "Saving..." : "Start new goal"}</Btn>
+            <button onClick={() => setReplacing(false)} style={{ padding: "7px 14px", fontSize: 10, background: "transparent", color: S.text, border: "1px solid " + S.border, cursor: "pointer", fontWeight: 600 }}>Cancel</button>
+          </div>
+          <Alert variant={createMsg?.ok ? "success" : "error"}>{createMsg?.text}</Alert>
+        </Card>
+      )}
       <Card>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
           <div>
@@ -200,6 +233,7 @@ export function GoalsSection({ client }) {
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {s.classification && <StatusBadge label={s.classification} tone={CLASSIFICATION_TONE[s.classification] || "neutral"} />}
             {!editing && <Btn sm onClick={startEdit}>Edit</Btn>}
+            {!editing && !replacing && <Btn sm teal onClick={() => { setCreateMsg(null); setReplacing(true); }}>New goal</Btn>}
           </div>
         </div>
         {editing ? (

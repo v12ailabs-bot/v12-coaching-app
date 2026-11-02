@@ -34,6 +34,9 @@ function ExerciseRow({ exercise, logs, clientId }) {
           <div style={{ fontSize: 13, fontWeight: 600, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {exercise.name}
           </div>
+          <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
+            {[exercise.sets != null ? `${exercise.sets} sets` : null, exercise.reps ? `${exercise.reps} reps` : null, Number.isInteger(exercise.rest_seconds) ? `rest ${exercise.rest_seconds}s` : null].filter(Boolean).join(" · ") || "No sets/reps set"}
+          </div>
         </div>
         <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>
           {last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : "No data"}
@@ -133,7 +136,7 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
     <Card>
       <CollapsibleSection
         title="Workout Review"
-        summary={`${phase ? `Phase: ${phase}` : "No phase set"} · Reported workouts done ${adh.trainingRate != null ? adh.trainingRate + "%" : "—"} (unreported days excluded) · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
+        summary={`${phase ? `Phase: ${phase}` : "No phase set"} · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
         expanded={reviewOpen} onToggle={setReviewOpen}>
         {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} />)}
       </CollapsibleSection>

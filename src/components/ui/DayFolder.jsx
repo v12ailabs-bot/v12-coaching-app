@@ -8,10 +8,10 @@ export function DayFolder({ title, meta, children, defaultOpen = false, headerAc
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div style={{ background: S.surface, border: "1px solid " + S.border, borderRadius: RADIUS.sm, overflow: "hidden", marginBottom: 12 }}>
-      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+      <div style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
           background: open ? S.surface2 : "transparent", padding: "15px 18px" }}>
         <button onClick={() => setOpen((o) => !o)}
-          style={{ flex: 1, minWidth: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
+          style={{ flex: "1 1 200px", minWidth: 0, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
             background: "transparent", border: "none", cursor: "pointer", padding: 0, textAlign: "left", color: S.text }}>
           <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
             <span style={{ fontSize: 12, color: S.accent, flexShrink: 0, display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>
@@ -20,7 +20,7 @@ export function DayFolder({ title, meta, children, defaultOpen = false, headerAc
           </span>
           <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, flexShrink: 0 }}>{open ? "Hide" : "Open"}</span>
         </button>
-        {headerAction && <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, marginLeft: 12 }}>{headerAction}</div>}
+        {headerAction && <div onClick={(e) => e.stopPropagation()} style={{ flexShrink: 0, marginLeft: 0 }}>{headerAction}</div>}
       </div>
       {open && <div style={{ padding: "16px 18px 18px" }}>{children}</div>}
     </div>

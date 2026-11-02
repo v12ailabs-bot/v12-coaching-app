@@ -20,10 +20,10 @@ export function CollapsibleSection({ title, summary, defaultExpanded = false, ex
         style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12,
           background: open ? S.surface2 : "transparent", border: "none", cursor: "pointer",
           padding: "15px 18px", textAlign: "left", color: S.text }}>
-        <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+        <span style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0, flex: 1 }}>
           <span style={{ fontSize: 12, color: S.accent, flexShrink: 0, display: "inline-block", transition: "transform .15s", transform: open ? "rotate(90deg)" : "none" }}>▶</span>
-          <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{title}</span>
-          {summary != null && <span style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap", flexShrink: 0 }}>{summary}</span>}
+          <span style={{ fontFamily: "'Bebas Neue',sans-serif", fontSize: 20, whiteSpace: "nowrap", flexShrink: 0 }}>{title}</span>
+          {summary != null && <span style={{ fontSize: 11, color: S.muted, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", minWidth: 0 }}>{summary}</span>}
         </span>
         <span style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, flexShrink: 0 }}>{open ? "Hide" : "Open"}</span>
       </button>
