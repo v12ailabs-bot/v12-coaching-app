@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 // programs/exercises), and a malformed AI plan returns 422 with ZERO writes.
 const writes = [];
 let nextTraining;
+let lastTrainingInput;
 
 function fakeSupabase() {
   const tableData = {
@@ -17,7 +18,7 @@ function fakeSupabase() {
     from(table) {
       let op = "select"; let rows = null;
       const q = {
-        select() { return q; }, eq() { return q; }, neq() { return q; }, in() { return q; }, is() { return q; }, order() { return q; }, limit() { return q; },
+        select() { return q; }, eq() { return q; }, neq() { return q; }, gte() { return q; }, in() { return q; }, is() { return q; }, order() { return q; }, limit() { return q; },
         insert(r) { op = "insert"; rows = r; writes.push({ table, op, row: r }); return q; },
         update(r) { op = "update"; writes.push({ table, op, row: r }); return q; },
         delete() { op = "delete"; writes.push({ table, op }); return q; },
@@ -36,7 +37,7 @@ mock.module("../api/_lib/leads.js", { namedExports: { getClientFromLead: async (
 let templateImpl = async () => ({ id: "t1", name: "2-day full body", weeks: 8, days: 2, frameworkText: "TEMPLATE" });
 mock.module("../api/_lib/notionTemplates.js", { namedExports: { getProgramTemplate: (...a) => templateImpl(...a) } });
 mock.module("../api/_lib/anthropic.js", { namedExports: {
-  generateTrainingPlan: async () => nextTraining,
+  generateTrainingPlan: async (c) => { lastTrainingInput = c; return nextTraining; },
   generateNutritionPlan: async () => ({ plan_name: "N", daily_calories: 2000, meals: [] }),
   reviseTrainingDay: async () => ({}),
 } });
@@ -62,6 +63,8 @@ test("valid generation saves a DRAFT, never touches programs/exercises", async (
   assert.equal(drafts[0].row.payload.weeks, 8, "template duration applied");
   assert.equal(drafts[0].row.session_config.session_minutes, 60);
   assert.equal(writes.filter((w) => (w.table === "programs" || w.table === "exercises") && w.op !== "select").length, 0, "active program + exercises untouched");
+  assert.equal(lastTrainingInput.previous_program_text, null, "no history -> no briefing, generation still works");
+  assert.ok(drafts[0].row.warnings.some((w) => w.path === "transition"), "coach is told whether history was used");
   assert.ok(!writes.some((w) => w.table === "profiles" && w.row?.onboarding_complete), "onboarding is only completed on approval");
 });
 

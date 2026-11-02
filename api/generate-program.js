@@ -3,6 +3,7 @@ import { getClientFromNotion } from "./_lib/notion.js";
 import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
 import { generateTrainingPlan, generateNutritionPlan, reviseTrainingDay } from "./_lib/anthropic.js";
+import { loadPreviousProgramBriefing } from "./_lib/previousProgram.js";
 import { prepareDraftPlan, saveProgramDraft, applyDayRevision, ProgramValidationError } from "./_lib/programDraft.js";
 import { normalizeSessionConfig } from "../src/lib/programming/sessionDuration.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
@@ -183,6 +184,10 @@ export default async function handler(req, res) {
       }
     }
     mark("Fetch exercise database (locked-exercise lookup + phase/progression-model lookup)");
+    // What the client did on their last program, so the new block is a real
+    // continuation (loads, progressed/stalled lifts, consistency, feedback).
+    const briefing = nutritionOnly ? null : await loadPreviousProgramBriefing(supabaseAdmin, { trainingOwnerId, profileId: profile.id });
+    mark("Previous-program briefing");
     const lockedExercisesText = lockedExercises.length
       ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
       : null;
@@ -193,7 +198,7 @@ export default async function handler(req, res) {
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText, template_weeks: template?.weeks || null, session_config: sessionConfig, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
+          generateTrainingPlan({ ...assessed, program_template: templateText, template_weeks: template?.weeks || null, session_config: sessionConfig, previous_program_text: briefing?.text || null, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
           generateNutritionPlan(assessed),
         ]);
     mark("Generate training + nutrition plans (Anthropic, combined)");
@@ -227,6 +232,11 @@ export default async function handler(req, res) {
       // 7. Save it as a coach-review DRAFT. The active program and its
       //    exercises (including any with logged history) are untouched until a
       //    coach approves the draft.
+      if (briefing?.hasHistory) {
+        templateWarnings.push({ path: "transition", message: `Built as a continuation of their last program: ${briefing.stats.exercisesWithHistory} lifts with logged history${briefing.stats.feedback ? `, ${briefing.stats.feedback} recent check-in notes` : ""} were passed to the AI.` });
+      } else {
+        templateWarnings.push({ path: "transition", message: "No logged history from a previous program was found, so this was planned from the intake and assessment only." });
+      }
       prepared.warnings.unshift(...templateWarnings);
       draftId = await saveProgramDraft(supabaseAdmin, {
         clientId: trainingOwnerId, profileId: profile.id, createdBy: user.id,

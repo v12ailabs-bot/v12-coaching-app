@@ -290,7 +290,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${buildProgressionCandidatesBlock(client.progression_candidates)}${
+${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${client.previous_program_text ? `${client.previous_program_text}\n\n` : ""}${buildProgressionCandidatesBlock(client.progression_candidates)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
@@ -353,7 +353,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${buildChosenModelBlock(client.progression_candidates, skeleton.progression_model_used)}${
+${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${client.previous_program_text ? `${client.previous_program_text}\n\n` : ""}${buildChosenModelBlock(client.progression_candidates, skeleton.progression_model_used)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
