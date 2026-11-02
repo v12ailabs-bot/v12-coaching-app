@@ -4,6 +4,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
 import { Card, CardTitle, PageTitle, Fld, Inp, Sld, RG, Btn, StatusBadge, BackdateField } from "../../components/ui/index.js";
 import { isHabitSatisfied, targetStatus, todayCompletionFrom } from "../../lib/scoring.js";
+import { buildDailyCheckinEntry } from "../../lib/checkinEntry.js";
 import { isWithinBackdateWindow, localDateStr } from "../../lib/dates.js";
 
 const BACKDATE_DAYS = 7;
@@ -61,7 +62,7 @@ function TargetRow({ habit, planTarget, draft, onChangeDraft, checkinValue }) {
   );
 }
 
-const EMPTY_FORM = { weight: "", calories: "", protein_g: "", carbs_g: "", fats_g: "", water: "", sleep_hours: "", energy: 7, mood: 7, steps: "", diet: "On track", workout: "completed" };
+const EMPTY_FORM = { weight: "", calories: "", protein_g: "", carbs_g: "", fats_g: "", water: "", sleep_hours: "", energy: null, mood: null, steps: "", diet: null, workout: null };
 
 // Replaces the old separate Daily Check-In + Habits pages with one workflow:
 // coach-configured Daily Targets, the Daily Check-In fields, Nutrition
@@ -80,6 +81,7 @@ export function TodayScreen({ profile, onDone }) {
   const [ready, setReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [workoutConfirmed, setWorkoutConfirmed] = useState(false);
   const set = (k, v) => setForm((p) => ({ ...p, [k]: v }));
 
   useEffect(() => {
@@ -89,16 +91,22 @@ export function TodayScreen({ profile, onDone }) {
       supabase.from("daily_checkins").select("*").eq("client_id", profile.id).eq("date", date).maybeSingle(),
       supabase.from("habit_logs").select("*").eq("client_id", profile.id).eq("date", date),
       supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", profile.id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-    ]).then(([h, c, hl, plan]) => {
+      supabase.from("workout_completions").select("status,day_of_week").eq("client_id", profile.id).eq("date", date).maybeSingle(),
+    ]).then(([h, c, hl, plan, wc]) => {
       const hs = h.data || [];
       setHabits(hs);
       setPlanTarget(plan.data || {});
       setExisting(c.data || null);
       setForm(c.data ? {
         weight: c.data.weight ?? "", calories: c.data.calories ?? "", protein_g: c.data.protein_g ?? "", carbs_g: c.data.carbs_g ?? "",
-        fats_g: c.data.fats_g ?? "", water: c.data.water ?? "", sleep_hours: c.data.sleep_hours ?? "", energy: c.data.energy ?? 7, mood: c.data.mood ?? 7,
-        steps: c.data.steps ?? "", diet: c.data.diet || "On track", workout: c.data.workout || "completed",
+        fats_g: c.data.fats_g ?? "", water: c.data.water ?? "", sleep_hours: c.data.sleep_hours ?? "", energy: c.data.energy ?? null, mood: c.data.mood ?? null,
+        steps: c.data.steps ?? "", diet: c.data.diet || null, workout: c.data.workout || null,
       } : EMPTY_FORM);
+      // The client already confirmed this workout on the Workouts screen — that is
+      // an explicit answer (not a default), so reflect it here instead of asking
+      // them to repeat it. Never overrides an answer they already gave today.
+      setWorkoutConfirmed(wc.data?.status === "completed");
+      if (wc.data?.status === "completed" && !c.data?.workout) setForm((p) => ({ ...p, workout: "completed" }));
       const drafts = {};
       hs.forEach((hb) => {
         const log = (hl.data || []).find((l) => l.habit_id === hb.id);
@@ -133,12 +141,7 @@ export function TodayScreen({ profile, onDone }) {
     if (!isWithinBackdateWindow(date, BACKDATE_DAYS)) return;
     setSaving(true);
     const num = (v) => { if (v === "" || v == null) return null; const n = parseFloat(v); return Number.isNaN(n) ? null : n; };
-    const entry = {
-      client_id: profile.id, date, submitted_date: todayStr(),
-      weight: num(form.weight), calories: num(form.calories), protein_g: num(form.protein_g), carbs_g: num(form.carbs_g),
-      fats_g: num(form.fats_g), water: num(form.water), sleep_hours: num(form.sleep_hours), energy: form.energy, mood: form.mood,
-      steps: num(form.steps), diet: form.diet, workout: form.workout,
-    };
+    const entry = buildDailyCheckinEntry({ form, clientId: profile.id, date, submittedDate: todayStr() });
     if (existing) await supabase.from("daily_checkins").update(entry).eq("id", existing.id);
     else await supabase.from("daily_checkins").insert(entry);
 
@@ -180,13 +183,16 @@ export function TodayScreen({ profile, onDone }) {
           <div style={{ padding: "12px 4px 0" }}>
             <div style={{ fontSize: 13, color: S.text, marginBottom: 8 }}>Workout</div>
             <RG options={["completed", "rest", "missed"]} value={form.workout} onChange={(v) => set("workout", v)} cap />
+            {workoutConfirmed && <div style={{ fontSize: 11, color: S.accent2, marginTop: 6 }}>You marked today's workout complete on the Workouts screen.</div>}
           </div>
         </Card>
       )}
       {habits.length === 0 && (
         <Card style={{ marginBottom: 20 }}>
           <CardTitle>Workout</CardTitle>
+          <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>Choose one — leave blank if you'd rather not say.</div>
           <RG options={["completed", "rest", "missed"]} value={form.workout} onChange={(v) => set("workout", v)} cap />
+          {workoutConfirmed && <div style={{ fontSize: 11, color: S.accent2, marginTop: 6 }}>You marked today's workout complete on the Workouts screen.</div>}
         </Card>
       )}
 
@@ -209,7 +215,7 @@ export function TodayScreen({ profile, onDone }) {
 
       <Card style={{ marginBottom: 20 }}>
         <CardTitle>Nutrition</CardTitle>
-        <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>How closely did you stay to your nutrition target today?</div>
+        <div style={{ fontSize: 11, color: S.muted, marginBottom: 10 }}>How closely did you stay to your nutrition target today? (Optional — leave blank if you didn't track.)</div>
         <RG options={["On track", "Mostly clean", "Struggled", "Off plan"]} value={form.diet} onChange={(v) => set("diet", v)} />
       </Card>
 

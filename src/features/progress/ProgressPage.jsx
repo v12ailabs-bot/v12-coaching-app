@@ -147,9 +147,9 @@ function ProgressInner({ profile, coachView }) {
     <div>
       <PageTitle title="Progress" sub="Your data over time"/>
       <div className="g4" style={{display:"grid",gridTemplateColumns:goal?"repeat(6,1fr)":"repeat(4,1fr)",gap:16,marginBottom:24}}>
-        <Stat label="Adherence (30d)" value={adh.score} unit="%"/>
+        <Stat label="Check-in days (30d)" value={adh.score} unit="%"/>
         <Stat label="Nutrition (30d)" value={nut.score??"—"} unit={nut.score!=null?"%":""}/>
-        <Stat label="Training Completion" value={adh.trainingRate ?? "—"} unit={adh.trainingRate!=null?"%":""}/>
+        <Stat label="Reported Workouts Done" value={adh.trainingRate ?? "—"} unit={adh.trainingRate!=null?"%":""}/>
         <Stat label="Current Weight" value={lastWeight??"—"} unit={lastWeight?"lb":""}/>
         {goal && <Stat label="Goal Progress" value={goalScore?.overallScore??"—"} unit={goalScore?.overallScore!=null?"%":""}/>}
         {goal && <Stat label="Days Remaining" value={Math.max(0,daysRemaining)} unit="days"/>}

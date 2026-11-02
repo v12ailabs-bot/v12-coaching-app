@@ -13,6 +13,9 @@ import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
 import { RestTimer, RestTimerBar, useRestTimer } from "./components/RestTimer.jsx";
+import { WorkoutCompletionCard } from "./features/workouts/WorkoutCompletionCard.jsx";
+import { ShortOnTime } from "./features/workouts/ShortOnTime.jsx";
+import { UnconfirmedWorkoutsNotice } from "./features/workouts/UnconfirmedWorkoutsNotice.jsx";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay } from "./features/workouts/WorkoutCharts.jsx";
 import { WeeklyIntakeCard } from "./features/clientDashboard/WeeklyIntakeCard.jsx";
 import { WorkoutScheduler } from "./features/scheduling/WorkoutScheduler.jsx";
@@ -822,8 +825,8 @@ function WeeklyCheckin({ profile, onDone }) {
   const [form, setForm] = useState({
     bodyweight:"", waist:"", chest:"", hips:"", arms:"", week_number:"",
     training_days:"", workout_feel:"", pump:"", exercise_feedback:"", lifts_improved:"", felt_weaker:"", cardio_performance:"",
-    nutrition_compliance:5, sleep_quality:5, hydration_quality:5, discipline_level:5, confidence_level:5, mental_blocks:"",
-    goal_progress:50, feeling:5,
+    nutrition_compliance:null, sleep_quality:null, hydration_quality:null, discipline_level:null, confidence_level:null, mental_blocks:"",
+    goal_progress:null, feeling:null,
     what_went_well:"", lifestyle_wins:"", biggest_challenge:"", holding_back:"",
     adjustments:"", coach_questions:"",
   });
@@ -942,23 +945,23 @@ function WeeklyCheckin({ profile, onDone }) {
       </Card>
       <Card>
         <CardTitle>Nutrition</CardTitle>
-        <Sld label="Protein & calorie goal compliance" val={form.nutrition_compliance||5} min={1} max={10} sfx="/10" onChange={v=>set("nutrition_compliance",v)}/>
+        <Sld label="Protein & calorie goal compliance" val={form.nutrition_compliance} min={1} max={10} sfx="/10" onChange={v=>set("nutrition_compliance",v)}/>
       </Card>
       <Card>
         <CardTitle>Recovery</CardTitle>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-          <Sld label="Sleep Quality" val={form.sleep_quality||5} min={1} max={10} sfx="/10" onChange={v=>set("sleep_quality",v)}/>
-          <Sld label="Hydration Quality" val={form.hydration_quality||5} min={1} max={10} sfx="/10" onChange={v=>set("hydration_quality",v)}/>
-          <Sld label="Discipline Level" val={form.discipline_level||5} min={1} max={10} sfx="/10" onChange={v=>set("discipline_level",v)}/>
-          <Sld label="Confidence in Program" val={form.confidence_level||5} min={1} max={10} sfx="/10" onChange={v=>set("confidence_level",v)}/>
+          <Sld label="Sleep Quality" val={form.sleep_quality} min={1} max={10} sfx="/10" onChange={v=>set("sleep_quality",v)}/>
+          <Sld label="Hydration Quality" val={form.hydration_quality} min={1} max={10} sfx="/10" onChange={v=>set("hydration_quality",v)}/>
+          <Sld label="Discipline Level" val={form.discipline_level} min={1} max={10} sfx="/10" onChange={v=>set("discipline_level",v)}/>
+          <Sld label="Confidence in Program" val={form.confidence_level} min={1} max={10} sfx="/10" onChange={v=>set("confidence_level",v)}/>
         </div>
         <Fld label="Emotional stress or mental blocks?"><textarea autoComplete="off" autoCorrect="off" spellCheck={false} rows={2} value={form.mental_blocks||""} onChange={e=>set("mental_blocks",e.target.value)} placeholder="" style={{width:"100%",background:S.surface2,border:"1px solid "+S.border,color:S.text,padding:"12px 14px",fontSize:14,outline:"none",resize:"vertical"}}/></Fld>
       </Card>
       <Card>
         <CardTitle>Progress Toward Your Goal</CardTitle>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
-          <Sld label="Progress toward your goal" val={form.goal_progress??50} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
-          <Sld label="How this week felt overall" val={form.feeling??5} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
+          <Sld label="Progress toward your goal" val={form.goal_progress} min={0} max={100} sfx="%" onChange={v=>set("goal_progress",v)}/>
+          <Sld label="How this week felt overall" val={form.feeling} min={1} max={10} sfx="/10" onChange={v=>set("feeling",v)}/>
         </div>
       </Card>
       <DayFolder title="Wins & Challenges" meta="Optional">
@@ -1254,6 +1257,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   const [exercises, setExercises] = useState([]);
   const [logs, setLogs] = useState([]);
   const [dayLoggedIds, setDayLoggedIds] = useState(new Set());
+  const [logsTodayCount, setLogsTodayCount] = useState(0);
   const [selected, setSelected] = useState(null);
   const blankRow = () => ({weight:"",reps:"",time:"",warmup:false,effort:""});
   const freshSets = (n) => Array.from({length: Math.min(8, Math.max(1, parseInt(n)||4))}, blankRow);
@@ -1307,6 +1311,13 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   // this exercise (progression_config.effort); otherwise the row is unchanged.
   // One rest timer for the whole workout page (desktop card + phone bar share it).
   const rest = useRestTimer();
+  // The coach's prescribed rest for the selected exercise/block drives the timer
+  // (only when one is set — older programs keep the client's own preference).
+  const prescribedRest = Number(selectedEx?.rest_seconds);
+  useEffect(()=>{
+    if(Number.isInteger(prescribedRest) && prescribedRest>0 && rest.duration!==prescribedRest) rest.setDuration(prescribedRest);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[selected, prescribedRest]);
   // The coach's approved target weight for this exercise (from a progression
   // recommendation), shown as a hint — never pre-filled as if it were logged.
   const prescribed = Number(selectedEx?.prescribed_weight) > 0 ? Number(selectedEx.prescribed_weight) : null;
@@ -1345,10 +1356,10 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
   // Which of the current day's exercises already have a logged set today —
   // drives the compact day header's "X of Y exercises" + progress bar.
   useEffect(()=>{
-    if(!currentDay || !currentDay.exercises.length){ setDayLoggedIds(new Set()); return; }
+    if(!currentDay || !currentDay.exercises.length){ setDayLoggedIds(new Set()); setLogsTodayCount(0); return; }
     const ids = currentDay.exercises.map(e=>e.id);
     supabase.from("workout_logs").select("exercise_id").eq("client_id",profile.id).eq("date",todayStr()).in("exercise_id",ids)
-      .then(({data})=>setDayLoggedIds(new Set((data||[]).map(r=>r.exercise_id))));
+      .then(({data})=>{ setDayLoggedIds(new Set((data||[]).map(r=>r.exercise_id))); setLogsTodayCount((data||[]).length); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[currentDay?.day, profile.id, saved]);
 
@@ -1509,7 +1520,13 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
               <div style={{height:6,background:S.surface2,borderRadius:3,overflow:"hidden"}}>
                 <div style={{height:"100%",width:dayPct+"%",background:S.accent,transition:"width .3s"}}/>
               </div>
+              <ShortOnTime exercises={currentDay.exercises}/>
             </Card>
+          )}
+          <UnconfirmedWorkoutsNotice profile={profile} today={todayStr()}/>
+          {currentDay && currentDay.day!=="Unscheduled" && (
+            <WorkoutCompletionCard profile={profile} date={todayStr()} dayLabel={currentDay.label} dayOfWeek={currentDay.day}
+              setsLoggedToday={logsTodayCount} refreshKey={saved}/>
           )}
 
           {/* Horizontally scrollable exercise selector — numbered pills with
@@ -1561,6 +1578,12 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                             <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Target Reps</div>
                             <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.reps??"—"}</div>
                           </div>
+                          {Number.isInteger(selectedEx.rest_seconds)&&(
+                            <div style={{textAlign:"center"}}>
+                              <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Rest</div>
+                              <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28}}>{selectedEx.rest_seconds>=120&&selectedEx.rest_seconds%60===0?`${selectedEx.rest_seconds/60}m`:`${selectedEx.rest_seconds}s`}</div>
+                            </div>
+                          )}
                           <div style={{textAlign:"center"}}>
                             <div style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,marginBottom:4}}>Best Lift</div>
                             <div style={{fontFamily:"'Bebas Neue',sans-serif",fontSize:28,color:bestSet?S.accent2:S.text}}>
@@ -1579,6 +1602,10 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
                           <span style={{fontSize:9,fontWeight:700,letterSpacing:1,textTransform:"uppercase",color:S.accent2,border:"1px solid "+S.accent2,borderRadius:4,padding:"2px 6px"}}>{BLOCK_TYPE_LABEL[blockType]}</span>
                         </div>
                         <div style={{fontSize:12,color:S.muted}}>{dayLabelOf[selectedEx.id]||"Unscheduled"}</div>
+                        <div style={{fontSize:12,color:S.muted,marginTop:4}}>
+                          {blockType==="superset"?"Do these back-to-back, then rest":blockType==="circuit_for_time"?"Complete every exercise in order, as fast as you can with good form":"Do these as one round, then rest"}
+                          {Number.isInteger(selectedEx.rest_seconds)&&blockType!=="circuit_for_time"?` ${selectedEx.rest_seconds}s`:""}. Repeat for {Math.max(...groupMembers.map(m=>Number(m.sets)||1))} rounds.
+                        </div>
                       </div>
                       <div style={{display:"flex",alignItems:"center",gap:16}}>
                         <div style={{display:"flex",gap:16,flexWrap:"wrap"}}>

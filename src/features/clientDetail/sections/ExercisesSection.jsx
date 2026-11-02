@@ -26,6 +26,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
             </Fld>
             <Fld label="Sets"><Inp type="number" value={newEx.sets} onChange={e=>setNewEx(p=>({...p,sets:e.target.value}))} placeholder="e.g. 4"/></Fld>
             <Fld label="Reps"><Inp type="text" value={newEx.reps} onChange={e=>setNewEx(p=>({...p,reps:e.target.value}))} placeholder="e.g. 8-12"/></Fld>
+            <Fld label="Rest between sets (sec)"><Inp type="number" min={0} max={600} value={newEx.rest_seconds??""} onChange={e=>setNewEx(p=>({...p,rest_seconds:e.target.value}))} placeholder="e.g. 90"/></Fld>
             <Fld label="Type">
               <RG options={["Weighted","Bodyweight"]} value={newEx.is_bodyweight?"Bodyweight":"Weighted"} onChange={v=>setNewEx(p=>({...p,is_bodyweight:v==="Bodyweight"}))}/>
             </Fld>
@@ -89,6 +90,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                   <div style={{display:"flex",gap:10,marginBottom:10}}>
                     <div style={{flex:1}}><label style={lbl}>Sets</label><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={eInp}/></div>
                     <div style={{flex:1}}><label style={lbl}>Reps</label><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={eInp}/></div>
+                    <div style={{flex:1}}><label style={lbl}>Rest (s)</label><input type="number" value={d.rest_seconds??""} onChange={e=>setD("rest_seconds",e.target.value)} style={eInp}/></div>
                   </div>
                   <div style={{marginBottom:10}}><label style={lbl}>Progress Type</label><select value={d.exercise_type} onChange={e=>setD("exercise_type",e.target.value)} style={eInp}><option value="">Auto-detect</option>{EX_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></div>
                   <div style={{marginBottom:10}}><label style={lbl}>Phase (workout order)</label><select value={d.section} onChange={e=>setD("section",e.target.value)} style={eInp}><option value="">Unset</option>{PHASE_ORDER.map(p=><option key={p} value={p}>{p}</option>)}</select></div>
@@ -107,6 +109,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                   <div style={{display:"flex",gap:16,flexWrap:"wrap",fontSize:12,color:S.muted,marginBottom:ex.notes?8:12}}>
                     <span><span style={{opacity:.65}}>Sets </span>{ex.sets??"—"}</span>
                     <span><span style={{opacity:.65}}>Reps </span>{ex.reps||"—"}</span>
+                    {ex.rest_seconds!=null&&<span><span style={{opacity:.65}}>Rest </span>{ex.rest_seconds}s</span>}
                     {ex.exercise_type&&<span><span style={{opacity:.65}}>Type </span>{ex.exercise_type}</span>}
                     {ex.section&&<span><span style={{opacity:.65}}>Phase </span>{ex.section}</span>}
                     {ex.block_type&&ex.block_type!=="straight_set"&&<span><span style={{opacity:.65}}>Block </span>{BLOCK_TYPE_LABEL[ex.block_type]}</span>}
@@ -125,7 +128,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
       ) : (
       <div style={{overflowX:"auto"}}>
       <table style={{width:"100%",borderCollapse:"collapse"}}>
-        <thead><tr>{["Exercise","Day","Sets","Reps","Type","Phase","Block","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border,...(h===""?{position:"sticky",right:0,background:S.surface}:{})}}>{h}</th>)}</tr></thead>
+        <thead><tr>{["Exercise","Day","Sets","Reps","Rest","Type","Phase","Block","Notes",""].map(h=><th key={h} style={{fontSize:9,letterSpacing:2,textTransform:"uppercase",color:S.muted,textAlign:"left",padding:"10px 14px",borderBottom:"1px solid "+S.border,...(h===""?{position:"sticky",right:0,background:S.surface}:{})}}>{h}</th>)}</tr></thead>
         <tbody>
           {dayExs.map(ex=>{
             const editing = editEx?.id===ex.id;
@@ -144,6 +147,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                     <td style={cell}><select value={d.day_of_week} onChange={e=>setD("day_of_week",e.target.value)} style={eInp}><option value="">—</option>{DAY_ORDER.map((x,i)=><option key={x} value={x}>{"Day "+(i+1)}</option>)}</select></td>
                     <td style={cell}><input type="number" value={d.sets} onChange={e=>setD("sets",e.target.value)} style={{...eInp,width:60}}/></td>
                     <td style={cell}><input type="text" value={d.reps} onChange={e=>setD("reps",e.target.value)} style={{...eInp,width:80}}/></td>
+                    <td style={cell}><input type="number" value={d.rest_seconds??""} onChange={e=>setD("rest_seconds",e.target.value)} style={{...eInp,width:70}}/></td>
                     <td style={cell}><select value={d.exercise_type} onChange={e=>setD("exercise_type",e.target.value)} style={{...eInp,width:110}}><option value="">Auto</option>{EX_TYPES.map(t=><option key={t} value={t}>{t}</option>)}</select></td>
                     <td style={cell}><select value={d.section} onChange={e=>setD("section",e.target.value)} style={{...eInp,width:150}}><option value="">Unset</option>{PHASE_ORDER.map(p=><option key={p} value={p}>{p}</option>)}</select></td>
                     <td style={cell}>
@@ -163,6 +167,7 @@ export function ExercisesSection({ isMobile, exercises, showAdd, setShowAdd, new
                     <td style={{...cell,color:S.muted}}>{label}</td>
                     <td style={{...cell,color:S.muted}}>{ex.sets??"—"}</td>
                     <td style={{...cell,color:S.muted}}>{ex.reps||"—"}</td>
+                    <td style={{...cell,color:S.muted}}>{ex.rest_seconds!=null?`${ex.rest_seconds}s`:"—"}</td>
                     <td style={{...cell,color:S.muted}}>{ex.exercise_type||<span style={{opacity:.55,fontStyle:"italic"}}>Auto</span>}</td>
                     <td style={{...cell,color:S.muted}}>{ex.section||"—"}</td>
                     <td style={{...cell,color:S.muted}}>{ex.block_type&&ex.block_type!=="straight_set"?BLOCK_TYPE_LABEL[ex.block_type]:"—"}</td>

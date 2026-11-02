@@ -2,26 +2,99 @@ import { performance } from "node:perf_hooks";
 import { getClientFromNotion } from "./_lib/notion.js";
 import { getClientFromLead } from "./_lib/leads.js";
 import { getProgramTemplate } from "./_lib/notionTemplates.js";
-import { generateTrainingPlan, generateNutritionPlan } from "./_lib/anthropic.js";
+import { generateTrainingPlan, generateNutritionPlan, reviseTrainingDay } from "./_lib/anthropic.js";
+import { prepareDraftPlan, saveProgramDraft, applyDayRevision, ProgramValidationError } from "./_lib/programDraft.js";
+import { normalizeSessionConfig } from "../src/lib/programming/sessionDuration.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
 import { toScore } from "./_lib/scores.js";
-import { DAY_ORDER } from "../src/lib/constants.js";
 
-// Maps the AI's returned day label onto one of the 7 canonical DAY_ORDER
-// values (case-insensitive exact match) so regeneration never introduces a
-// stray day label that doesn't match the client's existing day folders.
-function normalizeDay(day) {
-  const match = DAY_ORDER.find((d) => d.toLowerCase() === String(day || "").trim().toLowerCase());
-  if (!match) console.warn(`generate-program: unrecognized day "${day}", falling back to Unscheduled`);
-  return match || null;
+class HttpError extends Error {
+  constructor(status, message) { super(message); this.status = status; }
 }
 
-// POST /api/generate-program  { client_email, template_id? }
+// Loads everything the generators need about a client: Notion/lead intake, the
+// app profile, the coach's own assessment, and the resolved three-system scores.
+async function loadClientContext(client_email) {
+  // 1. Read client data from Notion, falling back to the in-app leads
+  //    table for clients who applied through the new intake form instead.
+  let client = await getClientFromNotion(client_email);
+  if (!client) client = await getClientFromLead(client_email);
+  if (!client) {
+    throw new HttpError(404, `No intake found for ${client_email} (checked Notion and in-app leads)`);
+  }
+
+  // 2. Make sure the client has an app profile to attach the program to.
+  //    Pull any stored assessment scores so coach overrides take priority.
+  const { data: profile, error: profileErr } = await supabaseAdmin
+    .from("profiles")
+    .select(
+      "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal, is_local"
+    )
+    .eq("email", client_email)
+    .maybeSingle();
+  if (profileErr) throw profileErr;
+  if (!profile) {
+    throw new HttpError(404, "Client has not signed up in the app yet");
+  }
+
+  // TRAINING is shared between linked partners: a client with a
+  // shared_program_owner_id writes its program + exercises against the
+  // owner's id, so both partners see the same training. NUTRITION and logged
+  // history stay keyed to this client's OWN id (profile.id) — always separate.
+  const trainingOwnerId = profile.shared_program_owner_id || profile.id;
+
+  // Coach's in-app onboarding assessment (keyed by email), if one exists. This
+  // is the coach's own evaluation and takes priority over inference.
+  const { data: coachAssessment } = await supabaseAdmin
+    .from("client_assessments")
+    .select("*")
+    .eq("email", client_email.toLowerCase())
+    .maybeSingle();
+
+  // Resolve the V12 assessment: a coach-set profile score wins, then the
+  // in-app coach assessment, then Notion.
+  const assessment = {
+    nervous_system_recruitment:
+      profile.nervous_system_recruitment ?? coachAssessment?.nervous_system_recruitment ?? client.nervous_system_recruitment,
+    muscular_density_to_size:
+      profile.muscular_density_to_size ?? coachAssessment?.muscular_density_to_size ?? client.muscular_density_to_size,
+    metabolic_work_capacity:
+      profile.metabolic_work_capacity ?? coachAssessment?.metabolic_work_capacity ?? client.metabolic_work_capacity,
+  };
+
+  // Free-text coach assessment, condensed into a prompt block the generator
+  // treats as authoritative (see clientProfileBlock/generateTrainingPlan).
+  const coachAssessmentText = coachAssessment
+    ? [
+        ["Strengths", coachAssessment.strengths],
+        ["Weaknesses/limitations", coachAssessment.weaknesses],
+        ["Injuries/health", coachAssessment.injuries],
+        ["Training history", coachAssessment.training_history],
+        ["Recovery/lifestyle", coachAssessment.recovery_lifestyle],
+        ["Goal/focus", coachAssessment.goal_focus],
+        ["Coach notes", coachAssessment.notes],
+      ]
+        .filter(([, v]) => (v || "").trim())
+        .map(([k, v]) => `- ${k}: ${v}`)
+        .join("\n")
+    : null;
+
+  const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null, is_local: !!profile.is_local };
+  return { client, profile, trainingOwnerId, assessment, assessed };
+}
+
+// POST /api/generate-program  { client_email, template_id?, scope?, session_config? }
 // 1. Reads the client's intake from Notion
 // 2. Loads the coach-selected program template (optional)
 // 3. Generates a training plan + nutrition plan with Claude (in parallel)
-// 4. Saves both to Supabase (the tables the client portal reads)
+// 4. VALIDATES the training plan, then saves it as a coach-review DRAFT
+//    (program_drafts). The client's active program/exercises are NOT touched —
+//    only a coach approving the draft (approve_program_draft RPC) swaps it in.
+//    The nutrition plan is saved as before.
+//
+// POST /api/generate-program  { action: "revise_day", draft_id, day, instruction }
+//    Targeted AI revision of ONE day of an open draft; other days are untouched.
 export default async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -40,97 +113,38 @@ export default async function handler(req, res) {
   if (!user) return;
   mark("Authentication");
 
-  const { client_email, template_id, scope } = req.body || {};
+  const { client_email, template_id, scope, action, draft_id, day, instruction, session_config } = req.body || {};
+  if (action === "revise_day") return reviseDay(req, res, user, { draft_id, day, instruction });
   if (!client_email) return res.status(400).json({ error: "client_email is required" });
   // scope "nutrition" regenerates ONLY the nutrition plan, leaving the training
   // program and exercises (and their logged history) untouched. Default: "full".
   const nutritionOnly = scope === "nutrition";
 
   try {
-    // 1. Read client data from Notion, falling back to the in-app leads
-    //    table for clients who applied through the new intake form instead.
-    let client = await getClientFromNotion(client_email);
-    if (!client) client = await getClientFromLead(client_email);
-    if (!client) {
-      return res.status(404).json({ error: `No intake found for ${client_email} (checked Notion and in-app leads)` });
-    }
-    mark("Fetch client data (Notion/leads)");
-
-    // 2. Make sure the client has an app profile to attach the program to.
-    //    Pull any stored assessment scores so coach overrides take priority.
-    const { data: profile, error: profileErr } = await supabaseAdmin
-      .from("profiles")
-      .select(
-        "id, nervous_system_recruitment, muscular_density_to_size, metabolic_work_capacity, shared_program_owner_id, goal, is_local"
-      )
-      .eq("email", client_email)
-      .maybeSingle();
-    if (profileErr) throw profileErr;
-    if (!profile) {
-      return res.status(404).json({ error: "Client has not signed up in the app yet" });
-    }
-    mark("Fetch profile");
-
-    // TRAINING is shared between linked partners: a client with a
-    // shared_program_owner_id writes its program + exercises against the
-    // owner's id, so both partners see the same training. NUTRITION and logged
-    // history stay keyed to this client's OWN id (profile.id) — always separate.
-    const trainingOwnerId = profile.shared_program_owner_id || profile.id;
-
-    // Coach's in-app onboarding assessment (keyed by email), if one exists. This
-    // is the coach's own evaluation and takes priority over inference.
-    const { data: coachAssessment } = await supabaseAdmin
-      .from("client_assessments")
-      .select("*")
-      .eq("email", client_email.toLowerCase())
-      .maybeSingle();
-    mark("Fetch coach assessment");
-
-    // Resolve the V12 assessment: a coach-set profile score wins, then the
-    // in-app coach assessment, then Notion.
-    const assessment = {
-      nervous_system_recruitment:
-        profile.nervous_system_recruitment ?? coachAssessment?.nervous_system_recruitment ?? client.nervous_system_recruitment,
-      muscular_density_to_size:
-        profile.muscular_density_to_size ?? coachAssessment?.muscular_density_to_size ?? client.muscular_density_to_size,
-      metabolic_work_capacity:
-        profile.metabolic_work_capacity ?? coachAssessment?.metabolic_work_capacity ?? client.metabolic_work_capacity,
-    };
-
-    // Free-text coach assessment, condensed into a prompt block the generator
-    // treats as authoritative (see clientProfileBlock/generateTrainingPlan).
-    const coachAssessmentText = coachAssessment
-      ? [
-          ["Strengths", coachAssessment.strengths],
-          ["Weaknesses/limitations", coachAssessment.weaknesses],
-          ["Injuries/health", coachAssessment.injuries],
-          ["Training history", coachAssessment.training_history],
-          ["Recovery/lifestyle", coachAssessment.recovery_lifestyle],
-          ["Goal/focus", coachAssessment.goal_focus],
-          ["Coach notes", coachAssessment.notes],
-        ]
-          .filter(([, v]) => (v || "").trim())
-          .map(([k, v]) => `- ${k}: ${v}`)
-          .join("\n")
-      : null;
-
-    const assessed = { ...client, ...assessment, coach_assessment: coachAssessmentText || null, is_local: !!profile.is_local };
+    const { client, profile, trainingOwnerId, assessment, assessed } = await loadClientContext(client_email);
+    mark("Fetch client data + profile + assessment");
 
     // 3. Load the coach-selected template from the Notion program library and
     //    read its session structure as the AI framework. Falls back to the
     //    client's own Notion `Program Template` property if none was chosen.
     let template = null;
+    const templateWarnings = [];
     if (!nutritionOnly) {
       const chosenTemplate = template_id || client.program_template_id;
       if (chosenTemplate) {
         try {
           template = await getProgramTemplate(chosenTemplate);
         } catch (e) {
-          console.warn("Program library fetch failed, falling back:", e.message);
+          console.warn("Program library fetch failed:", e.message);
+          // A template the coach explicitly picked must not be silently dropped.
+          if (template_id) throw new HttpError(502, `Couldn't load the selected template from Notion (${e.message}). Nothing was generated — try again.`);
         }
+        if (!template && template_id) throw new HttpError(404, "The selected template no longer exists in the Notion library. Nothing was generated.");
+        if (template && !template.frameworkText) templateWarnings.push({ path: "template", message: `Template "${template.name}" has no body content, so it was used only for its name — the AI designed the structure itself.` });
       }
     }
     const templateText = template?.frameworkText || null;
+    const sessionConfig = normalizeSessionConfig(session_config);
     mark("Fetch program template");
 
     // 4. Full-scope only: find which of the client's current AI exercises
@@ -179,18 +193,18 @@ export default async function handler(req, res) {
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
+          generateTrainingPlan({ ...assessed, program_template: templateText, template_weeks: template?.weeks || null, session_config: sessionConfig, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
           generateNutritionPlan(assessed),
         ]);
     mark("Generate training + nutrition plans (Anthropic, combined)");
     mark("Before database writes");
 
-    // 6. Save program metadata. Nutrition-only reuses the client's latest
-    //    existing program (for the nutrition plan's program_id link) instead of
-    //    creating a new one.
+    // 6. Validate the AI's training plan BEFORE anything is written. A malformed
+    //    plan throws ProgramValidationError (handled below as a 422) and the
+    //    client's existing program, exercises and nutrition plan are left as-is.
     let program = null;
-    let exercises = [];
-    let preservedIds = [];
+    let draftId = null;
+    let prepared = null;
     if (nutritionOnly) {
       const { data: latest } = await supabaseAdmin
         .from("programs")
@@ -200,92 +214,34 @@ export default async function handler(req, res) {
         .limit(1)
         .maybeSingle();
       program = latest || null;
-      mark("Save program metadata (nutrition-only lookup)");
+      mark("Nutrition-only: latest program lookup");
     } else {
-      const { data: newProgram, error: progErr } = await supabaseAdmin
-        .from("programs")
-        .insert({
-          client_id: trainingOwnerId,
-          name: training.program_name,
-          goal: training.goal || client.goal,
-          experience_level: client.experience_level,
-          description:
-            `AI-generated V12 program for ${client.name || client_email}` +
-            (template ? ` · template: ${template.name}` : ""),
-          weeks: training.weeks || 12,
-          top_phase: carriedPhase.top_phase,
-          sub_phase: carriedPhase.sub_phase,
-          phase: carriedPhase.phase,
-          phase_note: carriedPhase.phase_note,
-          start_date: carriedPhase.start_date,
-          progression_model_key: training.progression_model_used || null,
-        })
-        .select()
-        .single();
-      if (progErr) throw progErr;
-      program = newProgram;
-      mark("Save program metadata (insert)");
+      prepared = prepareDraftPlan(training, {
+        days_available: Number(client.days_available) || null,
+        template_days: template?.days || null,
+        weeks: template?.weeks || null,
+        session_config: sessionConfig,
+      });
+      mark("Validate AI training plan");
 
-      // 7. Replace previously AI-generated exercises (coach-added ones are never
-      //    touched), but PRESERVE any AI exercise that already has logged sets —
-      //    deleting it would cascade-delete the client's workout_logs
-      //    (exercise_id references exercises on delete cascade). Preserved
-      //    exercises are re-pointed at the new program so history stays visible.
-      //    lockedExercises/aiIds were computed in step 4, before generation.
-      preservedIds = lockedExercises.map((e) => e.id);
-      const deletableIds = aiIds.filter((id) => !preservedIds.includes(id));
-      if (deletableIds.length) {
-        const { error } = await supabaseAdmin.from("exercises").delete().in("id", deletableIds);
-        if (error) throw error;
-      }
-      if (preservedIds.length) {
-        await supabaseAdmin.from("exercises").update({ program_id: program.id }).in("id", preservedIds);
-      }
-      mark("Delete/preserve existing exercises");
-
-      // No schema/shape validation exists on the AI's parsed response before
-      // this point — `training.weekly_split` is used as-is. This loop is the
-      // closest thing to "program validation": it's where a malformed shape
-      // (e.g. missing `day.exercises`) would surface, via `(day.exercises ||
-      // []).forEach`. Timed separately from the DB insert below to confirm
-      // this pure-JS step isn't where time is going.
-      for (const day of training.weekly_split || []) {
-        (day.exercises || []).forEach((ex, i) => {
-          exercises.push({
-            client_id: trainingOwnerId,
-            program_id: program.id,
-            name: ex.name,
-            category: ex.category || day.focus || null,
-            section: ex.section || null,
-            exercise_type: ex.exercise_type || null,
-            day_of_week: normalizeDay(day.day),
-            sets: ex.sets ?? null,
-            reps: ex.reps != null ? String(ex.reps) : null,
-            is_bodyweight: !!ex.is_bodyweight,
-            notes: ex.notes || null,
-            order_index: i,
-            block_type: ex.block_type || "straight_set",
-            group_id: ex.group_id != null ? String(ex.group_id) : null,
-            source: "ai",
-          });
-        });
-      }
-      mark("Build exercise rows from AI response (program validation)");
-      if (exercises.length) {
-        const { error } = await supabaseAdmin.from("exercises").insert(exercises);
-        if (error) throw error;
-      }
-      mark("Save exercises (insert)");
+      // 7. Save it as a coach-review DRAFT. The active program and its
+      //    exercises (including any with logged history) are untouched until a
+      //    coach approves the draft.
+      prepared.warnings.unshift(...templateWarnings);
+      draftId = await saveProgramDraft(supabaseAdmin, {
+        clientId: trainingOwnerId, profileId: profile.id, createdBy: user.id,
+        template, plan: prepared.plan, warnings: prepared.warnings, sessionConfig: prepared.session_config,
+      });
+      const { data: latest } = await supabaseAdmin.from("programs").select("id").eq("client_id", trainingOwnerId)
+        .order("created_at", { ascending: false }).limit(1).maybeSingle();
+      program = latest || null;
+      mark("Save program draft");
     }
 
-    // 8. Replace the active nutrition plan.
-    await supabaseAdmin
-      .from("nutrition_plans")
-      .update({ active: false })
-      .eq("client_id", profile.id)
-      .eq("active", true);
-
-    const { error: nutErr } = await supabaseAdmin.from("nutrition_plans").insert({
+    // 8. Replace the active nutrition plan. The new plan is inserted (active)
+    //    BEFORE the old ones are deactivated, so a failure part-way can never
+    //    leave the client with no active plan.
+    const { data: newPlan, error: nutErr } = await supabaseAdmin.from("nutrition_plans").insert({
       client_id: profile.id,
       program_id: program?.id ?? null,
       name: nutrition.plan_name || "Nutrition Plan",
@@ -301,11 +257,18 @@ export default async function handler(req, res) {
         ? "General information, not individualized medical or dietetic advice. Check with a doctor before starting any supplement, especially if pregnant, on medication, or managing a health condition."
         : null,
       active: true,
-    });
+    }).select("id").single();
     if (nutErr) throw nutErr;
+    const { error: deactErr } = await supabaseAdmin
+      .from("nutrition_plans")
+      .update({ active: false })
+      .eq("client_id", profile.id)
+      .eq("active", true)
+      .neq("id", newPlan.id);
+    if (deactErr) throw deactErr;
     mark("Save nutrition plan");
 
-    // 9. Mark onboarding complete, sync the goal, and persist the resolved
+    // 9. Sync the goal and persist the resolved
     //    assessment (coerced to 1-10 ints; non-numeric Notion values -> null).
     if (!nutritionOnly) {
       await supabaseAdmin
@@ -314,7 +277,6 @@ export default async function handler(req, res) {
           // Preserve a coach-set (or previously stored) goal; only fall back to
           // the Notion intake goal when the profile has none yet.
           goal: profile.goal || client.goal || null,
-          onboarding_complete: true,
           nervous_system_recruitment: toScore(assessment.nervous_system_recruitment),
           muscular_density_to_size: toScore(assessment.muscular_density_to_size),
           metabolic_work_capacity: toScore(assessment.metabolic_work_capacity),
@@ -329,11 +291,12 @@ export default async function handler(req, res) {
     return res.status(200).json({
       success: true,
       scope: nutritionOnly ? "nutrition" : "full",
-      program: training?.program_name ?? null,
+      draft_id: draftId,
+      program: prepared?.plan.program_name ?? null,
       template: template?.name ?? null,
-      exercises_created: exercises.length,
-      exercises_preserved: preservedIds.length,
-      progression_model_used: training?.progression_model_used ?? null,
+      exercises_created: prepared ? prepared.plan.weekly_split.reduce((n, d) => n + d.exercises.length, 0) : 0,
+      warnings: prepared?.warnings ?? [],
+      progression_model_used: prepared?.plan.progression_model_used ?? null,
       meals_created: (nutrition.meals || []).length,
       calories: nutrition.daily_calories ?? null,
     });
@@ -342,6 +305,46 @@ export default async function handler(req, res) {
       `[generate-program timing] FAILED after ${(performance.now() - t0).toFixed(0)}ms —`,
       "generate-program error:", err, "client_email:", client_email
     );
+    if (err instanceof ProgramValidationError) return res.status(422).json({ error: err.message, issues: err.issues, existing_program_unchanged: true });
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
+    return res.status(500).json({ error: err.message || "Internal error" });
+  }
+}
+
+// Targeted revision of one day of an open draft.
+async function reviseDay(req, res, user, { draft_id, day, instruction }) {
+  if (!draft_id || !day || !String(instruction || "").trim()) return res.status(400).json({ error: "draft_id, day and instruction are required" });
+  if (String(instruction).length > 1500) return res.status(400).json({ error: "instruction is too long (max 1500 characters)" });
+  try {
+    const { data: draft, error } = await supabaseAdmin.from("program_drafts").select("*").eq("id", draft_id).maybeSingle();
+    if (error) throw error;
+    if (!draft) throw new HttpError(404, "Draft not found");
+    if (draft.status !== "draft") throw new HttpError(409, `This draft is already ${draft.status} — start a new one.`);
+    const current = (draft.payload?.weekly_split || []).find((d) => d.day === day);
+    if (!current) throw new HttpError(400, `${day} is not a training day in this draft`);
+    if (!draft.profile_id) throw new HttpError(409, "Draft has no client profile attached");
+    const { data: prof } = await supabaseAdmin.from("profiles").select("email").eq("id", draft.profile_id).maybeSingle();
+    if (!prof?.email) throw new HttpError(404, "Client profile not found");
+
+    const { assessed } = await loadClientContext(prof.email);
+    const revised = await reviseTrainingDay({ ...assessed, session_config: draft.session_config }, {
+      dayName: day, focus: current.focus, currentExercises: current.exercises,
+      otherDays: draft.payload.weekly_split.filter((d) => d.day !== day), instruction: String(instruction).trim(),
+    });
+    const next = applyDayRevision(draft, day, revised, String(instruction).trim());
+
+    // Guard on updated_at: if the coach saved an edit while the AI was working,
+    // refuse rather than overwrite it.
+    const { data: saved, error: upErr } = await supabaseAdmin.from("program_drafts")
+      .update({ payload: next.payload, revisions: next.revisions, updated_at: new Date().toISOString() })
+      .eq("id", draft.id).eq("status", "draft").eq("updated_at", draft.updated_at).select("id");
+    if (upErr) throw upErr;
+    if (!saved?.length) throw new HttpError(409, "The draft changed while the AI was revising it. Your edits were kept — run the revision again.");
+    return res.status(200).json({ success: true, day, summary: next.revisions[next.revisions.length - 1].summary, warnings: next.warnings });
+  } catch (err) {
+    console.error("revise_day error:", err);
+    if (err instanceof ProgramValidationError) return res.status(422).json({ error: err.message, issues: err.issues, draft_unchanged: true });
+    if (err instanceof HttpError) return res.status(err.status).json({ error: err.message });
     return res.status(500).json({ error: err.message || "Internal error" });
   }
 }
