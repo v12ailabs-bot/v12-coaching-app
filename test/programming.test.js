@@ -289,3 +289,37 @@ test("completion row builder trims note, validates status", () => {
   assert.equal(row.status, "completed"); assert.equal(row.note, "ok"); assert.equal(row.sets_logged, 7);
   assert.equal(buildCompletionRow({ clientId: "c", date: "d", status: "partial", note: "  " }).note, null);
 });
+
+import { summarizePreviousProgram, analyzeExercise } from "../src/lib/programming/previousProgram.js";
+test("previous program: lift trends, stalls, consistency and feedback make it into the briefing", () => {
+  const exercises = [
+    { id: "sq", name: "Back Squat", day_of_week: "Monday", sets: 4, reps: "5", section: "Main Compound Lift", is_bodyweight: false },
+    { id: "cu", name: "Curl", day_of_week: "Monday", sets: 3, reps: "12", section: "Isolation", is_bodyweight: false },
+    { id: "pu", name: "Pull-up", day_of_week: "Monday", sets: 3, reps: "8", is_bodyweight: true },
+    { id: "nl", name: "Never Done", day_of_week: "Monday" },
+  ];
+  const mk = (id, vals) => vals.map((w, i) => ({ exercise_id: id, date: `2026-10-${String(5 + i * 7).padStart(2, "0")}`, weight: w, reps: 5, sets: 1, set_type: "working" }));
+  const logs = [...mk("sq", [175, 185, 195, 205]), ...mk("cu", [30, 30, 30, 30]), { exercise_id: "pu", date: "2026-10-05", reps: 6, sets: 1 }, { exercise_id: "pu", date: "2026-10-12", reps: 8, sets: 1 },
+    { exercise_id: "sq", date: "2026-10-05", weight: 400, reps: 1, sets: 1, set_type: "warmup" }];
+  const r = summarizePreviousProgram({
+    program: { name: "Foundation", goal: "strength", weeks: 12, start_date: "2026-10-01", phase: "build" }, exercises, logs, today: "2026-11-02",
+    checkins: [{ date: "2026-10-05", weight: 190, energy: 7, sleep_hours: 7 }, { date: "2026-10-30", weight: 186, energy: 5 }],
+    weekly: [{ date: "2026-10-26", felt_weaker: "left shoulder cranky on press", adjustments: "more arms please" }],
+    completions: [{ date: "2026-10-05", status: "completed" }],
+  });
+  assert.equal(r.hasHistory, true);
+  assert.match(r.text, /Back Squat.*175 lb × 5 → 205 lb × 5 over 4 sessions \[progressing\]/);   // warm-up 400 ignored
+  assert.match(r.text, /Curl.*\[stalled\]/);
+  assert.match(r.text, /Pull-up.*6 reps → 8 reps/);
+  assert.match(r.text, /never logged: Never Done/i);
+  assert.match(r.text, /190 lb \(2026-10-05\) → 186 lb/);
+  assert.match(r.text, /left shoulder cranky/);
+  assert.match(r.text, /Unreported does NOT mean missed/);
+  assert.match(r.text, /TRANSITION RULES/);
+});
+test("previous program: no logs and no feedback = no briefing (new clients unaffected)", () => {
+  assert.equal(summarizePreviousProgram({ program: null, today: "2026-11-02" }).hasHistory, false);
+  const r = summarizePreviousProgram({ program: { name: "x", start_date: "2026-10-01" }, exercises: [{ id: "a", name: "A" }], today: "2026-11-02" });
+  assert.equal(r.hasHistory, false); assert.equal(r.text, null);
+  assert.equal(analyzeExercise({ id: "a", name: "A" }, []), null);
+});
