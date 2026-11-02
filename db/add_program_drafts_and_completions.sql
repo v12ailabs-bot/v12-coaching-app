@@ -50,7 +50,10 @@ drop policy if exists program_drafts_coach on program_drafts;
 create policy program_drafts_coach on program_drafts for all using (public.is_coach()) with check (public.is_coach());
 -- No client policy: clients never see unapproved drafts.
 
-create or replace function public.approve_program_draft(p_draft_id uuid)
+-- Replaces the 1-argument version from the first release (safe if it doesn't exist).
+drop function if exists public.approve_program_draft(uuid);
+
+create or replace function public.approve_program_draft(p_draft_id uuid, p_keep_exercise_ids uuid[] default null)
 returns uuid
 language plpgsql
 security definer
@@ -125,11 +128,19 @@ begin
     returning id into new_program_id;
   end if;
 
-  -- Previously AI-generated exercises: keep (and re-point) any with logged sets so
-  -- workout history is never cascade-deleted; replace only the unlogged ones.
+  -- Previously AI-generated exercises. Ones with logged sets are never deleted
+  -- (that would cascade-delete the client's history): the coach chooses which to
+  -- KEEP in the program (p_keep_exercise_ids); the rest are RETIRED — they leave
+  -- the client's workout screen but their logs stay on record. When no choice is
+  -- passed (null) every logged exercise is kept. Unlogged AI exercises are replaced.
   update exercises set program_id = new_program_id
    where client_id = d.client_id and source = 'ai' and retired_at is null
-     and exists (select 1 from workout_logs l where l.exercise_id = exercises.id);
+     and exists (select 1 from workout_logs l where l.exercise_id = exercises.id)
+     and (p_keep_exercise_ids is null or id = any (p_keep_exercise_ids));
+  update exercises set retired_at = now(), retired_reason = 'Replaced when the coach approved a new program'
+   where client_id = d.client_id and source = 'ai' and retired_at is null
+     and exists (select 1 from workout_logs l where l.exercise_id = exercises.id)
+     and p_keep_exercise_ids is not null and not (id = any (p_keep_exercise_ids));
   delete from exercises
    where client_id = d.client_id and source = 'ai' and retired_at is null
      and not exists (select 1 from workout_logs l where l.exercise_id = exercises.id);
@@ -157,8 +168,8 @@ begin
   return new_program_id;
 end;
 $$;
-revoke all on function public.approve_program_draft(uuid) from public;
-grant execute on function public.approve_program_draft(uuid) to authenticated;
+revoke all on function public.approve_program_draft(uuid, uuid[]) from public;
+grant execute on function public.approve_program_draft(uuid, uuid[]) to authenticated;
 
 -- A client's explicit "I finished this workout". Logging sets does NOT create one,
 -- and the absence of a row means "unreported", never "missed". One per client per

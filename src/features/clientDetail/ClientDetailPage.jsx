@@ -456,36 +456,38 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     await loadEx(trainOwnerId);
   };
 
-  // Runs the pipeline: Notion -> AI -> Supabase. scope "full" regenerates the
-  // whole program (training + nutrition); "nutrition" regenerates only the
-  // nutrition plan and leaves training + logged history untouched. The API
-  // already never deletes an AI exercise with logged history (see
-  // api/generate-program.js) — but the AI itself was blind to that when
-  // designing the new week, so it could reintroduce the same lift as a
-  // separate, duplicate exercise. Surface what's about to be kept up front
-  // (a heads-up, not a per-exercise picker) instead of letting that surprise
-  // the coach after the fact.
+  // Runs the pipeline: Notion -> AI -> draft. scope "full" builds a training
+  // DRAFT for the coach to review (the client keeps their current program until
+  // it is approved) and saves a new nutrition plan; "nutrition" regenerates only
+  // the nutrition plan. Which already-logged exercises to keep is decided at
+  // approval time in ProgramDraftReview, not here.
   const generateProgram = async(client, scope="full")=>{
-    if(scope==="full"){
-      const {data:aiEx} = await supabase.from("exercises").select("id,name,day_of_week").eq("client_id",trainOwnerId).eq("source","ai").is("retired_at", null);
-      const aiIds = (aiEx||[]).map(e=>e.id);
-      if(aiIds.length){
-        const {data:logged} = await supabase.from("workout_logs").select("exercise_id").in("exercise_id",aiIds);
-        const loggedIds = new Set((logged||[]).map(l=>l.exercise_id));
-        const keepers = (aiEx||[]).filter(e=>loggedIds.has(e.id));
-        if(keepers.length){
-          const list = keepers.map(e=>`${e.name}${e.day_of_week?` (${e.day_of_week})`:""}`).join("\n");
-          if(!window.confirm(`These ${keepers.length} exercise${keepers.length>1?"s":""} already have logged history and will be kept exactly as-is — the AI will design the rest of the program around them:\n\n${list}\n\nContinue?`)) return;
-        }
-      }
-    }
     setGenerating(true); setGenScope(scope); setGenMsg(null);
     try{
-      const r = await fetch("/api/generate-program",{
-        method:"POST",
-        headers:await authHeaders(),
-        body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope, session_config:scope==="nutrition"?undefined:sessionConfig}),
-      });
+      const startedAt = new Date().toISOString();
+      let r;
+      try{
+        r = await fetch("/api/generate-program",{
+          method:"POST",
+          headers:await authHeaders(),
+          body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope, session_config:scope==="nutrition"?undefined:sessionConfig}),
+        });
+      }catch(netErr){
+        // The browser lost the connection ("Load failed" / "Failed to fetch") — on a
+        // long request that does NOT mean generation failed: the server keeps working
+        // and saves the draft. Watch for it instead of reporting a false failure.
+        if(scope==="nutrition") throw new Error("Connection dropped before the nutrition plan finished — check the Nutrition tab, then retry if it didn't update.");
+        setGenMsg({ok:true,text:"Connection dropped — the server may still be building the draft. Checking for it…"});
+        let found = false;
+        for(let i=0;i<30 && !found;i++){
+          await new Promise(res=>setTimeout(res,6000));
+          const {data:d} = await supabase.from("program_drafts").select("id,payload").eq("client_id",trainOwnerId).eq("status","draft").gte("created_at",startedAt).maybeSingle();
+          if(d){ found = true; setGenMsg({ok:true,text:`Draft ready: "${d.payload?.program_name||"program"}" — the connection dropped but it was created. Review it below, then approve to assign it.`}); }
+        }
+        if(!found) throw new Error("Connection dropped and no draft appeared within 3 minutes. Nothing was changed for the client — try Generate again.");
+        setProgTick(t=>t+1);
+        return;
+      }
       const data = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
       if(data.scope==="nutrition"){
