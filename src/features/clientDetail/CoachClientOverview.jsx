@@ -3,7 +3,7 @@ import { supabase } from "../../supabaseClient.js";
 import { S, RADIUS, todayStr } from "../../theme.jsx";
 import { Card, CardTitle, StatusBadge, RG, Modal, Btn } from "../../components/ui/index.js";
 import {
-  adherenceFrom, nutritionStatusFrom, workoutAdherenceFrom, avgSleepHoursFrom,
+  adherenceFrom, nutritionStatusFrom, avgSleepHoursFrom,
   weightChangeFrom, programCalendarProgressFrom, habitAdherenceFrom, isHabitSatisfied,
   targetStatus, assessClientRisk,
 } from "../../lib/scoring.js";
@@ -11,6 +11,9 @@ import { CoachHabits } from "./sections/DailyHabitsSection.jsx";
 
 const MACRO_FIELDS = ["calories", "protein_g", "carbs_g", "fats_g"];
 const STATUS_TONE = { "On Target": "green", "Near Target": "amber", "Over Target": "red", "Above Target": "amber", "Under Target": "amber" };
+
+import { WorkoutExecutionCard } from "./WorkoutExecutionCard.jsx";
+import { workoutExecutionFrom, reportingActivityFrom } from "../../lib/workoutCompletion.js";
 
 function KeyInsightTile({ label, timeframe, value, unit, color }) {
   return (
@@ -44,6 +47,7 @@ export function CoachClientOverview({ client, onAddNote }) {
   const [habitLogs, setHabitLogs] = useState([]);
   const [planTarget, setPlanTarget] = useState({});
   const [mealLogs, setMealLogs] = useState([]);
+  const [execData, setExecData] = useState({ exercises: [], scheduled: [], completions: [] });
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState(14);
   const [showEditTargets, setShowEditTargets] = useState(false);
@@ -61,7 +65,11 @@ export function CoachClientOverview({ client, onAddNote }) {
       supabase.from("habit_logs").select("*").eq("client_id", client.id).gte("date", cut35),
       supabase.from("nutrition_plans").select("calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).eq("active", true).order("created_at", { ascending: false }).limit(1).maybeSingle(),
       supabase.from("meal_logs").select("date,calories,protein_g,carbs_g,fats_g").eq("client_id", client.id).gte("date", cut35),
-    ]).then(([p, d, w, g, h, hl, plan, ml]) => {
+      supabase.from("exercises").select("day_of_week,created_at").eq("client_id", client.shared_program_owner_id || client.id).is("retired_at", null),
+      supabase.from("scheduled_workouts").select("date,day_of_week").eq("client_id", client.id).gte("date", cut35),
+      supabase.from("workout_completions").select("date,status").eq("client_id", client.id).gte("date", cut35),
+    ]).then(([p, d, w, g, h, hl, plan, ml, ex, sw, wc]) => {
+      setExecData({ exercises: ex.data || [], scheduled: sw.data || [], completions: wc.data || [] });
       setMealLogs(ml.data || []);
       setProgram(p.data || null);
       setDaily(d.data || []);
@@ -96,7 +104,13 @@ export function CoachClientOverview({ client, onAddNote }) {
   const topFlag = risk.flags.find((f) => f.tone === "red") || risk.flags[0] || null;
 
   const checkInRate = adherenceFrom(daily, 30).score;
-  const workoutAdh = workoutAdherenceFrom(daily, 30);
+  const assignedWeekdays = new Set(execData.exercises.map((e) => e.day_of_week).filter(Boolean));
+  const firstAssigned = execData.exercises.reduce((m, e) => (e.created_at && (!m || e.created_at < m) ? e.created_at : m), null);
+  const exec = workoutExecutionFrom({
+    assignedWeekdays, scheduledRows: execData.scheduled, checkins: daily, completions: execData.completions,
+    days: 30, today, trackingStart: firstAssigned ? firstAssigned.slice(0, 10) : null,
+  });
+  const reporting = reportingActivityFrom({ dailyCheckins: daily, weeklyCheckins: weekly, mealLogs, habitLogs, days: 30, today });
   const weightChange = weightChangeFrom(weights, 30);
   const avgSleep = avgSleepHoursFrom(daily, 30);
   const nut = nutritionStatusFrom(daily, nutCtx, 30);
@@ -142,12 +156,14 @@ export function CoachClientOverview({ client, onAddNote }) {
       <Card style={{ marginBottom: 14 }}>
         <CardTitle>Key Insights</CardTitle>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
-          <KeyInsightTile label="Check-In Rate" timeframe="over the last 30 days" value={checkInRate} unit="%" color={S.accent} />
-          <KeyInsightTile label="Workout Adherence" timeframe="scheduled days, last 30 days" value={workoutAdh.score ?? "—"} unit={workoutAdh.score != null ? "%" : ""} color={S.accent2} />
+          <KeyInsightTile label="Check-In Rate" timeframe="days with a check-in · last 30 days" value={checkInRate} unit="%" color={S.accent} />
+          <KeyInsightTile label="Workouts Confirmed" timeframe={`of ${exec.assigned} assigned · ${exec.unreported} unreported`} value={exec.completed + exec.partial} color={S.accent2} />
           <KeyInsightTile label="Weight Change" timeframe="over the last 30 days" value={weightChange.delta != null ? (weightChange.delta > 0 ? "+" : "") + weightChange.delta.toFixed(1) : "—"} unit={weightChange.delta != null ? " lb" : ""} />
           <KeyInsightTile label="Avg Sleep" timeframe="over the last 30 days" value={avgSleep ?? "—"} unit={avgSleep != null ? "h" : ""} />
         </div>
       </Card>
+
+      <WorkoutExecutionCard exec={exec} reporting={reporting} days={30} />
 
       {habits.length > 0 && (
         <Card style={{ marginBottom: 14 }}>

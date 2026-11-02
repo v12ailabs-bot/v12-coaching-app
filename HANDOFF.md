@@ -313,3 +313,12 @@ A separate, much larger architecture spec was introduced 2026-09-23: an AI-drive
 - **A genuine escalation also surfaced during this investigation**: a real client's data (a 621-calorie/17g-protein day combined with 1 hour of sleep, followed by a week-long check-in gap and a missed workout) correctly triggered the AI's own `status: "escalate"` — it refused to diagnose or auto-adjust and flagged it for the coach to personally check on the client's wellbeing. Worth the coach's direct attention, independent of the bug fix.
 
 **This closes the full HC-001 through HC-025 execution order.** Every step is either built, applied, and live-verified, or explicitly and deliberately deferred with the reasoning documented in place. The core coaching loop (check-in → task → context → rules → safety gate → AI reasoning → validation → authority → recommendation → coach approval → outcome tracking) works end to end against real production data.
+
+## Workout-programming overhaul (2026-11)
+
+- **Draft → approve flow.** `/api/generate-program` now validates the AI plan (`src/lib/programming/validateProgram.js`) and saves it to `program_drafts`; it no longer touches `programs`/`exercises`. The coach edits/revises in `ProgramDraftReview` and approves via the `approve_program_draft` RPC (atomic; reuses the existing program row so roadmap phases/settings survive; keeps exercises with logged history). Needs `db/add_program_drafts_and_completions.sql` run in Supabase.
+- **Targeted revisions** use `POST /api/generate-program { action: "revise_day" }` (no new serverless function — still 12).
+- **Duration model**: `src/lib/programming/sessionDuration.js` (estimate, prep/coached/finish split, `shortenDay`). Notion templates' own "75-minute hard cap" sections are stripped in `api/_lib/notionTemplates.js`; the coach's session settings replace them.
+- **Completion**: `workout_completions` (explicit, one per client/date, never overwritten). Unreported ≠ missed — see `src/lib/workoutCompletion.js`.
+- **Check-ins** no longer save displayed defaults (`src/lib/checkinEntry.js`, null-aware `Sld`).
+- Tests: `npm test` (needs `--experimental-test-module-mocks`, already in the script) and `npm run test:program-drafts` (Docker Postgres).

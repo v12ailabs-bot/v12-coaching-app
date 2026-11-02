@@ -41,7 +41,7 @@ export async function createProgramVersion(clientId, label) {
     exercises: sortedExs.map((e) => ({
       name: e.name, category: e.category, section: e.section, day_of_week: e.day_of_week, sets: e.sets,
       reps: e.reps, is_bodyweight: e.is_bodyweight, notes: e.notes, order_index: e.order_index, source: e.source,
-      block_type: e.block_type, group_id: e.group_id,
+      block_type: e.block_type, group_id: e.group_id, rest_seconds: e.rest_seconds ?? null,
     })),
   };
   const { error } = await supabase.from("program_versions").insert({ client_id: clientId, program_id: program?.id || null, version, label, snapshot });
@@ -63,7 +63,7 @@ export async function restoreProgramVersion(clientId, v) {
       category: t.category ?? null, section: t.section ?? null, day_of_week: t.day_of_week ?? null, sets: t.sets ?? null,
       reps: t.reps ?? null, is_bodyweight: !!t.is_bodyweight, notes: t.notes ?? null,
       order_index: t.order_index ?? 0, source: t.source || "coach",
-      block_type: t.block_type || "straight_set", group_id: t.group_id ?? null,
+      block_type: t.block_type || "straight_set", group_id: t.group_id ?? null, rest_seconds: t.rest_seconds ?? null,
     };
     const match = curMap.get(key(t));
     if (match) { usedIds.add(match.id); await supabase.from("exercises").update(fields).eq("id", match.id); }

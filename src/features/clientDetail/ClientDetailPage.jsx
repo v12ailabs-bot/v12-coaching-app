@@ -7,6 +7,8 @@ import { ClientDetailHeader } from "./ClientDetailHeader.jsx";
 import { ClientQuickActionsRail } from "./ClientQuickActionsRail.jsx";
 import { CoachClientOverview } from "./CoachClientOverview.jsx";
 import { ProgramGenerateActions } from "./sections/ProgramGenerateActions.jsx";
+import { ProgramDraftReview } from "./sections/ProgramDraftReview.jsx";
+import { DEFAULT_SESSION_CONFIG } from "../../lib/programming/sessionDuration.js";
 import { SessionReminderCard } from "./sections/SessionReminderCard.jsx";
 import { ClientInsightCard } from "./sections/ClientInsightCard.jsx";
 import { ClientSettingsSection } from "./sections/ClientSettingsSection.jsx";
@@ -32,6 +34,9 @@ import { COACH_EMAIL } from "../../lib/constants.js";
 import { profileFieldsFromIntake } from "../../lib/leadIntake.js";
 
 // Coach-only API routes verify this Bearer token server-side (see api/_lib/auth.js).
+// Rest between sets: whole seconds 0-600, or null when blank/invalid.
+const restOrNull = (v)=>{ if(v===""||v==null) return null; const n=parseInt(v); return Number.isInteger(n)&&n>=0&&n<=600 ? n : null; };
+
 async function authHeaders() {
   const { data: { session } } = await supabase.auth.getSession();
   return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` };
@@ -99,7 +104,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const appliedSection = useRef(false);
   const [exercises, setExercises] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
-  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
+  const [newEx, setNewEx] = useState({name:"",category:"",day_of_week:"",sets:"",reps:"",rest_seconds:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
   const [editEx, setEditEx] = useState(null);   // {id, draft} | null
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -108,6 +113,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   const [genMsg, setGenMsg] = useState(null);
   const [templates, setTemplates] = useState([]);
   const [templateId, setTemplateId] = useState("");
+  const [sessionConfig, setSessionConfig] = useState(DEFAULT_SESSION_CONFIG);
   const [assess, setAssess] = useState({nervous_system_recruitment:5,muscular_density_to_size:5,metabolic_work_capacity:5});
   const [savingAssess, setSavingAssess] = useState(false);
   const [assessMsg, setAssessMsg] = useState(null);
@@ -391,7 +397,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     await supabase.from("exercises").insert({
       client_id:trainOwnerId, name:newEx.name.trim(), category:newEx.category.trim()||null,
       day_of_week:newEx.day_of_week||null, sets:parseInt(newEx.sets)||null,
-      reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null,
+      reps:newEx.reps.trim()||null, notes:newEx.notes.trim()||null, rest_seconds:restOrNull(newEx.rest_seconds),
       is_bodyweight:newEx.is_bodyweight, exercise_type:newEx.exercise_type||null,
       section:newEx.section||null, order_index:orderIndex, source:"coach",
       block_type:newEx.block_type||"straight_set", group_id:newEx.group_id.trim()||null,
@@ -402,7 +408,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     // coach can immediately add the next exercise into the same block instead
     // of having to re-select block type and retype the group label from memory.
     if (newEx.block_type !== "straight_set" && newEx.group_id.trim()) {
-      setNewEx(p=>({...p,name:"",category:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:""}));
+      setNewEx(p=>({...p,name:"",category:"",sets:"",reps:"",rest_seconds:"",notes:"",is_bodyweight:false,exercise_type:"",section:""}));
     } else {
       setNewEx({name:"",category:"",day_of_week:"",sets:"",reps:"",notes:"",is_bodyweight:false,exercise_type:"",section:"",block_type:"straight_set",group_id:""});
       setShowAdd(false);
@@ -436,14 +442,14 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
   };
   // Edit an assigned exercise in place — the coach's progression / customization knob.
   const startEditEx = (ex)=> setEditEx({id:ex.id, draft:{
-    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", notes:ex.notes||"", exercise_type:ex.exercise_type||"", section:ex.section||"",
+    day_of_week:ex.day_of_week||"", sets:ex.sets??"", reps:ex.reps||"", rest_seconds:ex.rest_seconds??"", notes:ex.notes||"", exercise_type:ex.exercise_type||"", section:ex.section||"",
     block_type:ex.block_type||"straight_set", group_id:ex.group_id||"",
   }});
   const saveEditEx = async()=>{
     const d = editEx.draft;
     await supabase.from("exercises").update({
       day_of_week:d.day_of_week||null, sets:parseInt(d.sets)||null,
-      reps:String(d.reps).trim()||null, notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null, section:d.section||null,
+      reps:String(d.reps).trim()||null, rest_seconds:restOrNull(d.rest_seconds), notes:String(d.notes).trim()||null, exercise_type:d.exercise_type||null, section:d.section||null,
       block_type:d.block_type||"straight_set", group_id:String(d.group_id||"").trim()||null,
     }).eq("id",editEx.id);
     setEditEx(null);
@@ -478,16 +484,14 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
       const r = await fetch("/api/generate-program",{
         method:"POST",
         headers:await authHeaders(),
-        body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope}),
+        body:JSON.stringify({client_email:client.email, template_id:scope==="nutrition"?undefined:(templateId||undefined), scope, session_config:scope==="nutrition"?undefined:sessionConfig}),
       });
       const data = await r.json().catch(()=>({}));
       if(!r.ok) throw new Error(data.error||`Request failed (${r.status})`);
       if(data.scope==="nutrition"){
         setGenMsg({ok:true,text:`Nutrition plan regenerated — ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}. Training program left unchanged.`});
       }else{
-        setGenMsg({ok:true,text:`Generated "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises, ${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}${data.exercises_preserved?` · kept ${data.exercises_preserved} exercise${data.exercises_preserved>1?"s":""} with logged history`:""}.`});
-        await loadEx(trainOwnerId);
-        await createProgramVersion(trainOwnerId, `AI generated${data.template?` · ${data.template}`:""}`);
+        setGenMsg({ok:true,text:`Draft ready: "${data.program}"${data.template?` from ${data.template}`:""} — ${data.exercises_created} exercises${data.warnings?.length?`, ${data.warnings.length} note${data.warnings.length>1?"s":""} to review`:""}. Review it below and approve to assign it; ${client.name||"the client"} still has their current program. Nutrition plan saved (${data.meals_created} meals${data.calories?`, ${data.calories} kcal/day`:""}).`});
       }
       setProgTick(t=>t+1);
     }catch(e){
@@ -585,7 +589,11 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                   {validTab === "program-phase" && (
                     <>
                       <ProgramGenerateActions client={client} templateId={templateId} setTemplateId={setTemplateId}
-                        templates={templates} generating={generating} genScope={genScope} genMsg={genMsg} onGenerate={generateProgram}/>
+                        templates={templates} generating={generating} genScope={genScope} genMsg={genMsg} onGenerate={generateProgram}
+                        sessionConfig={sessionConfig} setSessionConfig={setSessionConfig}/>
+                      <ProgramDraftReview client={client} trainOwnerId={trainOwnerId} authHeaders={authHeaders} refreshKey={progTick}
+                        generating={generating} onRegenerate={()=>generateProgram(client)}
+                        onApproved={async()=>{ await loadEx(trainOwnerId); setGenMsg({ok:true,text:"Program approved and assigned. The client now sees it in their workouts."}); setProgTick(t=>t+1); }}/>
                       {/* Section 11 — coach can control/modify a coaching
                           client's schedule directly; same component the
                           client uses to self-schedule. */}

@@ -255,6 +255,18 @@ Available: barbells, dumbbells, kettlebells, squat racks, benches, cable machine
 NOT available — never program these, and substitute an equivalent movement that preserves the same training stimulus: medicine balls (substitute a dumbbell/kettlebell slam or throw variant), battle ropes (substitute an air bike or kettlebell/dumbbell conditioning interval), sled pushes/pulls (substitute loaded carries, air bike sprints, or a heavy trap-bar/hex-bar drag if a hex bar is available, or resisted band walks), BikeErg/calorie bikes (substitute an air bike or RowErg/SkiErg for that conditioning piece).\n`;
 }
 
+// Session-time budget the coach configured for this client (see
+// src/lib/programming/sessionDuration.js). The AI is told the budget, but the
+// server re-estimates and the coach reviews it — this is guidance, not the check.
+export function sessionBlock(cfg) {
+  if (!cfg || !cfg.session_minutes) return "";
+  const prepNote = cfg.prep === "coached" ? "Warm-Up/Activation are part of the supervised session and count against the budget." : "Warm-Up and Activation are done INDEPENDENTLY by the client before the session and do NOT count against the budget — still program them (section \"Warm-Up\"/\"Activation\"), kept brief.";
+  const finishNote = cfg.finish === "coached" ? "Cooldown counts against the budget." : "Cooldown is done independently afterwards and does NOT count against the budget.";
+  const finisher = cfg.finisher_independent ? "Finisher work is done independently after the supervised session and does not count against the budget." : "";
+  return `SESSION TIME BUDGET — each training day's supervised/coached work (everything from Power/Plyometrics through Finisher) must realistically fit in ${cfg.session_minutes} minutes including rest between sets and moving between exercises. ${prepNote} ${finishNote} ${finisher}
+Size volume to the budget: a ${cfg.session_minutes}-minute session fits roughly ${Math.max(3, Math.round(cfg.session_minutes / 9))}-${Math.max(4, Math.round(cfg.session_minutes / 7))} coached exercises at normal rest. Prefer supersets for accessory work when time is tight. Never shorten the rest after heavy primary lifts to make time — remove lower-priority accessory work instead.\n\n`;
+}
+
 // Generates a 12-week V12 weekly training split tailored to the client and the
 // coach-selected template.
 // Stage 1 of training generation: decide the week's shape (day names + each
@@ -278,7 +290,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${buildProgressionCandidatesBlock(client.progression_candidates)}${
+${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${buildProgressionCandidatesBlock(client.progression_candidates)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
@@ -287,14 +299,14 @@ ${equipmentBlock(client)}${constraintBlock(client)}${buildProgressionCandidatesB
     ? `${client.program_template}\n\nUse this template as the framework. Replicate its WEEKLY SPLIT exactly — the same training days and each day's focus.\n`
     : "No template provided — design the week's days and each day's focus from the V12 method and the assessment.\n"
 }
-TASK: design ONLY this week's high-level structure — do NOT generate individual exercises yet, that happens in a later step. Across the week, all three V12 pillars (Powerlifting, Bodybuilding, Athletic/Conditioning) must appear across the days' focuses. days_per_week must match the client's "Training Days Per Week" above (or the template's day count, if a template is provided).
+TASK: design ONLY this week's high-level structure — do NOT generate individual exercises yet, that happens in a later step. Across the week, all three V12 pillars (Powerlifting, Bodybuilding, Athletic/Conditioning) must appear across the days' focuses. days_per_week and the number of weekly_split entries must EXACTLY match the template's day count if a template is provided, otherwise the client's "Training Days Per Week" above. Spread training days to allow recovery between sessions that load the same muscle groups (avoid back-to-back heavy days for the same pattern).
 
 OUTPUT FORMAT — respond with valid JSON only, no other text:
 {
   "program_name": "string",
   "goal": "string",
   "days_per_week": number,
-  "weeks": 12,
+  "weeks": ${client.template_weeks || 12},
   "progression_model_used": ${client.progression_candidates?.length ? '"the exact key of the model you chose from PROGRESSION MODEL above"' : "null"},
   "weekly_split": [
     {
@@ -341,7 +353,7 @@ ${V12_METHOD}
 
 ${clientProfileBlock(client)}
 
-${equipmentBlock(client)}${constraintBlock(client)}${buildChosenModelBlock(client.progression_candidates, skeleton.progression_model_used)}${
+${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${buildChosenModelBlock(client.progression_candidates, skeleton.progression_model_used)}${
   client.coach_assessment
     ? `COACH'S ONBOARDING ASSESSMENT (authoritative — the coach evaluated this client directly; prioritize it over inference when shaping the plan):\n${client.coach_assessment}\n\n`
     : ""
@@ -379,6 +391,8 @@ Requirements for the output:
 - RIR STANDARD: every exercise defaults to 2-3 RIR (Reps in Reserve) — across ALL phases and progression models — EXCEPT exercises in the "Finisher" section, which are programmed to failure (0 RIR) instead. State the RIR explicitly in that exercise's "notes" (e.g. "3x8 @ 2 RIR", or "to failure" for a Finisher).
 - Every programmed exercise must be safe given the client's listed injuries/limitations (see INJURY / LIMITATION SAFETY above); if none are listed, this imposes no restriction.
 - Match design complexity to the ADHERENCE & COACHING CONTEXT: low commitment/confidence -> a simpler, high-adherence split (fewer exercises, clear progression) over a maximally optimal one; high commitment/confidence -> more ambitious volume and variety. Where past barriers are listed, design around them (e.g. "time constraints" -> tighter sessions and supersets; "consistency" -> fewer, repeatable sessions; "motivation" -> visible weekly progression). Reflect the coaching-style preference (Direct / Supportive / Mixed) in the tone of exercise "notes".
+- Every exercise needs "sets" (whole number 1-12), "reps" (e.g. "5", "8-12", "30 sec", "AMRAP") and "rest_seconds" (whole number of seconds of rest BETWEEN SETS, 0-600: heavy primary lifts ~150-240, secondary ~90-150, accessories ~60-90, isolation ~45-60, conditioning ~30-60, warm-up/activation ~15-30). For a superset/circuit, "rest_seconds" is the rest after each full round.
+- Training experience and recovery: beginners get fewer exercises, simpler movements and lower weekly volume per muscle group; advanced clients tolerate more. Avoid stacking the same movement pattern heavily on consecutive days.
 - Tag block grouping on every exercise: "block_type" is one of "straight_set" (default, logged individually — weight+reps per set, rest between sets), "superset" (2+ exercises performed back-to-back as a group, rest logged once after the whole group), "circuit_for_time" (a for-time circuit — time only, no rest between exercises), "timed_circuit" (fixed time per exercise, e.g. 40 sec each, rest once per round), or "weighted_circuit" (same as timed_circuit but weight is also tracked per exercise). Exercises that are executed together as one group (a superset/circuit) share the same "group_id" (e.g. "A1"); straight-set exercises get a unique "group_id" equal to their own order in the day.
 
 OUTPUT FORMAT — respond with valid JSON only, no other text:
@@ -397,6 +411,7 @@ OUTPUT FORMAT — respond with valid JSON only, no other text:
           "group_id": "string (exercises performed together as one block share this value)",
           "sets": number,
           "reps": "string",
+          "rest_seconds": number,
           "is_bodyweight": boolean,
           "notes": "string"
         }
@@ -438,7 +453,7 @@ export async function generateTrainingPlan(client) {
   const __tSkeleton = performance.now();
   console.log(`[anthropic timing] generateTrainingPlan: skeleton done (${(__tSkeleton - __t0).toFixed(0)}ms), days_per_week=${skeleton.days_per_week}`);
 
-  const days = skeleton.weekly_split || [];
+  const days = Array.isArray(skeleton.weekly_split) ? skeleton.weekly_split : [];
   const groups = [];
   for (let i = 0; i < days.length; i += DETAIL_CHUNK_SIZE) {
     groups.push(days.slice(i, i + DETAIL_CHUNK_SIZE));
@@ -449,12 +464,19 @@ export async function generateTrainingPlan(client) {
   );
   console.log(`[anthropic timing] generateTrainingPlan: all detail groups done (${(performance.now() - __tSkeleton).toFixed(0)}ms)`);
 
+  // Each detail call covers exactly one day, so when it returns a single day we
+  // trust its exercises even if the AI altered the day label's casing/spelling —
+  // otherwise a "monday" vs "Monday" mismatch silently produced an empty day.
   const exercisesByDay = new Map();
-  for (const result of detailResults) {
-    for (const day of result.weekly_split || []) {
-      exercisesByDay.set(day.day, day.exercises || []);
+  detailResults.forEach((result, gi) => {
+    const returned = Array.isArray(result?.weekly_split) ? result.weekly_split : [];
+    const expected = groups[gi] || [];
+    if (expected.length === 1 && returned.length === 1) {
+      exercisesByDay.set(expected[0].day, returned[0]?.exercises || []);
+      return;
     }
-  }
+    for (const day of returned) exercisesByDay.set(day?.day, day?.exercises || []);
+  });
 
   const weekly_split = days.map((d) => ({
     day: d.day,
@@ -471,6 +493,52 @@ export async function generateTrainingPlan(client) {
     progression_model_used: skeleton.progression_model_used || null,
     weekly_split,
   };
+}
+
+// Targeted revision of ONE training day from a coach's instruction (e.g. "swap
+// the barbell work for dumbbells", "make this a shorter session"). Only the
+// requested day is sent back to the model and only that day is returned — the
+// caller replaces just that day in the draft, so other days are never rewritten.
+export async function reviseTrainingDay(client, { dayName, focus, currentExercises, otherDays, instruction }) {
+  const label = "reviseTrainingDay";
+  const message = await withTimeout(label, (signal) =>
+    anthropic.messages.create(
+      {
+        model: MODEL,
+        max_tokens: MAX_TOKENS,
+        messages: [{
+          role: "user",
+          content: `You are V12 Performance Systems, an elite hybrid-performance coaching AI. The coach is revising ONE day of a draft training program. Apply the coach's instruction to that day only.
+
+${V12_METHOD}
+
+${clientProfileBlock(client)}
+
+${equipmentBlock(client)}${constraintBlock(client)}${sessionBlock(client.session_config)}${
+  client.coach_assessment ? `COACH'S ONBOARDING ASSESSMENT (authoritative):\n${client.coach_assessment}\n\n` : ""
+}OTHER DAYS IN THIS WEEK (context only — do NOT change or output them):
+${otherDays.map((d) => `- ${d.day}: ${d.focus || ""} — ${d.exercises.map((e) => e.name).join(", ")}`).join("\n") || "(none)"}
+
+THE DAY TO REVISE — ${dayName} (${focus || "no focus label"}). Current exercises as JSON:
+${JSON.stringify(currentExercises)}
+
+COACH'S INSTRUCTION: ${instruction}
+
+Rules:
+- Change only what the instruction requires; keep every other exercise, set, rep and rest value exactly as is.
+- Keep the day name "${dayName}" and (unless the instruction says otherwise) its focus.
+- Stay within the client's equipment and injury constraints above — these override the coach's instruction if they conflict; if you cannot comply safely, keep the current exercise and explain why in its "notes".
+- Order exercises by phase: "Warm-Up", "Activation", "Power/Plyometrics", "Main Compound Lift", "Secondary Compound Lift", "Accessories", "Isolation", "Conditioning", "Finisher", "Cooldown".
+- Every exercise needs name, section (one of the phases above), category (Powerlifting | Bodybuilding | Power | Conditioning), exercise_type (Compound | Accessory | Circuit | Warmup), block_type (straight_set | superset | circuit_for_time | timed_circuit | weighted_circuit), group_id, sets (1-12), reps, rest_seconds (0-600), is_bodyweight, notes (with loading/RIR guidance).
+
+OUTPUT FORMAT — valid JSON only, no other text:
+{ "day": "${dayName}", "focus": "string", "summary": "one sentence describing what you changed", "exercises": [ { "name": "string", "category": "string", "section": "string", "exercise_type": "string", "block_type": "string", "group_id": "string", "sets": number, "reps": "string", "rest_seconds": number, "is_bodyweight": boolean, "notes": "string" } ] }`,
+        }],
+      },
+      { signal }
+    )
+  );
+  return parseJson(message.content[0].text, label);
 }
 
 // Generates a daily nutrition plan personalized to the client's goal (from their
