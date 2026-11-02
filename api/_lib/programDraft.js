@@ -20,6 +20,7 @@ export function prepareDraftPlan(rawPlan, { days_available, template_days, weeks
   const warnings = [...v.warnings, ...reviewProgramQuality(v.program, { days_available, template_days })];
   const cfg = normalizeSessionConfig(session_config);
   const estimates = estimateProgram(v.program, cfg);
+  estimates.filter((e) => e.fits && e.budget >= 45 && e.coached < e.budget * 0.6).forEach((e) => warnings.push({ path: e.day, message: `${e.day} is only about ${e.coached} min of coached work against a ${e.budget}-minute session — use "Revise day" to add work, or lower the session length.` }));
   estimates.filter((e) => !e.fits).forEach((e) => warnings.push({ path: e.day, message: `${e.day} is estimated at ${e.coached} min of coached work, over the ${e.budget}-minute budget.` }));
   return { plan: v.program, warnings, estimates, session_config: cfg };
 }

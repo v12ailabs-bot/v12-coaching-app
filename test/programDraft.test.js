@@ -84,3 +84,8 @@ test("an invalid day revision is rejected and leaves the draft unchanged", () =>
   assert.throws(() => applyDayRevision(draft, "Monday", { exercises: [] }, "x"), ProgramValidationError);
   assert.equal(draft.payload.weekly_split[0].exercises[0].name, "Back Squat");
 });
+
+test("a day far under the session budget gets an advisory note", () => {
+  const r = prepareDraftPlan(good, { session_config: { session_minutes: 90, arrangement: "independent_online" } });
+  assert.ok(r.warnings.some((w) => /only about \d+ min of coached work against a 90-minute session/.test(w.message)));
+});

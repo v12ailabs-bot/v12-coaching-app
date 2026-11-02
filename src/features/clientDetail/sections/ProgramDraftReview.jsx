@@ -28,6 +28,7 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
   const [showDiff, setShowDiff] = useState(false);
   const [instr, setInstr] = useState({});         // per-day AI instruction text
   const [custom, setCustom] = useState(false);
+  const [keepPrompt, setKeepPrompt] = useState(null); // { items:[{id,name,day,sets,reps,logCount,lastDate,sameNameInDraft}], keep:Set } while the coach chooses
 
   const load = useCallback(async () => {
     const { data } = await supabase.from("program_drafts").select("*").eq("client_id", trainOwnerId).eq("status", "draft").maybeSingle();
@@ -78,26 +79,48 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
     flash(r.fits, r.fits ? `${day} trimmed to fit.` : `${day} trimmed as far as the primary lifts allow (${r.after} min) — still over budget.`);
   };
 
+  // Step 1: validate, then — if the client's current program has exercises with
+  // logged history — ask the coach which to keep and which to retire.
   const approve = () => run("approve", async () => {
     const v = validateTrainingPlan(plan);
     if (!v.ok) { setIssues(v.errors); throw new Error("Fix the highlighted problems before approving."); }
     setIssues(null);
-    const replacing = await supabase.from("exercises").select("id", { count: "exact", head: true }).eq("client_id", trainOwnerId).is("retired_at", null);
-    const ok = window.confirm(
-      `Approve and assign "${v.program.program_name}" to ${client.name || client.email}?\n\n` +
-      `This replaces their current AI-generated exercises${replacing.count ? ` (${replacing.count} active)` : ""}. Exercises with logged history are kept, coach-added exercises are untouched, and a restore point is saved first.`);
-    if (!ok) return;
-    // Save the validated/normalised plan, snapshot the current program so it can be
-    // restored, then do the atomic swap server-side.
-    const { error: upErr } = await supabase.from("program_drafts").update({ payload: v.program, session_config: cfg, updated_at: new Date().toISOString() }).eq("id", draft.id).eq("status", "draft");
+    const { data: current } = await supabase.from("exercises").select("id,name,day_of_week,sets,reps").eq("client_id", trainOwnerId).eq("source", "ai").is("retired_at", null);
+    const ids = (current || []).map((e) => e.id);
+    const { data: logs } = ids.length ? await supabase.from("workout_logs").select("exercise_id,date").in("exercise_id", ids) : { data: [] };
+    const stats = new Map();
+    (logs || []).forEach((l) => { const s = stats.get(l.exercise_id) || { n: 0, last: "" }; s.n++; if (l.date > s.last) s.last = l.date; stats.set(l.exercise_id, s); });
+    const draftNames = new Set(v.program.weekly_split.flatMap((d) => d.exercises.map((e) => e.name.trim().toLowerCase())));
+    const items = (current || []).filter((e) => stats.has(e.id)).map((e) => ({
+      ...e, logCount: stats.get(e.id).n, lastDate: stats.get(e.id).last, sameNameInDraft: draftNames.has(String(e.name).trim().toLowerCase()),
+    }));
+    if (items.length) {
+      // Default: keep a logged exercise unless the new program already contains it
+      // (then the new version replaces it; the old one's history stays on record).
+      setKeepPrompt({ items, keep: new Set(items.filter((i) => !i.sameNameInDraft).map((i) => i.id)) });
+      return;
+    }
+    if (!window.confirm(`Approve and assign "${v.program.program_name}" to ${client.name || client.email}?\n\nIt becomes their active program (a restore point is saved first). Their existing exercises have no logged history, so they are simply replaced; coach-added exercises are untouched.`)) return;
+    await finishApprove(v.program, []);
+  });
+
+  // Step 2: the atomic swap. keepIds = logged exercises the coach chose to keep.
+  const finishApprove = async (program, keepIds) => {
+    const { error: upErr } = await supabase.from("program_drafts").update({ payload: program, session_config: cfg, updated_at: new Date().toISOString() }).eq("id", draft.id).eq("status", "draft");
     if (upErr) throw upErr;
     await createProgramVersion(trainOwnerId, "Before approving AI draft");
-    const { error } = await supabase.rpc("approve_program_draft", { p_draft_id: draft.id });
+    const { error } = await supabase.rpc("approve_program_draft", { p_draft_id: draft.id, p_keep_exercise_ids: keepIds });
     if (error) throw error;
     await createProgramVersion(trainOwnerId, `AI draft approved${draft.template_name ? ` · ${draft.template_name}` : ""}`);
-    setDraft(null); setPlan(null);
+    setKeepPrompt(null); setDraft(null); setPlan(null);
     onApproved?.();
+  };
+  const confirmKeep = () => run("approve", async () => {
+    const v = validateTrainingPlan(plan);
+    if (!v.ok) { setKeepPrompt(null); setIssues(v.errors); throw new Error("Fix the highlighted problems before approving."); }
+    await finishApprove(v.program, [...keepPrompt.keep]);
   });
+  const toggleKeep = (id) => setKeepPrompt((p) => { const keep = new Set(p.keep); keep.has(id) ? keep.delete(id) : keep.add(id); return { ...p, keep }; });
 
   const discard = () => run("discard", async () => {
     if (!window.confirm("Discard this draft? The client's current program is not affected.")) return;
@@ -141,6 +164,28 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
           <summary style={{ cursor: "pointer" }}>{draft.warnings.length} programming note{draft.warnings.length > 1 ? "s" : ""} from the checker (advisory)</summary>
           <div style={{ color: S.muted, marginTop: 6 }}>{draft.warnings.map((w, i) => <div key={i}>• {w.message}</div>)}</div>
         </details>
+      )}
+
+      {keepPrompt && (
+        <div style={{ background: S.surface2, border: "1px solid " + S.warning, padding: 14, margin: "12px 0", borderRadius: RADIUS.sm }}>
+          <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Which current exercises should stay?</div>
+          <div style={{ fontSize: 12, color: S.muted, marginBottom: 10 }}>
+            These exercises in {client.name || "the client"}'s current program have logged workouts. Tick the ones to <b>keep</b> in the program alongside the new plan. Unticked ones are removed from their workout screen — their logged history stays on record. Exercises with no logs are simply replaced.
+          </div>
+          {keepPrompt.items.map((i) => (
+            <label key={i.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "8px 0", borderTop: "1px solid " + S.border, cursor: "pointer" }}>
+              <input type="checkbox" checked={keepPrompt.keep.has(i.id)} onChange={() => toggleKeep(i.id)} style={{ marginTop: 3 }} />
+              <span style={{ fontSize: 13 }}>
+                <b>{i.name}</b> <span style={{ color: S.muted }}>· {i.day_of_week || "unscheduled"}{i.sets ? ` · ${i.sets}×${i.reps || "?"}` : ""} · {i.logCount} set{i.logCount === 1 ? "" : "s"} logged, last {i.lastDate}</span>
+                {i.sameNameInDraft && <span style={{ display: "block", fontSize: 11, color: S.warning }}>The new program also includes this exercise — keeping both would duplicate it.</span>}
+              </span>
+            </label>
+          ))}
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+            <Btn teal onClick={confirmKeep} disabled={!!busy}>{busy === "approve" ? "Approving…" : `Approve — keep ${keepPrompt.keep.size}, remove ${keepPrompt.items.length - keepPrompt.keep.size}`}</Btn>
+            <button style={ghost} onClick={() => setKeepPrompt(null)} disabled={!!busy}>Cancel</button>
+          </div>
+        </div>
       )}
 
       {/* Session length / who supervises what */}

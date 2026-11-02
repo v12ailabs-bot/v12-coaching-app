@@ -148,57 +148,32 @@ export default async function handler(req, res) {
     const sessionConfig = normalizeSessionConfig(session_config);
     mark("Fetch program template");
 
-    // 4. Full-scope only: find which of the client's current AI exercises
-    //    already have logged history BEFORE generating the new plan, so the
-    //    AI can design the week around them instead of the old flow, where
-    //    this was only discovered after generation and the AI had already
-    //    (unknowingly) reintroduced the same lift as a separate exercise.
-    //    Preserve an exercise if ANY partner has logged sets against it (logs
-    //    are per-client but the exercise rows are shared), so regenerating one
-    //    partner's program never destroys the other partner's history.
-    let aiIds = [];
-    let lockedExercises = [];
-    // Carry the client's current nested phase (and coach-set phase note/start
-    // date) forward from their most recent program — without this, every
-    // regenerate silently resets phase tracking to blank, which defeats the
-    // point of phase-aware generation. Also drives which progression models
-    // are candidates for this generation (see progression_models table,
-    // coach-editable via the Progression Models panel).
-    let carriedPhase = { top_phase: "foundation", sub_phase: "foundation", phase: null, phase_note: null, start_date: null };
+    // 4. Full-scope only: the client's current phase decides which progression
+    //    models are candidates for this generation (progression_models table,
+    //    coach-editable via the Progression Models panel). Logged exercises are
+    //    NOT designed around any more — the AI plans freely, and when the coach
+    //    approves the draft they choose which logged exercises to keep or retire.
     let progressionCandidates = [];
     if (!nutritionOnly) {
-      const [{ data: aiExercises }, { data: previousProgram }] = await Promise.all([
-        supabaseAdmin.from("exercises").select("id, name, day_of_week, sets, reps").eq("client_id", trainingOwnerId).eq("source", "ai").is("retired_at", null),
-        supabaseAdmin.from("programs").select("top_phase, sub_phase, phase, phase_note, start_date")
-          .eq("client_id", trainingOwnerId).order("created_at", { ascending: false }).limit(1).maybeSingle(),
-      ]);
-      if (previousProgram) carriedPhase = { ...carriedPhase, ...previousProgram };
+      const { data: previousProgram } = await supabaseAdmin.from("programs").select("top_phase")
+        .eq("client_id", trainingOwnerId).order("created_at", { ascending: false }).limit(1).maybeSingle();
       const { data: models } = await supabaseAdmin.from("progression_models").select("key, label, methodology")
-        .eq("top_phase", carriedPhase.top_phase).eq("is_active", true);
+        .eq("top_phase", previousProgram?.top_phase || "foundation").eq("is_active", true);
       progressionCandidates = models || [];
-      aiIds = (aiExercises || []).map((e) => e.id);
-      if (aiIds.length) {
-        const { data: logged } = await supabaseAdmin.from("workout_logs").select("exercise_id").in("exercise_id", aiIds);
-        const loggedIds = new Set((logged || []).map((l) => l.exercise_id));
-        lockedExercises = (aiExercises || []).filter((e) => loggedIds.has(e.id));
-      }
     }
-    mark("Fetch exercise database (locked-exercise lookup + phase/progression-model lookup)");
+    mark("Phase/progression-model lookup");
+
     // What the client did on their last program, so the new block is a real
     // continuation (loads, progressed/stalled lifts, consistency, feedback).
     const briefing = nutritionOnly ? null : await loadPreviousProgramBriefing(supabaseAdmin, { trainingOwnerId, profileId: profile.id });
     mark("Previous-program briefing");
-    const lockedExercisesText = lockedExercises.length
-      ? lockedExercises.map((e) => `- ${e.name} (${e.day_of_week || "unscheduled"}${e.sets ? `, ${e.sets}x${e.reps || "?"}` : ""})`).join("\n")
-      : null;
-    mark("Progression/locked-exercise logic");
 
     // 5. Generate the plan(s). Nutrition-only skips the training generation;
     //    full mode runs both concurrently.
     const [training, nutrition] = nutritionOnly
       ? [null, await generateNutritionPlan(assessed)]
       : await Promise.all([
-          generateTrainingPlan({ ...assessed, program_template: templateText, template_weeks: template?.weeks || null, session_config: sessionConfig, previous_program_text: briefing?.text || null, locked_exercises_text: lockedExercisesText, progression_candidates: progressionCandidates }),
+          generateTrainingPlan({ ...assessed, program_template: templateText, template_weeks: template?.weeks || null, session_config: sessionConfig, previous_program_text: briefing?.text || null, progression_candidates: progressionCandidates }),
           generateNutritionPlan(assessed),
         ]);
     mark("Generate training + nutrition plans (Anthropic, combined)");

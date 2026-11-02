@@ -10,12 +10,14 @@ create table programs (id uuid primary key default gen_random_uuid(), client_id 
   top_phase text, sub_phase text, phase text, phase_note text, start_date date, progression_model_key text, created_at timestamptz default now());
 create table exercises (id uuid primary key default gen_random_uuid(), client_id uuid references profiles(id) on delete cascade, program_id uuid references programs(id) on delete set null,
   name text not null, category text, day_of_week text, sets int, reps text, is_bodyweight boolean default false, notes text, order_index int default 0, source text default 'coach',
-  section text, exercise_type text, block_type text not null default 'straight_set', group_id text, retired_at timestamptz);
+  section text, exercise_type text, block_type text not null default 'straight_set', group_id text, retired_at timestamptz, retired_reason text);
 create table workout_logs (id uuid primary key default gen_random_uuid(), client_id uuid, exercise_id uuid not null references exercises(id) on delete cascade, date date, sets int, reps int, weight numeric);
 grant usage on schema public, auth to authenticated;
 
 \i /work/db/add_program_drafts_and_completions.sql
 \i /work/db/add_program_drafts_and_completions.sql
+\i /work/db/update_approve_program_draft_keep_choice.sql
+\i /work/db/update_approve_program_draft_keep_choice.sql
 grant all on all tables in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated;
 
@@ -86,6 +88,35 @@ select approve_program_draft('30000000-0000-0000-0000-000000000002');
 reset role;
 select assert((select count(*) from programs where client_id='00000000-0000-0000-0000-0000000000a2' and name='First' and weeks=12) = 1, 'first program created with default weeks');
 select assert((select count(*) from exercises where client_id='00000000-0000-0000-0000-0000000000a2' and name='Squat' and rest_seconds is null) = 1, 'missing rest stays null');
+
+-- 3c. Coach chooses: keep one logged exercise, retire the other. Nothing with logs is deleted.
+reset role;
+insert into exercises (id, client_id, program_id, name, day_of_week, sets, reps, source) values
+ ('20000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Keep Me','Monday',3,'5','ai'),
+ ('20000000-0000-0000-0000-0000000000b2','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Retire Me','Monday',3,'5','ai'),
+ ('20000000-0000-0000-0000-0000000000b3','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Unlogged','Monday',3,'5','ai');
+insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) values
+ ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b1','2026-10-02',1,5,100),
+ ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b2','2026-10-02',1,5,100);
+insert into program_drafts (id, client_id, profile_id, payload, original_payload) values ('30000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-0000000000a2',
+ '{"program_name":"Second","weekly_split":[{"day":"Tuesday","exercises":[{"name":"New Lift","sets":3,"reps":"5"}]}]}','{}');
+set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-00000000000c',false);
+select approve_program_draft('30000000-0000-0000-0000-000000000003', array['20000000-0000-0000-0000-0000000000b1']::uuid[]);
+reset role;
+select assert((select retired_at is null from exercises where id='20000000-0000-0000-0000-0000000000b1'), 'chosen exercise stays active');
+select assert((select retired_at is not null and retired_reason is not null from exercises where id='20000000-0000-0000-0000-0000000000b2'), 'unchosen logged exercise is retired, not deleted');
+select assert((select count(*) from workout_logs where exercise_id='20000000-0000-0000-0000-0000000000b2') = 1, 'retired exercise keeps its history');
+select assert((select count(*) from exercises where id='20000000-0000-0000-0000-0000000000b3') = 0, 'unlogged exercise replaced');
+select assert((select count(*) from exercises where name='New Lift') = 1, 'new exercises added');
+
+-- 3d. Old one-argument call still keeps every logged exercise.
+update exercises set retired_at = null where id='20000000-0000-0000-0000-0000000000b2';
+insert into program_drafts (id, client_id, profile_id, payload, original_payload) values ('30000000-0000-0000-0000-000000000004','00000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-0000000000a2',
+ '{"program_name":"Third","weekly_split":[{"day":"Tuesday","exercises":[{"name":"Newer Lift","sets":3,"reps":"5"}]}]}','{}');
+set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-00000000000c',false);
+select approve_program_draft('30000000-0000-0000-0000-000000000004');
+reset role;
+select assert((select count(*) from exercises where id in ('20000000-0000-0000-0000-0000000000b1','20000000-0000-0000-0000-0000000000b2') and retired_at is null) = 2, 'no choice passed = keep all logged');
 
 -- 4. A draft cannot be approved twice.
 set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-00000000000c',false);
