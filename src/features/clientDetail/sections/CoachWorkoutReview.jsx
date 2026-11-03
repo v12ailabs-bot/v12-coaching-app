@@ -6,6 +6,8 @@ import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay, Log
 import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
+import { METHODS } from "../../../lib/progression/methods.js";
+import { seedProgressionForClient } from "../../../lib/progression/data.js";
 import { ProgressionPanel } from "./ProgressionPanel.jsx";
 import { StrengthRecordEditor } from "./StrengthRecordEditor.jsx";
 import { fetchStrengthMemory } from "../../../lib/strengthMemory.js";
@@ -43,6 +45,9 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
           </div>
           <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
             {[exercise.sets != null ? `${exercise.sets} sets` : null, exercise.reps ? `${exercise.reps} reps` : null, Number.isInteger(exercise.rest_seconds) ? `rest ${exercise.rest_seconds}s` : null].filter(Boolean).join(" · ") || "No sets/reps set"}
+          </div>
+          <div style={{ fontSize: 11, marginTop: 2, color: exercise.progression_method ? S.accent2 : S.muted }}>
+            {exercise.progression_method ? `Progression: ${METHODS[exercise.progression_method]?.name || exercise.progression_method}` : "No progression method"}
           </div>
           {recordText && <div style={{ fontSize: 11, color: S.accent2, marginTop: 2 }}>{recordText}</div>}
         </div>
@@ -107,9 +112,12 @@ function ReviewDay({ dayGroup, logsByExercise, clientId, memory, onMemoryChanged
 // entries — instead of one long always-visible list, so the coach isn't
 // scrolling past every exercise on every visit. Reuses the exact same chart
 // components the client sees (WeightOverTimeChart/TopSetRepsChart).
-export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onEditProgram, onMessageClient }) {
+export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onEditProgram, onMessageClient, onExercisesChanged }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [phase, setPhase] = useState(null);
+  const [modelKey, setModelKey] = useState(null);
+  const [seedMsg, setSeedMsg] = useState(null);
+  const [seeding, setSeeding] = useState(false);
   const [daily, setDaily] = useState([]);
   const [logsByExercise, setLogsByExercise] = useState({});
   const [memory, setMemory] = useState(null);
@@ -118,8 +126,8 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
   useEffect(() => { loadMemory(); }, [loadMemory, exercises]);
 
   useEffect(() => {
-    supabase.from("programs").select("phase").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => setPhase(data?.phase || null));
+    supabase.from("programs").select("phase,progression_model_key").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => { setPhase(data?.phase || null); setModelKey(data?.progression_model_key || null); });
     supabase.from("daily_checkins").select("date,workout").eq("client_id", clientId).order("date")
       .then(({ data }) => setDaily(data || []));
   }, [clientId]);
@@ -134,6 +142,14 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
     });
   }, [clientId, exercises]);
 
+  const unset = exercises.filter((e) => !e.progression_method).length;
+  const seed = async () => {
+    setSeeding(true); setSeedMsg(null);
+    const r = await seedProgressionForClient({ clientId, modelKey });
+    setSeeding(false);
+    setSeedMsg(r.error ? { ok: false, text: r.error } : { ok: true, text: `Set ${r.assigned} exercise${r.assigned === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} left for you to set by hand (the model needs coach setup, or it is bodyweight, a warm-up, a superset, or has no rep range)` : ""}${r.failed ? `; ${r.failed} failed` : ""}.` });
+    onExercisesChanged?.();
+  };
   const adh = adherenceFrom(daily, 30);
   const dayGroups = groupByDay(exercises);
 
@@ -154,6 +170,13 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
         expanded={reviewOpen} onToggle={setReviewOpen}>
         {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} memory={memory} onMemoryChanged={loadMemory} />)}
       </CollapsibleSection>
+      {unset > 0 && (
+        <div style={{ marginTop: 14, fontSize: 12, color: S.muted, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span>{unset} exercise{unset === 1 ? " has" : "s have"} no progression method{modelKey ? <> · program model: <b>{modelKey}</b></> : " · this program has no progression model"}.</span>
+          {modelKey && <Btn sm teal onClick={seed} disabled={seeding}>{seeding ? "Setting up..." : "Auto-set from program model"}</Btn>}
+        </div>
+      )}
+      {seedMsg && <div style={{ marginTop: 6, fontSize: 12, color: seedMsg.ok ? S.accent2 : S.danger }}>{seedMsg.text}</div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
         <Btn onClick={onGenerateProgram}>Generate/Regenerate Workout</Btn>
         <button onClick={onEditProgram} style={{ padding: "9px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.text }}>Edit Program</button>

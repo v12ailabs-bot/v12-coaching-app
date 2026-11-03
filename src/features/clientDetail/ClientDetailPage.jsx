@@ -608,7 +608,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
                         <CoachWorkoutReview clientId={trainOwnerId} exercises={exercises}
                           onGenerateProgram={()=>{ if(window.confirm(`Generate a new AI program for ${client.name||client.email} now?`)) generateProgram(client); }}
                           onEditProgram={()=>document.getElementById("exercises-section-anchor")?.scrollIntoView({behavior:"smooth",block:"start"})}
-                          onMessageClient={()=>setShowMessageModal(true)}/>
+                          onMessageClient={()=>setShowMessageModal(true)} onExercisesChanged={()=>loadEx(trainOwnerId)}/>
                       </div>
                       <ProgramPhase clientId={trainOwnerId} onOpenRoadmap={()=>openOverviewSection("program-roadmap")} />
                       <div id="exercises-section-anchor">
