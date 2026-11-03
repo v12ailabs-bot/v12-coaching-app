@@ -36,7 +36,7 @@ export function withinReviewWindow(dateStr) {
 export function LogEntryList({ rows }) {
   if (!rows.length) return <div style={{ fontSize: 12, color: S.muted, padding: "8px 0" }}>No sessions in the last {REVIEW_WINDOW_DAYS} days.</div>;
   return (
-    <div style={{ maxHeight: rows.length > 5 ? 220 : "none", overflowY: rows.length > 5 ? "auto" : "visible", border: "1px solid " + S.border }}>
+    <div style={{ maxHeight: rows.length > 5 ? 220 : "none", overflowY: rows.length > 5 ? "auto" : "visible", overflowX: "auto", border: "1px solid " + S.border }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <tbody>
           {rows.map((r, i) => (
