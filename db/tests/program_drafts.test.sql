@@ -22,6 +22,8 @@ create table program_phases (id uuid primary key);
 \i /work/db/update_approve_program_draft_keep_choice.sql
 \i /work/db/update_approve_program_draft_keep_choice.sql
 \i /work/db/fix_stale_phase_drafts.sql
+\i /work/db/update_approve_retire_all_previous.sql
+\i /work/db/update_approve_retire_all_previous.sql
 grant all on all tables in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated;
 
@@ -77,7 +79,7 @@ select assert((select status from phase_prescription_drafts where phase_id='5000
 select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000001') = 1, 'logged exercise preserved');
 select assert((select count(*) from workout_logs) = 1, 'workout history preserved');
 select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000002') = 0, 'unlogged AI exercise replaced');
-select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000003') = 1, 'coach-added exercise untouched');
+select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000003') = 0, 'unlogged coach-added exercise is replaced too (no more leftovers)');
 select assert((select count(*) from exercises where client_id='00000000-0000-0000-0000-0000000000a1' and source='ai' and name in ('Row','Curl')) = 2, 'new exercises inserted');
 select assert((select rest_seconds from exercises where name='Row') = 90, 'rest_seconds saved');
 select assert((select count(*) from programs where client_id='00000000-0000-0000-0000-0000000000a1') = 1, 'existing program row reused, not duplicated');
@@ -101,10 +103,13 @@ reset role;
 insert into exercises (id, client_id, program_id, name, day_of_week, sets, reps, source) values
  ('20000000-0000-0000-0000-0000000000b1','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Keep Me','Monday',3,'5','ai'),
  ('20000000-0000-0000-0000-0000000000b2','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Retire Me','Monday',3,'5','ai'),
- ('20000000-0000-0000-0000-0000000000b3','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Unlogged','Monday',3,'5','ai');
+ ('20000000-0000-0000-0000-0000000000b3','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Unlogged','Monday',3,'5','ai'),
+ ('20000000-0000-0000-0000-0000000000b4','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Coach Logged','Monday',3,'5','coach'),
+ ('20000000-0000-0000-0000-0000000000b5','00000000-0000-0000-0000-0000000000a2',(select id from programs where client_id='00000000-0000-0000-0000-0000000000a2'),'Coach Unlogged','Monday',3,'5','coach');
 insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) values
  ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b1','2026-10-02',1,5,100),
- ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b2','2026-10-02',1,5,100);
+ ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b2','2026-10-02',1,5,100),
+ ('00000000-0000-0000-0000-0000000000a2','20000000-0000-0000-0000-0000000000b4','2026-10-02',1,5,100);
 insert into program_drafts (id, client_id, profile_id, payload, original_payload) values ('30000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-0000000000a2','00000000-0000-0000-0000-0000000000a2',
  '{"program_name":"Second","weekly_split":[{"day":"Tuesday","exercises":[{"name":"New Lift","sets":3,"reps":"5"}]}]}','{}');
 set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-00000000000c',false);
@@ -115,6 +120,9 @@ select assert((select retired_at is not null and retired_reason is not null from
 select assert((select count(*) from workout_logs where exercise_id='20000000-0000-0000-0000-0000000000b2') = 1, 'retired exercise keeps its history');
 select assert((select count(*) from exercises where id='20000000-0000-0000-0000-0000000000b3') = 0, 'unlogged exercise replaced');
 select assert((select count(*) from exercises where name='New Lift') = 1, 'new exercises added');
+select assert((select retired_at is not null from exercises where id='20000000-0000-0000-0000-0000000000b4'), 'logged coach exercise is retired, not deleted');
+select assert((select count(*) from workout_logs where exercise_id='20000000-0000-0000-0000-0000000000b4') = 1, 'its history is kept');
+select assert((select count(*) from exercises where id='20000000-0000-0000-0000-0000000000b5') = 0, 'unlogged coach exercise is replaced');
 
 -- 3d. Old one-argument call still keeps every logged exercise.
 update exercises set retired_at = null where id='20000000-0000-0000-0000-0000000000b2';

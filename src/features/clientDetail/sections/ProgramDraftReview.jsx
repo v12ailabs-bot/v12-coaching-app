@@ -94,7 +94,7 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
     ]);
     const carry = planCarryOver({ current: current || [], milestones: goals || [], plan: v.program });
     if (carry.length) { setCarryPrompt({ items: carry.map((c) => ({ ...c, on: true })) }); return; }
-    if (!window.confirm(`Approve and assign "${v.program.program_name}" to ${client.name || client.email}?\n\nIt becomes their active program (a restore point is saved first). Their previous program's exercises are retired — logged history stays on record. Coach-added exercises are untouched.`)) return;
+    if (!window.confirm(`Approve and assign "${v.program.program_name}" to ${client.name || client.email}?\n\nIt becomes their active program (a restore point is saved first). ALL of their previous exercises (including any added by hand) are replaced — exercises with logged history are retired, not deleted, so history stays on record.`)) return;
     await finishApprove(v.program);
   });
 
