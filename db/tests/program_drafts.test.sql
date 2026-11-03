@@ -14,10 +14,14 @@ create table exercises (id uuid primary key default gen_random_uuid(), client_id
 create table workout_logs (id uuid primary key default gen_random_uuid(), client_id uuid, exercise_id uuid not null references exercises(id) on delete cascade, date date, sets int, reps int, weight numeric);
 grant usage on schema public, auth to authenticated;
 
+-- stubs for the tables the combined migration's activation function is declared against
+create table phase_prescription_drafts (phase_id uuid primary key, program_id uuid, status text not null default 'draft', updated_at timestamptz default now(), exercises jsonb);
+create table program_phases (id uuid primary key);
 \i /work/db/add_program_drafts_and_completions.sql
 \i /work/db/add_program_drafts_and_completions.sql
 \i /work/db/update_approve_program_draft_keep_choice.sql
 \i /work/db/update_approve_program_draft_keep_choice.sql
+\i /work/db/fix_stale_phase_drafts.sql
 grant all on all tables in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated;
 
@@ -62,11 +66,14 @@ select throws($$ select approve_program_draft('30000000-0000-0000-0000-000000000
 reset role;
 select assert((select status from program_drafts where id='30000000-0000-0000-0000-000000000002') = 'draft', 'failed approval leaves draft open');
 
+insert into phase_prescription_drafts (phase_id, program_id, status) values ('50000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','draft'), ('50000000-0000-0000-0000-000000000002','10000000-0000-0000-0000-000000000001','approved');
 -- 3. Approving swaps atomically, preserves logged + coach exercises, carries the phase.
 set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-00000000000c',false);
 select approve_program_draft('30000000-0000-0000-0000-000000000001');
 reset role;
 select assert((select status from program_drafts where id='30000000-0000-0000-0000-000000000001') = 'approved', 'draft approved');
+select assert((select status from phase_prescription_drafts where phase_id='50000000-0000-0000-0000-000000000001') = 'superseded', 'unapplied phase draft marked out of date');
+select assert((select status from phase_prescription_drafts where phase_id='50000000-0000-0000-0000-000000000002') = 'approved', 'an already-applied phase draft is left alone');
 select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000001') = 1, 'logged exercise preserved');
 select assert((select count(*) from workout_logs) = 1, 'workout history preserved');
 select assert((select count(*) from exercises where id='20000000-0000-0000-0000-000000000002') = 0, 'unlogged AI exercise replaced');

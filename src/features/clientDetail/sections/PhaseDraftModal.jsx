@@ -31,7 +31,7 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
   };
   useEffect(() => { loadTransition(); }, [phase.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const rpcError = (error) => (error?.message || "").replace(/^EXIT_CRITERIA_INCOMPLETE: /, "");
+  const rpcError = (error) => (error?.message || "").replace(/^(EXIT_CRITERIA_INCOMPLETE|STALE_DRAFT): /, "");
   const startActivation = async () => {
     setMsg(null); setActivating(true);
     const { data, error } = await supabase.rpc("activate_phase_draft", { p_phase_id: phase.id, p_override_note: null, p_dry_run: true });
@@ -78,7 +78,7 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
   const build = async () => {
     if (draft && !window.confirm("Rebuild the draft from the plan? Your edits to this draft will be replaced.")) return;
     setMsg(null);
-    const { data: current, error } = await supabase.from("exercises").select("*").eq("program_id", program.id).order("order_index");
+    const { data: current, error } = await supabase.from("exercises").select("*").eq("program_id", program.id).is("retired_at", null).order("order_index"); // retired exercises must never seed a draft (they would be resurrected on activation)
     if (error) { setMsg({ ok: false, text: error.message }); return; }
     const built = buildPhaseDraft(current || [], phase.planned_changes || []);
     setDraft({ ...built, status: "draft" });
@@ -99,6 +99,8 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
   const days = draft ? [...new Set(draft.exercises.map((e) => e.day_of_week || "Unscheduled"))] : [];
   const sortDays = (a, b) => (DAYS.indexOf(a) === -1 ? 99 : DAYS.indexOf(a)) - (DAYS.indexOf(b) === -1 ? 99 : DAYS.indexOf(b));
   const approved = draft?.status === "approved";
+  // Marked out of date when a new program was approved after this draft was built (its exercises came from the old program).
+  const stale = draft?.status === "superseded";
 
   return (
     <Modal title={`Draft workouts — ${phase.phase}`} onClose={() => { if (!dirty || window.confirm("Discard unsaved changes to this draft?")) onClose(); }} width={720}>
@@ -115,6 +117,7 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
       ) : (
         <>
           {approved && <div style={{ fontSize: 12, color: S.warning, marginBottom: 8 }}>This draft was already approved.</div>}
+          {stale && <div style={{ fontSize: 12, color: S.warning, marginBottom: 8, lineHeight: 1.5 }}>Out of date: a new program was approved after this draft was made, so its exercises come from the old program and activating it would bring them back. Rebuild it from the plan to continue.</div>}
           {draft.unapplied.length > 0 && (
             <div style={{ border: "1px solid " + S.warning, borderRadius: RADIUS.md, padding: "8px 12px", marginBottom: 12 }}>
               <div style={{ fontSize: 11, fontWeight: 700, color: S.warning, textTransform: "uppercase", letterSpacing: 1, marginBottom: 4 }}>Planned changes that couldn't be applied</div>
@@ -149,7 +152,7 @@ export function PhaseDraftModal({ phase, program, clientId, onClose }) {
             {msg && <span style={{ fontSize: 12, color: msg.ok ? S.accent2 : S.danger }}>{msg.text}</span>}
           </div>
 
-          {!approved && (
+          {!approved && !stale && (
             <div style={{ marginTop: 16, borderTop: "1px solid " + S.border, paddingTop: 14 }}>
               <div style={{ fontSize: 11, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 6 }}>Make this the active phase</div>
               <div style={{ fontSize: 12, color: S.muted, lineHeight: 1.6, marginBottom: 8 }}>Changes the client's real workouts and current phase. You'll see exactly what changes first, and you can undo it afterwards.</div>

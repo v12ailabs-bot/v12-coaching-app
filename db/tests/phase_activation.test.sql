@@ -15,10 +15,13 @@ create table program_phases (id uuid primary key default gen_random_uuid(), prog
 create table program_phase_history (id uuid primary key default gen_random_uuid(), program_id uuid, client_id uuid, phase text, phase_note text, changed_by text, changed_at timestamptz default now(), week_start int, week_end int);
 grant usage on schema public, auth to authenticated;
 
+create table program_drafts (id uuid primary key);   -- stub: the combined migration's approve function is declared against it
 \i /work/db/add_phase_prescription_drafts.sql
 \i /work/db/add_phase_activation.sql
 -- idempotent re-run
 \i /work/db/add_phase_activation.sql
+\i /work/db/fix_stale_phase_drafts.sql
+\i /work/db/fix_stale_phase_drafts.sql
 grant all on all tables in schema public to authenticated, service_role;
 grant execute on all functions in schema public to authenticated;
 
@@ -137,3 +140,19 @@ select activate_phase_draft('bbbbbbbb-0000-0000-0000-000000000003');  -- Strengt
 select throws($$select undo_phase_transition((select id from phase_transitions where to_phase = 'Strength' and status = 'applied'))$$, 'later phase transition');
 select assert((select phase from programs) = 'Performance', 'still on the latest phase');
 select 'ALL PHASE ACTIVATION TESTS PASSED' as result;
+
+-- ------------------------------------- stale draft (the Manar bug): source exercise retired after the draft was built
+update phase_prescription_drafts set exercises = '[
+  {"name":"Bench Press","day_of_week":"Monday","sets":4,"reps":"5","source_exercise_id":"e0000000-0000-0000-0000-000000000002"},
+  {"name":"Row","day_of_week":"Wednesday","sets":3,"reps":"10","source_exercise_id":"e0000000-0000-0000-0000-000000000003"}]', status = 'draft';
+update exercises set retired_at = now(), retired_reason = 'Replaced when the coach approved a new program' where id = 'e0000000-0000-0000-0000-000000000003';
+select count(*) as active_before from exercises where retired_at is null \gset
+set role authenticated; select set_config('test.uid','00000000-0000-0000-0000-0000000000c0',false);
+select throws($$select activate_phase_draft('bbbbbbbb-0000-0000-0000-000000000002')$$, 'STALE_DRAFT');
+select throws($$select activate_phase_draft('bbbbbbbb-0000-0000-0000-000000000002', null, true)$$, 'STALE_DRAFT');
+reset role;
+select assert((select count(*) from exercises where retired_at is null) = :active_before, 'a refused stale draft changes nothing');
+select assert((select count(*) from exercises where name = 'Row' and retired_at is null) = 0, 'the retired exercise was NOT resurrected');
+select assert((select status from phase_prescription_drafts where phase_id = 'bbbbbbbb-0000-0000-0000-000000000002') = 'draft', 'draft left untouched');
+\echo phase activation stale-draft checks passed
+
