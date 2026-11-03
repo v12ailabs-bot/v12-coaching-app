@@ -7,12 +7,14 @@ import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
 import { ProgressionPanel } from "./ProgressionPanel.jsx";
+import { fetchStrengthMemory } from "../../../lib/strengthMemory.js";
+import { exerciseKey, describeRecord } from "../../../lib/strengthRecords.js";
 
 // One exercise's own header row + expandable charts/log-entry list — used
 // standalone for a straight-set exercise, and once per member for a
 // superset/circuit block, so each exercise in a group gets its own best-lift,
 // trend, and charts instead of only the block's first member.
-function ExerciseRow({ exercise, logs, clientId }) {
+function ExerciseRow({ exercise, logs, clientId, memory }) {
   const [open, setOpen] = useState(false);
   const chartData = topSetPerDay(logs, exercise.is_bodyweight);
   const dataKey = exercise.is_bodyweight ? "reps" : "weight";
@@ -21,6 +23,10 @@ function ExerciseRow({ exercise, logs, clientId }) {
   const trend = last && prev && last[dataKey] != null && prev[dataKey] != null
     ? (last[dataKey] > prev[dataKey] ? "up" : last[dataKey] < prev[dataKey] ? "down" : "flat")
     : null;
+  // What this client has proven on this lift — survives the exercise being deleted/replaced,
+  // so a freshly generated exercise with no logs yet still shows their history.
+  const record = memory?.get(exerciseKey(exercise.name)) || null;
+  const recordText = describeRecord(record);
   const reviewRows = logs
     .filter((l) => withinReviewWindow(l.date))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -37,9 +43,10 @@ function ExerciseRow({ exercise, logs, clientId }) {
           <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
             {[exercise.sets != null ? `${exercise.sets} sets` : null, exercise.reps ? `${exercise.reps} reps` : null, Number.isInteger(exercise.rest_seconds) ? `rest ${exercise.rest_seconds}s` : null].filter(Boolean).join(" · ") || "No sets/reps set"}
           </div>
+          {recordText && <div style={{ fontSize: 11, color: S.accent2, marginTop: 2 }}>{recordText}</div>}
         </div>
         <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>
-          {last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : "No data"}
+          {last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : record ? "Past data" : "No data"}
         </div>
         <div style={{ width: 20, textAlign: "center", fontSize: 13, fontWeight: 700, color: trend === "up" ? S.accent2 : trend === "down" ? S.danger : S.muted, flexShrink: 0 }}>
           {trend === "up" ? "↑" : trend === "down" ? "↓" : trend === "flat" ? "→" : ""}
@@ -52,7 +59,7 @@ function ExerciseRow({ exercise, logs, clientId }) {
             <WeightOverTimeChart chartData={chartData} isBodyweight={exercise.is_bodyweight} />
             <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(exercise.reps)} />
           </div>
-          <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} />
+          <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} memoryRecord={record} />
           <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Last {REVIEW_WINDOW_DAYS} Days</div>
           <LogEntryList rows={reviewRows} />
         </div>
@@ -65,28 +72,28 @@ function ExerciseRow({ exercise, logs, clientId }) {
 // ExerciseRow; a merged superset/circuit renders a label plus one
 // independent ExerciseRow per member, so lat pulldowns and pull-ups done
 // together each show their own best lift/weight/reps, same as standalone.
-function ReviewItem({ item, logsByExercise, clientId }) {
+function ReviewItem({ item, logsByExercise, clientId, memory }) {
   const isGroup = item.members.length > 1;
   if (!isGroup) {
     const exercise = item.members[0];
-    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} clientId={clientId} />;
+    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} clientId={clientId} memory={memory} />;
   }
   return (
     <div>
       <div style={{ padding: "10px 4px 2px", fontSize: 10, color: S.accent2, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>{BLOCK_TYPE_LABEL[item.blockType]}</div>
-      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} clientId={clientId} />)}
+      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} clientId={clientId} memory={memory} />)}
     </div>
   );
 }
 
 // One training day — closed by default; opens into its blocks (supersets
 // merged into one entry, per groupIntoBlocks).
-function ReviewDay({ dayGroup, logsByExercise, clientId }) {
+function ReviewDay({ dayGroup, logsByExercise, clientId, memory }) {
   const [open, setOpen] = useState(false);
   const items = groupIntoBlocks(dayGroup.exercises);
   return (
     <CollapsibleSection title={dayGroup.label} summary={`${items.length} item${items.length === 1 ? "" : "s"}`} expanded={open} onToggle={setOpen}>
-      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} clientId={clientId} />)}
+      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} clientId={clientId} memory={memory} />)}
     </CollapsibleSection>
   );
 }
@@ -102,6 +109,9 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
   const [phase, setPhase] = useState(null);
   const [daily, setDaily] = useState([]);
   const [logsByExercise, setLogsByExercise] = useState({});
+  const [memory, setMemory] = useState(null);
+
+  useEffect(() => { let live = true; fetchStrengthMemory(clientId).then((m) => { if (live) setMemory(m); }); return () => { live = false; }; }, [clientId, exercises]);
 
   useEffect(() => {
     supabase.from("programs").select("phase").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
@@ -138,7 +148,7 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
         title="Workout Review"
         summary={`${phase ? `Phase: ${phase}` : "No phase set"} · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
         expanded={reviewOpen} onToggle={setReviewOpen}>
-        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} />)}
+        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} memory={memory} />)}
       </CollapsibleSection>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
         <Btn onClick={onGenerateProgram}>Generate/Regenerate Workout</Btn>

@@ -4,6 +4,7 @@ import { latestSessionRows } from "./engine.js";
 import { decideRecommendation } from "./decisions.js";
 import { planTaper, applyTaperOverride, evaluateTaperWatch } from "./taper.js";
 import { todayStr } from "../dates.js";
+import { planSeed } from "./seed.js";
 
 // Thin Supabase layer around the pure engine. Nothing here is wired into the UI
 // yet (Slice 1). Writes go to progression_recommendations (coach-only RLS) —
@@ -71,6 +72,26 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
   const { data, error: insErr } = await supabase.from("progression_recommendations").insert(row).select().single();
   if (insErr) return { sessionDate: keyDate, calcResult, error: insErr.message };
   return { sessionDate: keyDate, calcResult, stored: data };
+}
+
+// Gives every active exercise that has no progression method yet a starting method +
+// config derived from the program's model (see seed.js), through the same
+// assign_progression_method function the coach's panel uses, so each assignment lands
+// in the method history. Never overwrites a method the coach already chose and never
+// sets the client-visible target weight. Returns counts so the UI can say what happened.
+export async function seedProgressionForClient({ clientId, modelKey }) {
+  if (!modelKey) return { assigned: 0, skipped: 0, failed: 0 };
+  const { data: exs, error } = await supabase.from("exercises").select("*").eq("client_id", clientId).is("retired_at", null).is("progression_method", null);
+  if (error) return { assigned: 0, skipped: 0, failed: 0, error: error.message };
+  const { assign, skipped } = planSeed(exs || [], modelKey);
+  let assigned = 0, failed = 0;
+  for (const a of assign) {
+    const { error: e } = await supabase.rpc("assign_progression_method", {
+      p_exercise_id: a.exercise.id, p_method: a.method, p_config: a.config, p_reason: `Set automatically when the program was approved (model: ${modelKey}).`,
+    });
+    if (e) failed++; else assigned++;
+  }
+  return { assigned, skipped: skipped.length, failed };
 }
 
 // Most recent stored recommendations for an exercise (newest first) — the
