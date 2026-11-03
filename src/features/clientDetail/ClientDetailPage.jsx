@@ -150,9 +150,9 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     await loadClients();
   };
   const loadEx = async(id)=>{
-    // No .order() here — groupByDay (src/lib/constants.js) owns exercise
-    // ordering (by phase, then order_index) once grouped by day.
-    const {data} = await supabase.from("exercises").select("*").eq("client_id",id).is("retired_at", null);
+    // groupByDay (src/lib/constants.js) owns exercise ordering (phase, order_index, then created_at/id as a
+    // stable tie-break); the explicit order here just keeps the raw list deterministic too.
+    const {data} = await supabase.from("exercises").select("*").eq("client_id",id).is("retired_at", null).order("created_at").order("id");
     setExercises(data||[]);
   };
 

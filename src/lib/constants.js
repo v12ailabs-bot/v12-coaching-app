@@ -175,7 +175,11 @@ export function groupByDay(list) {
     })
     .map((day) => ({
       day,
-      exercises: byDay[day].slice().sort((a, b) => phaseRankOf(a) - phaseRankOf(b) || (a.order_index ?? 0) - (b.order_index ?? 0)),
+      // Ties on phase + position (common: several exercises sharing an order_index) must NOT fall back to the
+      // order the database happens to return rows in — that changes whenever a row is updated, which made the
+      // list reshuffle after unrelated edits. created_at then id gives every list one fixed order.
+      exercises: byDay[day].slice().sort((a, b) => phaseRankOf(a) - phaseRankOf(b) || (a.order_index ?? 0) - (b.order_index ?? 0)
+        || String(a.created_at || "").localeCompare(String(b.created_at || "")) || String(a.id || "").localeCompare(String(b.id || ""))),
       label: day === "Unscheduled" ? "Unscheduled" : `Day ${++n}`,
     }));
 }
