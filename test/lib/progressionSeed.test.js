@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseRepTarget, guessEquipment, presetFor, planSeed } from "../../src/lib/progression/seed.js";
+import { apreVariantFor, parseRepTarget, guessEquipment, presetFor, planSeed } from "../../src/lib/progression/seed.js";
 import { evaluateProgression } from "../../src/lib/progression/methods.js";
 import { exerciseKey, describeRecord, memoryLoad } from "../../src/lib/strengthRecords.js";
 
@@ -26,17 +26,27 @@ test("seeding skips what can't be derived safely", () => {
   assert.match(presetFor(ex({ reps: "10" }), "double_progression").skip, /rep range/);
   assert.match(presetFor(ex({ is_bodyweight: true }), "double_progression").skip, /Bodyweight/);
   assert.match(presetFor(ex({ section: "Warm-Up" }), "double_progression").skip, /Not a loaded/);
-  assert.match(presetFor(ex({ block_type: "superset" }), "double_progression").skip, /Superset/);
+  assert.match(presetFor(ex({ block_type: "timed_circuit" }), "double_progression").skip, /circuits/);
   assert.match(presetFor(ex({ progression_method: "linear_progression" }), "double_progression").skip, /Already/);
-  for (const m of ["percentage_based", "conjugate", "density_progression", "performance_taper"]) assert.match(presetFor(ex(), m).skip, /coach setup/, m);
+  for (const m of ["percentage_based", "conjugate", "density_progression", "performance_taper"]) assert.match(presetFor(ex({ exercise_type: "Compound", section: "Main Compound Lift" }), m).skip, /coach setup/, m);
   assert.match(presetFor(ex(), null).skip, /no progression model/);
 });
 
-test("APRE seeds only compound lifts on a published rep target", () => {
-  const squat = ex({ name: "Back Squat", exercise_type: "Compound", reps: "6", section: "Main Compound Lift" });
-  assert.deepEqual(presetFor(squat, "apre"), { method: "apre_6", config: { stepMode: "low", equipment: "barbell" } });
-  assert.match(presetFor({ ...squat, reps: "5" }, "apre").skip, /3, 6 or 10/);
-  assert.match(presetFor({ ...squat, exercise_type: "Accessory" }, "apre").skip, /compound/);
+test("superset members are seeded; accessories get double progression under any model", () => {
+  assert.equal(presetFor(ex({ block_type: "superset", reps: "12-15" }), "apre").method, "double_progression");
+  assert.equal(presetFor(ex(), "percentage_based").method, "double_progression");
+  assert.match(presetFor(ex({ reps: "12 each side" }), "apre").skip, /rep range/);
+});
+
+test("APRE picks the variant from messy real rep text", () => {
+  assert.equal(apreVariantFor("10-12"), 10);
+  assert.equal(apreVariantFor("8, 8, AMRAP"), 6);
+  assert.equal(apreVariantFor("Set 1-2: 3 reps, Set 3: AMRAP"), 3);
+  assert.equal(apreVariantFor("5"), 6);
+  assert.equal(apreVariantFor("AMRAP"), null);
+  const squat = ex({ name: "Back Squat", exercise_type: "Compound", reps: "10-12", section: "Main Compound Lift" });
+  assert.deepEqual(presetFor(squat, "apre"), { method: "apre_10", config: { stepMode: "low", equipment: "barbell" } });
+  assert.match(presetFor({ ...squat, reps: "AMRAP" }, "apre").skip, /rep target/);
 });
 
 test("planSeed splits assignments from skips", () => {

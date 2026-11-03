@@ -91,7 +91,9 @@ export async function seedProgressionForClient({ clientId, modelKey }) {
     });
     if (e) failed++; else assigned++;
   }
-  return { assigned, skipped: skipped.length, failed };
+  const reasons = {};
+  skipped.forEach((x) => { reasons[x.reason] = (reasons[x.reason] || 0) + 1; });
+  return { assigned, skipped: skipped.length, failed, reasons };
 }
 
 // Most recent stored recommendations for an exercise (newest first) — the
