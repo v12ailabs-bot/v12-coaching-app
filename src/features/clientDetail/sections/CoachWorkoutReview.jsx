@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
-import { S } from "../../../theme.jsx";
+import { S, useIsMobile } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, CollapsibleSection } from "../../../components/ui/index.js";
 import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay, LogEntryList, withinReviewWindow, REVIEW_WINDOW_DAYS } from "../../workouts/WorkoutCharts.jsx";
 import { adherenceFrom } from "../../../lib/scoring.js";
@@ -19,6 +19,7 @@ import { exerciseKey, describeRecord } from "../../../lib/strengthRecords.js";
 // trend, and charts instead of only the block's first member.
 function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
   const chartData = topSetPerDay(logs, exercise.is_bodyweight);
   const dataKey = exercise.is_bodyweight ? "reps" : "weight";
   const last = chartData[chartData.length - 1];
@@ -61,7 +62,7 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
       </button>
       {open && (
         <div style={{ padding: "4px 4px 16px" }}>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div style={{ display: "grid", gridTemplateColumns: isMobile ? "minmax(0,1fr)" : "1fr 1fr", gap: 16, marginBottom: 16 }}>
             <WeightOverTimeChart chartData={chartData} isBodyweight={exercise.is_bodyweight} />
             <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(exercise.reps)} />
           </div>

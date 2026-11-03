@@ -1,6 +1,7 @@
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceArea, ResponsiveContainer } from "recharts";
 import { S, TT } from "../../theme.jsx";
 import { CC, Btn } from "../../components/ui/index.js";
+import { shouldLabel } from "../../lib/chartLabels.js";
 
 // Shared by the client-facing Workouts page and the coach's mobile/desktop
 // Workout Review (Section 9) — one chart implementation, not two, per the
@@ -91,6 +92,7 @@ export function WeightOverTimeChart({ chartData, isBodyweight, onLogFirst, compa
               label={(props) => {
                 const isLast = props.index === chartData.length - 1;
                 if (compact && !isLast) return null;
+                if (!shouldLabel(props.index, chartData.length)) return null;
                 return (
                   <text key={"lbl"+props.index} x={props.x} y={props.y - (compact ? 6 : 10)} textAnchor="middle"
                     fontSize={compact ? 10 : 10} fontWeight={isLast ? 700 : 500} fill={isLast ? S.accent2 : S.text}>
@@ -126,6 +128,7 @@ export function TopSetRepsChart({ chartData, targetRange, onLogFirst, compact })
               label={(props) => {
                 const isLast = props.index === chartData.length - 1;
                 if (compact && !isLast) return null;
+                if (!shouldLabel(props.index, chartData.length)) return null;
                 return (
                   <text key={"lbl"+props.index} x={props.x + props.width / 2} y={props.y - (compact ? 4 : 6)} textAnchor="middle"
                     fontSize={10} fontWeight={isLast ? 700 : 500} fill={S.text}>
