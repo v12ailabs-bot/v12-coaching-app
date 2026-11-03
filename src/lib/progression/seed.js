@@ -4,9 +4,10 @@
 //
 // Only what can be derived from the exercise's own prescription is seeded:
 //   double_progression -> a rep RANGE ("8-12") + sets on a loaded, straight-set exercise
-//   apre               -> a main lift whose rep target is exactly 3, 6 or 10 (the published variants)
-// Everything else (percentage-based needs a verified 1RM, conjugate needs a role/lift/wave,
-// density/taper are plan-level) is reported as skipped so the coach sets it, never guessed.
+//   apre               -> a main compound lift; the 3/6/10RM variant is picked from its rep text
+// Accessories with a rep range get double progression whatever the model. Percentage-based needs a
+// verified 1RM, conjugate a role/lift/wave, density/taper are plan-level: those main lifts are reported
+// as skipped so the coach sets them, never guessed.
 
 const NON_LOADED_SECTIONS = new Set(["warm-up", "activation", "cooldown", "conditioning", "finisher", "power/plyometrics"]);
 const APRE_REPS = new Set([3, 6, 10]);
@@ -17,6 +18,17 @@ export function parseRepTarget(reps) {
   if (m) { const min = Number(m[1]), max = Number(m[2]); return min >= 1 && max >= min ? { min, max } : null; }
   m = s.match(/^(\d{1,3})$/);
   return m && Number(m[1]) >= 1 ? { fixed: Number(m[1]) } : null;
+}
+
+// APRE comes in 3RM / 6RM / 10RM variants. Real prescriptions are messy ("10-12", "8, 8, AMRAP",
+// "Set 1-2: 3 reps, Set 3: AMRAP"), so take the working rep numbers in the text (ignoring AMRAP / sets
+// labels) and pick the variant whose band they fall in: <=4 -> 3RM, 5-8 -> 6RM, 9+ -> 10RM.
+export function apreVariantFor(reps) {
+  const text = String(reps ?? "").toLowerCase().replace(/set\s*\d+(\s*[-–]\s*\d+)?\s*:/g, " ");
+  const nums = (text.match(/\d+/g) || []).map(Number).filter((n) => n >= 1 && n <= 30);
+  if (!nums.length) return null;
+  const rep = nums.length >= 2 && /-|–|to/.test(text) && nums.length === 2 ? (nums[0] + nums[1]) / 2 : nums[0];
+  return rep <= 4 ? 3 : rep <= 8 ? 6 : 10;
 }
 
 // A starting point only — the coach can change it in the Progression panel.
@@ -37,22 +49,25 @@ export function presetFor(exercise, modelKey) {
   const type = String(exercise.exercise_type || "").trim().toLowerCase();
   if (exercise.is_bodyweight) return { skip: "Bodyweight exercise (no load to progress)." };
   if (type === "warmup" || type === "circuit" || NON_LOADED_SECTIONS.has(section)) return { skip: "Not a loaded working exercise." };
-  if ((exercise.block_type || "straight_set") !== "straight_set") return { skip: "Superset/circuit blocks are set up by the coach." };
+  // Each member of a superset progresses on its own load; timed/for-time circuits have no load to progress.
+  if (!["straight_set", "superset"].includes(exercise.block_type || "straight_set")) return { skip: "Timed/for-time circuits have no load to progress." };
   const sets = Number(exercise.sets);
   if (!Number.isInteger(sets) || sets < 1) return { skip: "No set count." };
   const target = parseRepTarget(exercise.reps);
   const equipment = guessEquipment(exercise.name);
 
-  if (modelKey === "double_progression") {
-    if (!target?.max || target.min == null) return { skip: "Needs a rep range (e.g. 8-12) for double progression." };
-    return { method: "double_progression", config: { repMin: target.min, repMax: target.max, requiredSets: sets, equipment } };
+  const doubleProgression = () => ({ method: "double_progression", config: { repMin: target.min, repMax: target.max, requiredSets: sets, equipment } });
+  const hasRange = !!(target?.max && target.min != null);
+
+  // Main compound lifts follow the program's model where it can be derived.
+  if (type === "compound" && modelKey === "apre") {
+    const n = apreVariantFor(exercise.reps);
+    return n ? { method: `apre_${n}`, config: { stepMode: "low", equipment } } : { skip: "Couldn't read a rep target for APRE." };
   }
-  if (modelKey === "apre") {
-    if (type !== "compound") return { skip: "APRE is seeded on main compound lifts only." };
-    if (!target?.fixed || !APRE_REPS.has(target.fixed)) return { skip: "APRE needs a 3, 6 or 10 rep target." };
-    return { method: `apre_${target.fixed}`, config: { stepMode: "low", equipment } };
+  if (modelKey === "double_progression" || type === "accessory") {
+    return hasRange ? doubleProgression() : { skip: "Needs a rep range (e.g. 8-12) for double progression." };
   }
-  return { skip: "This model needs coach setup (it can't be derived from the exercise alone)." };
+  return { skip: "This model needs coach setup for main lifts (1RM, role or wave can't be derived from the exercise)." };
 }
 
 export function planSeed(exercises, modelKey) {

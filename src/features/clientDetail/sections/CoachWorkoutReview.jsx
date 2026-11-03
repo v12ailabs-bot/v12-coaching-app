@@ -147,7 +147,8 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
     setSeeding(true); setSeedMsg(null);
     const r = await seedProgressionForClient({ clientId, modelKey });
     setSeeding(false);
-    setSeedMsg(r.error ? { ok: false, text: r.error } : { ok: true, text: `Set ${r.assigned} exercise${r.assigned === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} left for you to set by hand (the model needs coach setup, or it is bodyweight, a warm-up, a superset, or has no rep range)` : ""}${r.failed ? `; ${r.failed} failed` : ""}.` });
+    const why = Object.entries(r.reasons || {}).sort((x, y) => y[1] - x[1]).map(([k, n]) => `${n} × ${k.replace(/\.$/, "")}`).join("; ");
+    setSeedMsg(r.error ? { ok: false, text: r.error } : { ok: true, text: `Set ${r.assigned} exercise${r.assigned === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} left for you — ${why}` : ""}${r.failed ? `; ${r.failed} failed` : ""}.` });
     onExercisesChanged?.();
   };
   const adh = adherenceFrom(daily, 30);
