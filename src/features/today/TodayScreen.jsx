@@ -1,4 +1,5 @@
 import { useProgramSettings } from "../../lib/useProgramSettings.js";
+import { pingAchievements } from "../../lib/achievements.js";
 import { useState, useEffect } from "react";
 import { supabase } from "../../supabaseClient.js";
 import { S, todayStr } from "../../theme.jsx";
@@ -144,6 +145,7 @@ export function TodayScreen({ profile, onDone }) {
     const entry = buildDailyCheckinEntry({ form, clientId: profile.id, date, submittedDate: todayStr() });
     if (existing) await supabase.from("daily_checkins").update(entry).eq("id", existing.id);
     else await supabase.from("daily_checkins").insert(entry);
+    pingAchievements();
 
     const writable = habits.filter((h) => h.type !== "linked_check_in_value");
     await Promise.all(writable.map((h) => {
