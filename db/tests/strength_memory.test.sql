@@ -19,6 +19,8 @@ insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) valu
 
 \i /work/db/add_strength_memory.sql
 \i /work/db/add_strength_memory.sql
+\i /work/db/add_strength_memory_aliases.sql
+\i /work/db/add_strength_memory_aliases.sql
 
 create function assert(cond boolean, msg text) returns void language plpgsql as $$ begin if cond is not true then raise exception 'ASSERT FAILED: %', msg; end if; end $$;
 
@@ -55,4 +57,22 @@ set role authenticated; set test.uid = '00000000-0000-0000-0000-0000000000a2';
 select assert((select count(*) from client_strength_records) = 0, 'other client sees nothing');
 set test.uid = '00000000-0000-0000-0000-0000000000a1';
 select assert((select count(*) from client_strength_records) = 1, 'client sees own');
+reset role;
+-- Aliases: "Barbell Back Squat" is merged into "back squat"; future logs of either name feed one record.
+create function assert_throws(sql text, expect text) returns void language plpgsql as $$
+begin begin execute sql; exception when others then if sqlerrm like '%' || expect || '%' then return; end if; raise exception 'ASSERT FAILED: got %', sqlerrm; end;
+  raise exception 'ASSERT FAILED: expected error %', expect; end $$;
+insert into exercises (id, client_id, name) values ('20000000-0000-0000-0000-000000000003','00000000-0000-0000-0000-0000000000a1','Barbell Back Squat');
+insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) values ('00000000-0000-0000-0000-0000000000a1','20000000-0000-0000-0000-000000000003','2026-10-05',1,5,245);
+select assert((select count(*) from client_strength_records) = 2, 'variant starts as its own record');
+set role authenticated; set test.uid = '00000000-0000-0000-0000-0000000000a1';
+select assert_throws($$select merge_strength_records('00000000-0000-0000-0000-0000000000a1','barbell back squat','back squat')$$, 'Only a coach');
+reset role;
+insert into profiles (id, role) values ('00000000-0000-0000-0000-00000000000c','coach');
+set role authenticated; set test.uid = '00000000-0000-0000-0000-00000000000c';
+select merge_strength_records('00000000-0000-0000-0000-0000000000a1','barbell back squat','back squat');
+reset role;
+select assert((select count(*) from client_strength_records) = 1 and (select best_weight from client_strength_records) = 245 and (select last_date from client_strength_records) = '2026-10-05', 'merge keeps the better best and latest last');
+insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) values ('00000000-0000-0000-0000-0000000000a1','20000000-0000-0000-0000-000000000003','2026-10-12',1,3,255);
+select assert((select count(*) from client_strength_records) = 1 and (select best_weight from client_strength_records) = 255, 'aliased name keeps feeding the merged record');
 \echo strength memory: all assertions passed

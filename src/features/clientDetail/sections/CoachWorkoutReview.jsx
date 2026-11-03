@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Btn, CollapsibleSection } from "../../../components/ui/index.js";
@@ -6,7 +6,10 @@ import { WeightOverTimeChart, TopSetRepsChart, targetRepRange, topSetPerDay, Log
 import { adherenceFrom } from "../../../lib/scoring.js";
 import { groupByDay, groupIntoBlocks, BLOCK_TYPE_LABEL } from "../../../lib/constants.js";
 import { WorkoutMannequin } from "../../../components/WorkoutMannequin.jsx";
+import { METHODS } from "../../../lib/progression/methods.js";
+import { seedProgressionForClient } from "../../../lib/progression/data.js";
 import { ProgressionPanel } from "./ProgressionPanel.jsx";
+import { StrengthRecordEditor } from "./StrengthRecordEditor.jsx";
 import { fetchStrengthMemory } from "../../../lib/strengthMemory.js";
 import { exerciseKey, describeRecord } from "../../../lib/strengthRecords.js";
 
@@ -14,7 +17,7 @@ import { exerciseKey, describeRecord } from "../../../lib/strengthRecords.js";
 // standalone for a straight-set exercise, and once per member for a
 // superset/circuit block, so each exercise in a group gets its own best-lift,
 // trend, and charts instead of only the block's first member.
-function ExerciseRow({ exercise, logs, clientId, memory }) {
+function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
   const [open, setOpen] = useState(false);
   const chartData = topSetPerDay(logs, exercise.is_bodyweight);
   const dataKey = exercise.is_bodyweight ? "reps" : "weight";
@@ -43,6 +46,9 @@ function ExerciseRow({ exercise, logs, clientId, memory }) {
           <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>
             {[exercise.sets != null ? `${exercise.sets} sets` : null, exercise.reps ? `${exercise.reps} reps` : null, Number.isInteger(exercise.rest_seconds) ? `rest ${exercise.rest_seconds}s` : null].filter(Boolean).join(" · ") || "No sets/reps set"}
           </div>
+          <div style={{ fontSize: 11, marginTop: 2, color: exercise.progression_method ? S.accent2 : S.muted }}>
+            {exercise.progression_method ? `Progression: ${METHODS[exercise.progression_method]?.name || exercise.progression_method}` : "No progression method"}
+          </div>
           {recordText && <div style={{ fontSize: 11, color: S.accent2, marginTop: 2 }}>{recordText}</div>}
         </div>
         <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>
@@ -59,6 +65,8 @@ function ExerciseRow({ exercise, logs, clientId, memory }) {
             <WeightOverTimeChart chartData={chartData} isBodyweight={exercise.is_bodyweight} />
             <TopSetRepsChart chartData={chartData} targetRange={targetRepRange(exercise.reps)} />
           </div>
+          {record && <div style={{ marginBottom: 10 }}><StrengthRecordEditor record={record} exerciseName={exercise.name} clientId={clientId} onChanged={onMemoryChanged}
+            others={[...new Set([...memory.values()])].filter((r) => r.id !== record.id)} /></div>}
           <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} memoryRecord={record} />
           <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Last {REVIEW_WINDOW_DAYS} Days</div>
           <LogEntryList rows={reviewRows} />
@@ -72,28 +80,28 @@ function ExerciseRow({ exercise, logs, clientId, memory }) {
 // ExerciseRow; a merged superset/circuit renders a label plus one
 // independent ExerciseRow per member, so lat pulldowns and pull-ups done
 // together each show their own best lift/weight/reps, same as standalone.
-function ReviewItem({ item, logsByExercise, clientId, memory }) {
+function ReviewItem({ item, logsByExercise, clientId, memory, onMemoryChanged }) {
   const isGroup = item.members.length > 1;
   if (!isGroup) {
     const exercise = item.members[0];
-    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} clientId={clientId} memory={memory} />;
+    return <ExerciseRow exercise={exercise} logs={logsByExercise[exercise.id] || []} clientId={clientId} memory={memory} onMemoryChanged={onMemoryChanged} />;
   }
   return (
     <div>
       <div style={{ padding: "10px 4px 2px", fontSize: 10, color: S.accent2, fontWeight: 700, letterSpacing: 0.5, textTransform: "uppercase" }}>{BLOCK_TYPE_LABEL[item.blockType]}</div>
-      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} clientId={clientId} memory={memory} />)}
+      {item.members.map((m) => <ExerciseRow key={m.id} exercise={m} logs={logsByExercise[m.id] || []} clientId={clientId} memory={memory} onMemoryChanged={onMemoryChanged} />)}
     </div>
   );
 }
 
 // One training day — closed by default; opens into its blocks (supersets
 // merged into one entry, per groupIntoBlocks).
-function ReviewDay({ dayGroup, logsByExercise, clientId, memory }) {
+function ReviewDay({ dayGroup, logsByExercise, clientId, memory, onMemoryChanged }) {
   const [open, setOpen] = useState(false);
   const items = groupIntoBlocks(dayGroup.exercises);
   return (
     <CollapsibleSection title={dayGroup.label} summary={`${items.length} item${items.length === 1 ? "" : "s"}`} expanded={open} onToggle={setOpen}>
-      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} clientId={clientId} memory={memory} />)}
+      {items.map((item) => <ReviewItem key={item.id} item={item} logsByExercise={logsByExercise} clientId={clientId} memory={memory} onMemoryChanged={onMemoryChanged} />)}
     </CollapsibleSection>
   );
 }
@@ -104,18 +112,22 @@ function ReviewDay({ dayGroup, logsByExercise, clientId, memory }) {
 // entries — instead of one long always-visible list, so the coach isn't
 // scrolling past every exercise on every visit. Reuses the exact same chart
 // components the client sees (WeightOverTimeChart/TopSetRepsChart).
-export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onEditProgram, onMessageClient }) {
+export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onEditProgram, onMessageClient, onExercisesChanged }) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [phase, setPhase] = useState(null);
+  const [modelKey, setModelKey] = useState(null);
+  const [seedMsg, setSeedMsg] = useState(null);
+  const [seeding, setSeeding] = useState(false);
   const [daily, setDaily] = useState([]);
   const [logsByExercise, setLogsByExercise] = useState({});
   const [memory, setMemory] = useState(null);
 
-  useEffect(() => { let live = true; fetchStrengthMemory(clientId).then((m) => { if (live) setMemory(m); }); return () => { live = false; }; }, [clientId, exercises]);
+  const loadMemory = useCallback(() => fetchStrengthMemory(clientId).then(setMemory), [clientId]);
+  useEffect(() => { loadMemory(); }, [loadMemory, exercises]);
 
   useEffect(() => {
-    supabase.from("programs").select("phase").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
-      .then(({ data }) => setPhase(data?.phase || null));
+    supabase.from("programs").select("phase,progression_model_key").eq("client_id", clientId).order("created_at", { ascending: false }).limit(1).maybeSingle()
+      .then(({ data }) => { setPhase(data?.phase || null); setModelKey(data?.progression_model_key || null); });
     supabase.from("daily_checkins").select("date,workout").eq("client_id", clientId).order("date")
       .then(({ data }) => setDaily(data || []));
   }, [clientId]);
@@ -130,6 +142,14 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
     });
   }, [clientId, exercises]);
 
+  const unset = exercises.filter((e) => !e.progression_method).length;
+  const seed = async () => {
+    setSeeding(true); setSeedMsg(null);
+    const r = await seedProgressionForClient({ clientId, modelKey });
+    setSeeding(false);
+    setSeedMsg(r.error ? { ok: false, text: r.error } : { ok: true, text: `Set ${r.assigned} exercise${r.assigned === 1 ? "" : "s"}${r.skipped ? `; ${r.skipped} left for you to set by hand (the model needs coach setup, or it is bodyweight, a warm-up, a superset, or has no rep range)` : ""}${r.failed ? `; ${r.failed} failed` : ""}.` });
+    onExercisesChanged?.();
+  };
   const adh = adherenceFrom(daily, 30);
   const dayGroups = groupByDay(exercises);
 
@@ -148,8 +168,15 @@ export function CoachWorkoutReview({ clientId, exercises, onGenerateProgram, onE
         title="Workout Review"
         summary={`${phase ? `Phase: ${phase}` : "No phase set"} · ${dayGroups.length} day${dayGroups.length === 1 ? "" : "s"}`}
         expanded={reviewOpen} onToggle={setReviewOpen}>
-        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} memory={memory} />)}
+        {dayGroups.map((g) => <ReviewDay key={g.day} dayGroup={g} logsByExercise={logsByExercise} clientId={clientId} memory={memory} onMemoryChanged={loadMemory} />)}
       </CollapsibleSection>
+      {unset > 0 && (
+        <div style={{ marginTop: 14, fontSize: 12, color: S.muted, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <span>{unset} exercise{unset === 1 ? " has" : "s have"} no progression method{modelKey ? <> · program model: <b>{modelKey}</b></> : " · this program has no progression model"}.</span>
+          {modelKey && <Btn sm teal onClick={seed} disabled={seeding}>{seeding ? "Setting up..." : "Auto-set from program model"}</Btn>}
+        </div>
+      )}
+      {seedMsg && <div style={{ marginTop: 6, fontSize: 12, color: seedMsg.ok ? S.accent2 : S.danger }}>{seedMsg.text}</div>}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 14 }}>
         <Btn onClick={onGenerateProgram}>Generate/Regenerate Workout</Btn>
         <button onClick={onEditProgram} style={{ padding: "9px 14px", fontSize: 11, fontWeight: 600, cursor: "pointer", border: "1px solid " + S.border, background: "transparent", color: S.text }}>Edit Program</button>
