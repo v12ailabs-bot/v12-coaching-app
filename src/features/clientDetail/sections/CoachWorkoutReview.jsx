@@ -70,7 +70,7 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
           </div>
           {record && <div style={{ marginBottom: 10 }}><StrengthRecordEditor record={record} exerciseName={exercise.name} clientId={clientId} onChanged={onMemoryChanged}
             others={[...new Set([...memory.values()])].filter((r) => r.id !== record.id)} /></div>}
-          <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} memoryRecord={record} />
+          <ProgressionPanel exercise={exercise} clientId={clientId} logs={logs} memoryRecord={record} onMemoryChanged={onMemoryChanged} />
           <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 8 }}>Last {REVIEW_WINDOW_DAYS} Days</div>
           <LogEntryList rows={reviewRows} />
         </div>
