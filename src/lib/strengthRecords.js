@@ -21,3 +21,6 @@ export function describeRecord(rec) {
 
 // The load to pre-fill as "current load": the client's most recent top weight.
 export const memoryLoad = (rec) => (rec && !rec.is_bodyweight && Number(rec.last_weight) > 0 ? Number(rec.last_weight) : null);
+
+// The coach-verified 1RM stored on a record (never estimated), or null.
+export const verifiedOneRm = (rec) => (rec && Number(rec.verified_1rm) > 0 ? Number(rec.verified_1rm) : null);

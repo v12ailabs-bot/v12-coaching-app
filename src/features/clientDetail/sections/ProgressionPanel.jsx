@@ -1,10 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S, RADIUS } from "../../../theme.jsx";
 import { Btn, StatusBadge } from "../../../components/ui/index.js";
 import { METHODS } from "../../../lib/progression/methods.js";
 import { workingSets, latestSessionRows } from "../../../lib/progression/engine.js";
-import { memoryLoad } from "../../../lib/strengthRecords.js";
+import { memoryLoad, verifiedOneRm, exerciseKey } from "../../../lib/strengthRecords.js";
+import { saveVerifiedOneRm } from "../../../lib/strengthMemory.js";
+import { estimateOneRm } from "../../../lib/estimate1rm.js";
+import { todayStr } from "../../../lib/dates.js";
+import { parsePercents } from "../../../lib/progression/percentInput.js";
 import { recommendForExercise, fetchRecommendations, decide } from "../../../lib/progression/data.js";
 
 // Coach-side progression panel for one exercise: assign a method + its
@@ -49,7 +53,15 @@ function ConfigForm({ methodId, config, onChange }) {
             </select>
           </div>
         )}
-        {methodId === "percentage_based" && field("percent", "% of 1RM")}
+        {methodId === "percentage_based" && field("percent", config.weeklyPercents ? "% of 1RM (unused: weekly list is set)" : "% of 1RM")}
+        {methodId === "percentage_based" && (
+          <div style={{ gridColumn: "1 / -1" }}>
+            <label style={lbl}>Weekly % of 1RM, week 1, 2, 3… (optional, comma-separated)</label>
+            <input style={input} placeholder="70, 72.5, 75" defaultValue={(config.weeklyPercents || []).join(", ")}
+              onChange={(e) => { const v = parsePercents(e.target.value); if (v !== null) onChange({ ...config, weeklyPercents: v }); }} />
+            <div style={{ fontSize: 11, color: S.muted, marginTop: 2 }}>When set, the calculation asks for the week number and uses that week's percentage.</div>
+          </div>
+        )}
         {!isDensity && (!isConj || config.role === "dynamic_effort") && field("increment", "Increment (lb)")}
         {!isDensity && (!isConj || config.role === "dynamic_effort") && <div>
           <label style={lbl}>Equipment (default increment)</label>
@@ -157,7 +169,7 @@ function ConfigForm({ methodId, config, onChange }) {
   );
 }
 
-export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
+export function ProgressionPanel({ exercise, clientId, logs, memoryRecord, onMemoryChanged }) {
   const [methodId, setMethodId] = useState(exercise.progression_method || "");
   const [config, setConfig] = useState(exercise.progression_config || {});
   const [savedAs, setSavedAs] = useState({ methodId: exercise.progression_method || "", config: exercise.progression_config || {} });
@@ -167,7 +179,35 @@ export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
   const [running, setRunning] = useState(false);
   const [outcome, setOutcome] = useState(null);
   const [currentLoad, setCurrentLoad] = useState("");
-  const [oneRepMax, setOneRepMax] = useState("");
+  const savedRm = verifiedOneRm(memoryRecord);
+  const [oneRepMax, setOneRepMax] = useState(savedRm ? String(savedRm) : "");
+  const [rmMsg, setRmMsg] = useState(null);
+  // Where the number in the 1RM box came from: "verified" (saved), "entered" (typed by the coach) or "estimated".
+  const [rmSource, setRmSource] = useState(savedRm ? "verified" : "entered");
+  // Estimated 1RM from her logged sets (this exercise's logs + what strength memory remembers of the lift).
+  const estimate = useMemo(() => {
+    const sets = [...(logs || []).map((l) => ({ weight: l.weight, reps: l.reps, date: l.date, set_type: l.set_type }))];
+    const m = memoryRecord;
+    if (m && !m.is_bodyweight) {
+      if (m.best_weight != null && m.best_weight_reps && m.best_weight_date) sets.push({ weight: m.best_weight, reps: m.best_weight_reps, date: m.best_weight_date });
+      if (m.last_weight != null && m.last_reps && m.last_date) sets.push({ weight: m.last_weight, reps: m.last_reps, date: m.last_date });
+    }
+    return estimateOneRm(sets, todayStr());
+  }, [logs, memoryRecord]);
+  const estimateRow = estimate && (
+    <div style={{ fontSize: 11, color: S.muted, marginTop: 3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+      <span><b style={{ color: S.text }}>Estimated 1RM: {estimate.value} lb</b> ({estimate.formula}, from {estimate.basedOn.weight} lb × {estimate.basedOn.reps} on {estimate.basedOn.date}{estimate.stale ? " — older than 4 months" : ""}). An estimate, not a tested max.</span>
+      <Btn sm onClick={() => { setOneRepMax(String(estimate.value)); setRmSource("estimated"); }}>Use estimate</Btn>
+    </div>
+  );
+  // Pre-fill once the saved 1RM arrives (the record loads after the panel mounts).
+  useEffect(() => { if (savedRm && oneRepMax === "") { setOneRepMax(String(savedRm)); setRmSource("verified"); } }, [savedRm]); // eslint-disable-line react-hooks/exhaustive-deps
+  const saveRm = async () => {
+    setRmMsg(null);
+    const { error } = await saveVerifiedOneRm({ clientId, exerciseKey: memoryRecord?.exercise_key || exerciseKey(exercise.name), exerciseName: memoryRecord?.exercise_name || exercise.name, value: oneRepMax });
+    if (error) { setRmMsg({ ok: false, text: error.message }); return; }
+    setRmMsg({ ok: true, text: "Saved as this client's 1RM for this lift." }); onMemoryChanged?.();
+  };
   const [week, setWeek] = useState("");
   const [techniqueOk, setTechniqueOk] = useState(false);
   const [painAns, setPainAns] = useState(""); // "" = not asked, "no", "yes"
@@ -222,7 +262,7 @@ export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
     setRunning(true); setOutcome(null);
     const res = await recommendForExercise({
       exercise: { ...exercise, progression_method: savedAs.methodId, progression_config: savedAs.config }, clientId,
-      currentLoad: numOrNull(currentLoad), oneRepMax: numOrNull(oneRepMax), week: week === "" ? undefined : Number(week), techniqueConfirmed: techniqueOk || undefined, painReported: painAns === "yes" ? true : painAns === "no" ? false : undefined,
+      currentLoad: numOrNull(currentLoad), oneRepMax: numOrNull(oneRepMax), oneRepMaxSource: numOrNull(oneRepMax) != null ? rmSource : undefined, week: week === "" ? undefined : Number(week), techniqueConfirmed: techniqueOk || undefined, painReported: painAns === "yes" ? true : painAns === "no" ? false : undefined,
     });
     setOutcome(res); setRunning(false); loadRecs();
   };
@@ -293,11 +333,19 @@ export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 8, alignItems: "end" }}>
               {savedAs.methodId !== "percentage_based" && savedAs.methodId !== "density_progression" && savedAs.methodId !== "conjugate" && <div><label style={lbl}>{savedAs.methodId.startsWith("apre_") ? "Working weight / nRM (lb)" : "Current load (lb)"}</label><input style={input} type="number" step="any" value={currentLoad} onChange={(e) => setCurrentLoad(e.target.value)} /></div>}
               {savedAs.methodId === "percentage_based" && <>
-                <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
+                <div><label style={lbl}>Verified 1RM (lb)</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => { setOneRepMax(e.target.value); setRmSource("entered"); }} />
+                  {estimateRow}
+                  <div style={{ fontSize: 11, color: S.muted, marginTop: 3, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+                    {savedRm ? `Saved: ${savedRm} lb${memoryRecord?.verified_1rm_date ? ` (${memoryRecord.verified_1rm_date})` : ""}` : "Not saved yet"}
+                    {Number(oneRepMax) > 0 && Number(oneRepMax) !== savedRm && rmSource === "entered" && <Btn sm onClick={saveRm}>Save as 1RM</Btn>}
+                    {rmSource === "estimated" && <span style={{ color: S.warning }}>Using an estimate — can't be saved as a verified 1RM</span>}
+                  </div>
+                  {rmMsg && <div style={{ fontSize: 11, color: rmMsg.ok ? S.accent2 : S.danger }}>{rmMsg.text}</div>}
+                </div>
                 {savedAs.config.weeklyPercents && <div><label style={lbl}>Week</label><input style={input} type="number" value={week} onChange={(e) => setWeek(e.target.value)} /></div>}
               </>}
               {savedAs.methodId === "conjugate" && (savedAs.config.role === "dynamic_effort" || savedAs.config.role === "max_effort") && (
-                <div><label style={lbl}>{savedAs.config.role === "dynamic_effort" ? "Current 1RM (lb)" : "1RM for the fatigue watch (lb)"}</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => setOneRepMax(e.target.value)} /></div>
+                <div><label style={lbl}>{savedAs.config.role === "dynamic_effort" ? "Current 1RM (lb)" : "1RM for the fatigue watch (lb)"}</label><input style={input} type="number" step="any" value={oneRepMax} onChange={(e) => { setOneRepMax(e.target.value); setRmSource("entered"); }} />{estimateRow}</div>
               )}
               {savedAs.methodId === "density_progression" && (
                 <div><label style={lbl}>Pain today?</label>
@@ -339,6 +387,7 @@ export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
                     {r.approved_prescription && <> · Approved: <b>{r.approved_prescription.load} lb</b>{r.approved_prescription.source === "coach_override" ? " (coach override)" : ""}</>}
                   </div>
                   {(c.reasons || []).map((x, i) => <div key={i} style={{ color: S.muted, marginTop: 2 }}>• {x}</div>)}
+                  {r.calc_input?.oneRepMaxSource === "estimated" && <div style={{ color: S.warning, marginTop: 2 }}>• Based on an <b>estimated</b> 1RM ({r.calc_input.oneRepMax} lb), not a tested max.</div>}
                   {r.decision_note && <div style={{ color: S.muted }}>Note: {r.decision_note}</div>}
                   {r.status === "pending" && (
                     <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>

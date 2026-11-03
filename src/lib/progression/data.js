@@ -16,7 +16,7 @@ import { planSeed } from "./seed.js";
 // recalculated. Only actionable results (increase / hold / prescription) are
 // stored; insufficient-data and invalid results are returned but not saved, so
 // an early incomplete session can never block a later, complete one.
-export async function recommendForExercise({ exercise, clientId, currentLoad, oneRepMax, week, techniqueConfirmed, painReported }) {
+export async function recommendForExercise({ exercise, clientId, currentLoad, oneRepMax, oneRepMaxSource, week, techniqueConfirmed, painReported }) {
   const methodId = exercise.progression_method;
   if (!methodId) return { error: "This exercise has no progression method assigned." };
   const { data: rows, error } = await supabase.from("workout_logs").select("*").eq("exercise_id", exercise.id).eq("client_id", clientId).order("date");
@@ -66,7 +66,7 @@ export async function recommendForExercise({ exercise, clientId, currentLoad, on
 
   const row = {
     client_id: clientId, exercise_id: exercise.id, method_id: methodId, session_date: keyDate,
-    calc_input: { currentLoad, oneRepMax: oneRepMax ?? null, week: week ?? null, techniqueConfirmed: techniqueConfirmed ?? null, config: exercise.progression_config || {}, sets: calcResult.calc?.sets ?? null },
+    calc_input: { currentLoad, oneRepMax: oneRepMax ?? null, oneRepMaxSource: oneRepMaxSource ?? null, week: week ?? null, techniqueConfirmed: techniqueConfirmed ?? null, config: exercise.progression_config || {}, sets: calcResult.calc?.sets ?? null },
     calc_result: calcResult, recommended_load: calcResult.recommendedLoad,
   };
   const { data, error: insErr } = await supabase.from("progression_recommendations").insert(row).select().single();

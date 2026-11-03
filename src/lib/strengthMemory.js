@@ -26,3 +26,13 @@ export async function deleteStrengthRecord(id) {
 export async function mergeStrengthRecords(clientId, fromKey, intoKey) {
   return supabase.rpc("merge_strength_records", { p_client: clientId, p_from_key: fromKey, p_into_key: intoKey });
 }
+
+// Save a coach-verified 1RM for a lift (keyed by name, so it outlives the exercise row). Creates the record when
+// the client has no logs for the lift yet; an existing record only has its 1RM fields changed.
+export async function saveVerifiedOneRm({ clientId, exerciseKey, exerciseName, value }) {
+  const v = Number(value);
+  if (!(v > 0)) return { error: { message: "Enter a 1RM above 0." } };
+  return supabase.from("client_strength_records").upsert(
+    { client_id: clientId, exercise_key: exerciseKey, exercise_name: exerciseName, verified_1rm: v, verified_1rm_date: new Date().toISOString().slice(0, 10) },
+    { onConflict: "client_id,exercise_key" });
+}

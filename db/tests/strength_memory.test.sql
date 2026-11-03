@@ -21,6 +21,8 @@ insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) valu
 \i /work/db/add_strength_memory.sql
 \i /work/db/add_strength_memory_aliases.sql
 \i /work/db/add_strength_memory_aliases.sql
+\i /work/db/add_verified_1rm.sql
+\i /work/db/add_verified_1rm.sql
 
 create function assert(cond boolean, msg text) returns void language plpgsql as $$ begin if cond is not true then raise exception 'ASSERT FAILED: %', msg; end if; end $$;
 
@@ -75,4 +77,14 @@ reset role;
 select assert((select count(*) from client_strength_records) = 1 and (select best_weight from client_strength_records) = 245 and (select last_date from client_strength_records) = '2026-10-05', 'merge keeps the better best and latest last');
 insert into workout_logs (client_id, exercise_id, date, sets, reps, weight) values ('00000000-0000-0000-0000-0000000000a1','20000000-0000-0000-0000-000000000003','2026-10-12',1,3,255);
 select assert((select count(*) from client_strength_records) = 1 and (select best_weight from client_strength_records) = 255, 'aliased name keeps feeding the merged record');
+
+-- Verified 1RM: survives, and a merge keeps the most recently verified value.
+update client_strength_records set verified_1rm = 300, verified_1rm_date = '2026-10-01' where exercise_key = 'back squat';
+insert into client_strength_records (client_id, exercise_key, exercise_name, verified_1rm, verified_1rm_date) values ('00000000-0000-0000-0000-0000000000a1','front squat','Front Squat',240,'2026-10-20');
+set role authenticated; set test.uid = '00000000-0000-0000-0000-00000000000c';
+select merge_strength_records('00000000-0000-0000-0000-0000000000a1','front squat','back squat');
+reset role;
+select assert((select verified_1rm from client_strength_records where exercise_key = 'back squat') = 240 and (select verified_1rm_date from client_strength_records where exercise_key = 'back squat') = '2026-10-20', 'merge keeps the newer verified 1RM');
+select assert((select count(*) from client_strength_records) = 1, 'merged into one');
+do $$ begin begin update client_strength_records set verified_1rm = -5; raise exception 'ASSERT FAILED: negative 1RM accepted'; exception when check_violation then null; end; end $$;
 \echo strength memory: all assertions passed
