@@ -31,6 +31,9 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
   // so a freshly generated exercise with no logs yet still shows their history.
   const record = memory?.get(exerciseKey(exercise.name)) || null;
   const recordText = describeRecord(record);
+  const lastText = last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : record ? "Past data" : "No data";
+  const trendArrow = trend === "up" ? "↑" : trend === "down" ? "↓" : trend === "flat" ? "→" : "";
+  const trendColor = trend === "up" ? S.accent2 : trend === "down" ? S.danger : S.muted;
   const reviewRows = logs
     .filter((l) => withinReviewWindow(l.date))
     .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -38,8 +41,8 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
   return (
     <div style={{ borderBottom: "1px solid " + S.border }}>
       <button onClick={() => setOpen((o) => !o)}
-        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 4px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-        <WorkoutMannequin exerciseName={exercise.name} size={44} color={S.muted} />
+        style={{ width: "100%", display: "flex", alignItems: "center", gap: isMobile ? 8 : 12, padding: "12px 4px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+        <WorkoutMannequin exerciseName={exercise.name} size={isMobile ? 32 : 44} color={S.muted} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: S.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {exercise.name}
@@ -50,14 +53,13 @@ function ExerciseRow({ exercise, logs, clientId, memory, onMemoryChanged }) {
           <div style={{ fontSize: 11, marginTop: 2, color: exercise.progression_method ? S.accent2 : S.muted }}>
             {exercise.progression_method ? `Progression: ${METHODS[exercise.progression_method]?.name || exercise.progression_method}` : "No progression method"}
           </div>
+          {isMobile && <div style={{ fontSize: 12, color: S.text, marginTop: 2 }}>{lastText} <span style={{ fontWeight: 700, color: trendColor }}>{trendArrow}</span></div>}
           {recordText && <div style={{ fontSize: 11, color: S.accent2, marginTop: 2 }}>{recordText}</div>}
         </div>
-        <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>
-          {last ? `${last[dataKey]}${dataKey === "weight" ? " lb" : " reps"}` : record ? "Past data" : "No data"}
-        </div>
-        <div style={{ width: 20, textAlign: "center", fontSize: 13, fontWeight: 700, color: trend === "up" ? S.accent2 : trend === "down" ? S.danger : S.muted, flexShrink: 0 }}>
-          {trend === "up" ? "↑" : trend === "down" ? "↓" : trend === "flat" ? "→" : ""}
-        </div>
+        {!isMobile && <>
+          <div style={{ fontSize: 12, color: S.text, textAlign: "right", minWidth: 80, flexShrink: 0 }}>{lastText}</div>
+          <div style={{ width: 20, textAlign: "center", fontSize: 13, fontWeight: 700, color: trendColor, flexShrink: 0 }}>{trendArrow}</div>
+        </>}
         <span style={{ color: S.muted, fontSize: 11, flexShrink: 0 }}>{open ? "▲" : "▼"}</span>
       </button>
       {open && (
