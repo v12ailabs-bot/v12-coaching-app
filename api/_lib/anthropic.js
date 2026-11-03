@@ -778,6 +778,31 @@ If exit_criteria, milestones, and recent_strength_trends are all empty, say so p
   catch { return { recommendation: raw, reasoning: null, suggested_action: null }; }
 }
 
+// "They hit it — what now?" For a milestone the client just reached: propose the next target and what to
+// do with the exercise (keep progressing it, a variation, swap it, or retire it). Advisory only — the
+// coach continues or discards it; the caller validates the numbers (src/lib/milestoneNextStep.js).
+export async function generateMilestoneNextStep({ profile = {}, goal = {}, recentLogs = [], otherMilestones = [], currentExercises = [] }) {
+  const data = {
+    achieved: { exercise: goal.exercise_name, category: goal.category, direction: goal.direction, unit: goal.unit, baseline: goal.baseline_value, target_hit: goal.target_value, baseline_date: goal.baseline_date, hit_on: goal.achieved_at },
+    recent_top_sets_for_this_lift: recentLogs,
+    other_active_milestones: otherMilestones.map((m) => ({ exercise: m.exercise_name, baseline: m.baseline_value, target: m.target_value, unit: m.unit })),
+    exercises_currently_programmed_for_this_lift: currentExercises,
+    client_goal: profile.goal || null,
+  };
+  const message = await anthropic.messages.create({
+    model: MODEL, max_tokens: 700,
+    messages: [{ role: "user", content: `You are an experienced strength coach. ${profile.name || "The client"} just hit a milestone. Recommend what comes next, using ONLY the data below — never invent numbers.
+
+DATA: ${JSON.stringify(data)}
+
+Propose (1) the NEXT target for this same lift — a realistic step beyond what they just hit given how fast they got here (baseline -> target over baseline_date -> hit_on), moving the same direction — and (2) what to do with the exercise: "continue" (keep progressing it toward the new target), "variation" (a close variant to keep it fresh/stress it differently), "swap" (replace it) or "retire" (no longer needed). Only recommend "swap"/"retire" if the data gives a reason; the default is "continue". This is a recommendation for the coach, not a decision.
+
+Respond with ONLY valid JSON (no markdown fences), exactly this shape:
+{"headline": "one sentence celebrating the hit and naming the next step", "next_target": {"value": number, "weeks": number, "reasoning": "1-2 sentences citing the real numbers"}, "exercise_plan": {"action": "continue|variation|swap|retire", "exercise": "name", "suggested_exercise": "only for variation/swap, else null", "reasoning": "1 sentence"}, "coach_note": "one short practical tip for the coach"}` }],
+  });
+  return parseJson(message.content[0].text, "milestone next step");
+}
+
 // Full multi-phase roadmap proposal from client + program data — the AI's
 // entire output lands in the coach's existing ProgramRoadmapPlanner form
 // state for review, never written to program_phases directly, so this

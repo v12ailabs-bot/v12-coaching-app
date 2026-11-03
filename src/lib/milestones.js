@@ -45,6 +45,9 @@ export { milestoneProgress } from "./milestoneProgress.js";
 
 export async function markMilestoneAchieved(goalId) {
   await supabase.from("client_goals").update({ status: "achieved", updated_at: new Date().toISOString() }).eq("id", goalId);
+  // A coach confirming a hit by hand (e.g. a 5K time, a movement screen) must celebrate with the client
+  // too; a no-op when the database already detected it from logged data.
+  await recordAchievement(goalId);
 }
 
 // Auto-detected the moment a live-computed value first clears the target —

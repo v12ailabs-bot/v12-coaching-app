@@ -46,7 +46,7 @@ export function RecentActivityFeed({ nameOf, clientIds }) {
         ...(wc || []).map((r) => ({ ...r, text: "completed a weekly check-in" })),
         ...(wl || []).map((r) => ({ ...r, text: "logged a workout" })),
         ...(pp || []).map((r) => ({ ...r, text: "uploaded progress photos" })),
-        ...milestones.map((m) => ({ client_id: m.client_id, created_at: m.achieved_at, text: `hit a milestone: ${m.exercise_name || "target"} (${m.target_value}${m.unit})` })),
+        ...milestones.map((m) => ({ client_id: m.client_id, created_at: m.achieved_at, text: m.exercise_name ? `hit a milestone: ${m.exercise_name} (${m.target_value}${m.unit})` : `reached their goal weight (${m.target_value}${m.unit || " lb"})` })),
       ].filter((r) => {
         const key = `${r.client_id}|${r.text}|${r.created_at}`;
         if (seen.has(key)) return false;

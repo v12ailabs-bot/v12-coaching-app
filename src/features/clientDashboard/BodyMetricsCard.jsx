@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { pingAchievements } from "../../lib/achievements.js";
 import { supabase } from "../../supabaseClient.js";
 import { S } from "../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, Btn, Alert } from "../../components/ui/index.js";
@@ -29,6 +30,7 @@ export function BodyMetricsCard({ profile, onSaved }) {
     setBusy(false);
     if (error) { setErr(error.message); return; }
     setSaved(true); setTimeout(() => setSaved(false), 2000);
+    pingAchievements();
     onSaved && onSaved();
   };
 

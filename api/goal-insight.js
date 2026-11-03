@@ -1,4 +1,5 @@
-import { generateGoalInsight, generatePhaseRecommendation, generateRoadmap, generatePlanDetails } from "./_lib/anthropic.js";
+import { generateGoalInsight, generatePhaseRecommendation, generateRoadmap, generatePlanDetails, generateMilestoneNextStep } from "./_lib/anthropic.js";
+import { validateNextStep } from "../src/lib/milestoneNextStep.js";
 import { sanitizePlanDetails } from "./_lib/planDetails.js";
 import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 import { requireCoach } from "./_lib/auth.js";
@@ -65,6 +66,52 @@ async function handlePhaseRecommendation(req, res) {
     return res.status(200).json({ recommendation: saved });
   } catch (e) {
     console.error("phase-recommendation error:", e, "phase_id:", phase_id);
+    return res.status(500).json({ error: e.message });
+  }
+}
+
+// "They hit it — what now?" AI recommendation for a milestone with achieved_at set. One per milestone
+// (milestone_recommendations.goal_id is unique): re-requests return the stored one. Advisory only —
+// nothing changes until the coach clicks Continue in the Milestones card.
+async function handleMilestoneNextStep(req, res) {
+  const { milestone_goal_id } = req.body || {};
+  try {
+    const { data: goal } = await supabaseAdmin.from("client_goals").select("*").eq("id", milestone_goal_id).maybeSingle();
+    if (!goal) return res.status(404).json({ error: "Milestone not found." });
+    if (!goal.achieved_at) return res.status(400).json({ error: "This milestone hasn't been hit yet." });
+    const { data: existing } = await supabaseAdmin.from("milestone_recommendations").select("*").eq("goal_id", goal.id).maybeSingle();
+    if (existing) return res.status(200).json({ recommendation: existing });
+
+    const key = String(goal.exercise_name || "").trim().replace(/\s+/g, " ").toLowerCase();
+    const [{ data: profile }, { data: exs }, { data: others }] = await Promise.all([
+      supabaseAdmin.from("profiles").select("name,goal").eq("id", goal.client_id).maybeSingle(),
+      supabaseAdmin.from("exercises").select("id,name,sets,reps,retired_at").eq("client_id", goal.client_id),
+      supabaseAdmin.from("client_goals").select("exercise_name,baseline_value,target_value,unit").eq("client_id", goal.client_id).eq("status", "active").not("category", "is", null).neq("id", goal.id),
+    ]);
+    const same = (exs || []).filter((e) => String(e.name || "").trim().replace(/\s+/g, " ").toLowerCase() === key);
+    const { data: logs } = same.length
+      ? await supabaseAdmin.from("workout_logs").select("date,weight,reps,set_type").in("exercise_id", same.map((e) => e.id)).order("date", { ascending: false }).limit(60)
+      : { data: [] };
+    const topByDate = new Map();
+    (logs || []).filter((l) => (l.set_type || "working") === "working").forEach((l) => {
+      const cur = topByDate.get(l.date);
+      if (!cur || (l.weight ?? 0) > (cur.weight ?? 0)) topByDate.set(l.date, { date: l.date, weight: l.weight, reps: l.reps });
+    });
+    const recentLogs = [...topByDate.values()].slice(0, 12);
+
+    const raw = await generateMilestoneNextStep({
+      profile: profile || {}, goal, recentLogs, otherMilestones: others || [],
+      currentExercises: same.filter((e) => !e.retired_at).map((e) => ({ name: e.name, sets: e.sets, reps: e.reps })),
+    });
+    const payload = validateNextStep(goal, raw);
+    const { data: saved, error } = await supabaseAdmin.from("milestone_recommendations")
+      .upsert({ goal_id: goal.id, client_id: goal.client_id, payload }, { onConflict: "goal_id", ignoreDuplicates: true }).select().maybeSingle();
+    if (error) throw error;
+    // ignoreDuplicates returns nothing if a concurrent request won the race: read the winner.
+    const rec = saved || (await supabaseAdmin.from("milestone_recommendations").select("*").eq("goal_id", goal.id).maybeSingle()).data;
+    return res.status(200).json({ recommendation: rec });
+  } catch (e) {
+    console.error("milestone-next-step error:", e, "goal:", milestone_goal_id);
     return res.status(500).json({ error: e.message });
   }
 }
@@ -372,7 +419,8 @@ export default async function handler(req, res) {
   const user = await requireCoach(req, res);
   if (!user) return;
 
-  const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for, plan_details_program_id } = req.body || {};
+  const { goal_id, phase_id, program_id, checkin_id, recommendation_id, record_outcome_for, plan_details_program_id, milestone_goal_id } = req.body || {};
+  if (milestone_goal_id) return handleMilestoneNextStep(req, res);
   if (plan_details_program_id) return handlePlanDetails(req, res);
   if (phase_id) return handlePhaseRecommendation(req, res);
   if (program_id) return handleGenerateRoadmap(req, res);

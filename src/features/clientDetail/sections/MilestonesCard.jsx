@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "../../../supabaseClient.js";
 import { S } from "../../../theme.jsx";
 import { Card, CardTitle, Fld, Inp, RG, Btn, Alert, EmptyState } from "../../../components/ui/index.js";
+import { MilestoneNextStep } from "./MilestoneNextStep.jsx";
 import { MILESTONE_CATEGORY_LABELS, fetchMilestones, currentExerciseValue, milestoneProgress, markMilestoneAchieved, recordAchievement } from "../../../lib/milestones.js";
 
 const CATEGORY_OPTIONS = Object.keys(MILESTONE_CATEGORY_LABELS);
@@ -9,7 +10,7 @@ const blankForm = () => ({ category: "strength", exercise_name: "", direction: "
 
 const AUTO_TRACKED_CATEGORIES = ["strength", "rep_performance", "exercise_progression"];
 
-function MilestoneRow({ goal, onAchieved, onNextTarget }) {
+function MilestoneRow({ goal, onAchieved, onNextTarget, onAcceptNext }) {
   const [current, setCurrent] = useState(undefined);
   const isAutoTracked = AUTO_TRACKED_CATEGORIES.includes(goal.category);
 
@@ -62,6 +63,7 @@ function MilestoneRow({ goal, onAchieved, onNextTarget }) {
           {achieved && <Btn sm teal onClick={() => onNextTarget(goal)}>Set Next Target</Btn>}
         </div>
       )}
+      {goal.achieved_at && goal.status === "active" && isAutoTracked && <MilestoneNextStep goal={goal} onAccept={onAcceptNext} />}
     </div>
   );
 }
@@ -101,16 +103,24 @@ export function MilestonesCard({ client }) {
     load();
   };
 
+  // Archive the milestone that was hit and (when a value is given) start the next one from it.
+  const startNext = async (from, value) => {
+    await markMilestoneAchieved(from.id);
+    if (value != null) {
+      const { error } = await supabase.from("client_goals").insert({
+        client_id: client.id, goal_type: from.goal_type, metric_key: from.metric_key,
+        category: from.category, exercise_name: from.exercise_name, priority: from.priority,
+        direction: from.direction, unit: from.unit, baseline_value: from.target_value, baseline_date: new Date().toISOString().slice(0, 10),
+        target_value: Number(value), target_date: from.target_date,
+      });
+      if (error) throw error;
+    }
+    load();
+  };
   const saveNextTarget = async () => {
     if (!nextTargetOf || nextTargetValue === "") return;
-    await markMilestoneAchieved(nextTargetOf.id);
-    await supabase.from("client_goals").insert({
-      client_id: client.id, goal_type: nextTargetOf.goal_type, metric_key: nextTargetOf.metric_key,
-      category: nextTargetOf.category, exercise_name: nextTargetOf.exercise_name, priority: nextTargetOf.priority,
-      direction: nextTargetOf.direction, unit: nextTargetOf.unit, baseline_value: nextTargetOf.target_value, baseline_date: new Date().toISOString().slice(0, 10),
-      target_value: Number(nextTargetValue), target_date: nextTargetOf.target_date,
-    });
-    setNextTargetOf(null); setNextTargetValue(""); load();
+    await startNext(nextTargetOf, nextTargetValue);
+    setNextTargetOf(null); setNextTargetValue("");
   };
 
   if (!milestones) return null;
@@ -123,7 +133,7 @@ export function MilestonesCard({ client }) {
       </div>
       {msg && !showForm && <Alert variant={msg.ok === false ? "error" : "success"}>{msg.text}</Alert>}
       {milestones.length === 0 && !showForm && <EmptyState title="No milestones yet" sub="Add a strength, rep, or conditioning target to track alongside this client's phase." />}
-      {milestones.map((g) => <MilestoneRow key={g.id} goal={g} onAchieved={achieve} onNextTarget={(g2) => { setNextTargetOf(g2); setNextTargetValue(""); }} />)}
+      {milestones.map((g) => <MilestoneRow key={g.id} goal={g} onAchieved={achieve} onNextTarget={(g2) => { setNextTargetOf(g2); setNextTargetValue(""); }} onAcceptNext={startNext} />)}
 
       {showForm && (
         <div style={{ marginTop: 16, paddingTop: 16, borderTop: "1px solid " + S.border }}>

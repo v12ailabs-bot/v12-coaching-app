@@ -9,6 +9,8 @@ import { useProgramSettings } from "./lib/useProgramSettings.js";
 import { supabase } from "./supabaseClient.js";
 import { S, bS, TT, todayStr, localDateStr, useIsMobile, trainingOwnerId, avatarFrom, GlobalStyles } from "./theme.jsx";
 import { Card, CardTitle, PageTitle, Stat, Fld, Inp, Sld, RG, Btn, CC, DayFolder, StatusBadge, CollapsibleSection, Alert, MetricCard, V12Logo, LaunchScreen } from "./components/ui/index.js";
+import { AchievementCelebration } from "./components/AchievementCelebration.jsx";
+import { pingAchievements } from "./lib/achievements.js";
 import { CoachMessage, GoalInsightBanner, NewSummaryBanner, InvoiceCard } from "./components/ClientBanners.jsx";
 import { ProgramRoadmap } from "./components/ProgramRoadmap.jsx";
 import { WorkoutMannequin } from "./components/WorkoutMannequin.jsx";
@@ -1046,6 +1048,7 @@ function ProgramHabits({ profile }) {
       { onConflict: "client_id,date" }
     );
     setSavingBody(false);
+    pingAchievements();
     if (error) { setBodyErr(error.message); return; }
     setSavedBody(true); setTimeout(() => setSavedBody(false), 2000);
     load();
@@ -1415,7 +1418,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
         }
         return row;
       });
-    if(entries.length>0) await supabase.from("workout_logs").insert(entries);
+    if(entries.length>0){ await supabase.from("workout_logs").insert(entries); pingAchievements(); }
     setSaving(false);setSaved(true);setSets(sets.map(()=>blankRow()));
     if(entries.length>0) rest.startAfterSet();
     setTimeout(()=>setSaved(false),2000);
@@ -1444,7 +1447,7 @@ function Workouts({ profile, embedded, targetDay, onTargetConsumed, setPage }) {
         });
       });
     });
-    if (entries.length > 0) await supabase.from("workout_logs").insert(entries);
+    if (entries.length > 0) { await supabase.from("workout_logs").insert(entries); pingAchievements(); }
     setSaving(false); setSaved(true); setRounds(freshRounds(selectedEx.sets, groupMembers));
     if (entries.length > 0) rest.startAfterSet();
     setTimeout(() => setSaved(false), 2000);
@@ -2958,6 +2961,7 @@ function ClientDashboard({ profile, logout }) {
 
   return (
     <Shell profile={profile} isCoach={false} logout={logout} page={page} setPage={setPage}>
+      <AchievementCelebration profile={profile} />
       {page === "starterhome" && isStarter && <StarterHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "dashboard" && !programOnly && !isStarter && <ClientHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} />}
       {page === "proghome" && programOnly && (<><UpgradeCTA profile={profile} /><InvoiceCard profile={profile} /><ProgramOnlyHome profile={profile} setPage={setPage} goToWorkouts={goToWorkouts} /></>)}
