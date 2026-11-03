@@ -106,7 +106,7 @@ export function ProgramVersions({ clientId, refreshKey, onRestored }) {
     if (!error) load();
   };
   const restore = async (v) => {
-    if (!window.confirm(`Restore v${v.version}? This rewrites the current training plan to match this version. Logged sessions for exercises that aren't in this version will be removed.`)) return;
+    if (!window.confirm(`Restore v${v.version}? This rewrites the current training plan to match this version. Individual logged sets for exercises that aren't in this version will be removed (the client's best/latest lifts stay on record).`)) return;
     setBusy(true); setMsg(null);
     try { await restoreProgramVersion(clientId, v); setMsg({ ok: true, text: `Restored v${v.version}.` }); onRestored?.(); load(); }
     catch (e) { setMsg({ ok: false, text: e.message }); }

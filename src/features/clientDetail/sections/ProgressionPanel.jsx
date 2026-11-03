@@ -4,6 +4,7 @@ import { S, RADIUS } from "../../../theme.jsx";
 import { Btn, StatusBadge } from "../../../components/ui/index.js";
 import { METHODS } from "../../../lib/progression/methods.js";
 import { workingSets, latestSessionRows } from "../../../lib/progression/engine.js";
+import { memoryLoad } from "../../../lib/strengthRecords.js";
 import { recommendForExercise, fetchRecommendations, decide } from "../../../lib/progression/data.js";
 
 // Coach-side progression panel for one exercise: assign a method + its
@@ -156,7 +157,7 @@ function ConfigForm({ methodId, config, onChange }) {
   );
 }
 
-export function ProgressionPanel({ exercise, clientId, logs }) {
+export function ProgressionPanel({ exercise, clientId, logs, memoryRecord }) {
   const [methodId, setMethodId] = useState(exercise.progression_method || "");
   const [config, setConfig] = useState(exercise.progression_config || {});
   const [savedAs, setSavedAs] = useState({ methodId: exercise.progression_method || "", config: exercise.progression_config || {} });
@@ -197,7 +198,9 @@ export function ProgressionPanel({ exercise, clientId, logs }) {
     const { sets } = workingSets(latestSessionRows(logs).rows);
     const loads = sets.map((s) => s.load).filter((v) => v != null);
     if (loads.length && currentLoad === "") setCurrentLoad(String(Math.max(...loads)));
-  }, [logs]); // eslint-disable-line react-hooks/exhaustive-deps
+    // No logs on this (new) exercise yet: fall back to what the client last lifted on the same lift.
+    else if (!loads.length && currentLoad === "" && memoryLoad(memoryRecord)) setCurrentLoad(String(memoryLoad(memoryRecord)));
+  }, [logs, memoryRecord]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadRecs = useCallback(async () => setRecs(await fetchRecommendations(exercise.id)), [exercise.id]);
   useEffect(() => { loadRecs(); }, [loadRecs]);

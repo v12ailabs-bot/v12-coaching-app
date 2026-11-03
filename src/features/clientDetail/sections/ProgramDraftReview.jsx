@@ -8,6 +8,7 @@ import { estimateDay, shortenDay, normalizeSessionConfig, durationOptionsFor, AR
 import { diffPrograms } from "../../../lib/programming/draftDiff.js";
 import { updateExercise, removeExercise, addExercise, moveExercise, canMove, replaceDayExercises } from "../../../lib/programming/draftEdit.js";
 import { createProgramVersion } from "./ProgramSection.jsx";
+import { seedProgressionForClient } from "../../../lib/progression/data.js";
 
 const inp = { background: S.bg, border: "1px solid " + S.border, color: S.text, padding: "6px 8px", fontSize: 13, outline: "none", width: "100%", borderRadius: RADIUS.sm };
 const lbl = { fontSize: 9, letterSpacing: 1.5, textTransform: "uppercase", color: S.muted, marginBottom: 4, display: "block" };
@@ -112,6 +113,11 @@ export function ProgramDraftReview({ client, trainOwnerId, authHeaders, refreshK
     const { error } = await supabase.rpc("approve_program_draft", { p_draft_id: draft.id, p_keep_exercise_ids: keepIds });
     if (error) throw error;
     await createProgramVersion(trainOwnerId, `AI draft approved${draft.template_name ? ` · ${draft.template_name}` : ""}`);
+    // Pre-set each exercise's progression method from the program's model so Workout Review
+    // is ready to use. Best-effort: the program is already approved, so a failure here
+    // must not look like the approval failed (the coach can still set methods by hand).
+    try { await seedProgressionForClient({ clientId: trainOwnerId, modelKey: program.progression_model_used }); }
+    catch (e) { console.warn("progression seeding failed", e); }
     setKeepPrompt(null); setDraft(null); setPlan(null);
     onApproved?.();
   };

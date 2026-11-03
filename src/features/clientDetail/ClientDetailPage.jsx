@@ -434,7 +434,7 @@ export function ClientDetailPage({ initialClientId, onInitialClientOpened, initi
     // there's logged history on the line so it isn't lost silently.
     const {count} = await supabase.from("workout_logs").select("id",{count:"exact",head:true}).eq("exercise_id",id);
     const msg = count
-      ? `This exercise has ${count} logged set${count>1?"s":""}. Deleting it will permanently remove that logged history too. Continue?`
+      ? `This exercise has ${count} logged set${count>1?"s":""}. Deleting it removes those individual logged sets, but the client's best and most recent lifts for this exercise stay on record (strength memory). Continue?`
       : "Remove this exercise?";
     if(!window.confirm(msg)) return;
     await supabase.from("exercises").delete().eq("id",id);
